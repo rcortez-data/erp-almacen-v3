@@ -1,0 +1,461 @@
+{% extends 'base.html' %}
+{% block title %}Móvil - Buscar producto{% endblock %}
+{% block content %}
+<style>
+  .mobile-lookup {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  .mobile-search-panel {
+    background: #fff;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: var(--shadow-sm);
+    position: sticky;
+    top: .5rem;
+    z-index: 5;
+  }
+
+  .mobile-search-input {
+    font-size: 1.1rem;
+    min-height: 3.1rem;
+    font-weight: 700;
+  }
+
+  .mobile-product-card {
+    background: #fff;
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .mobile-product-card.exacto {
+    border-color: #16a34a;
+    box-shadow: 0 0 0 3px rgba(22, 163, 74, .14);
+  }
+
+  .mobile-product-code {
+    font-size: .9rem;
+    font-weight: 800;
+    color: #0f172a;
+  }
+
+  .mobile-product-bars {
+    font-size: .76rem;
+    font-weight: 800;
+    color: #15803d;
+  }
+
+  .mobile-product-desc {
+    font-size: 1rem;
+    font-weight: 750;
+    line-height: 1.2;
+    margin: .35rem 0 .7rem;
+  }
+
+  .mobile-stock {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .7rem .8rem;
+    background: #f8fafc;
+    border-radius: 8px;
+  }
+
+  .mobile-stock strong {
+    font-size: 1.45rem;
+  }
+
+  .mobile-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .55rem;
+    margin-top: .8rem;
+  }
+
+  .mobile-actions .btn {
+    min-height: 2.65rem;
+  }
+
+  .mobile-quick-sale {
+    display: none;
+    margin-top: .85rem;
+    padding-top: .85rem;
+    border-top: 1px solid var(--border-soft);
+  }
+
+  .mobile-quick-sale.open {
+    display: block;
+  }
+
+  .mobile-quick-sale .form-control,
+  .mobile-quick-sale .form-select,
+  .mobile-quick-sale .btn {
+    min-height: 2.6rem;
+  }
+
+  .mobile-sale-status {
+    font-size: .84rem;
+    min-height: 1.25rem;
+  }
+
+  @media (max-width: 768px) {
+    #main {
+      padding: .75rem;
+    }
+    .app-context {
+      display: none;
+    }
+    .quick-actions {
+      width: 100%;
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+    }
+    .quick-actions .btn {
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="mobile-lookup">
+  <div class="mobile-search-panel no-print">
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+      <div>
+        <h1 class="page-title mb-0"><i class="bi bi-phone text-success"></i> Buscar producto</h1>
+        <div class="text-muted" style="font-size:.82rem">Escanea o escribe código, barras o descripción.</div>
+      </div>
+      <a href="{{ url_for('dashboard.index') }}" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-house"></i>
+      </a>
+    </div>
+    <div class="input-group">
+      <input type="search" id="mobile-search" class="form-control mobile-search-input"
+             autocomplete="off" inputmode="search" placeholder="Escanear o buscar..." autofocus>
+      <button type="button" class="btn btn-outline-secondary" id="mobile-clear" title="Limpiar">
+        <i class="bi bi-x-lg"></i>
+      </button>
+    </div>
+    <div class="text-muted mt-2" id="mobile-status" style="font-size:.82rem">Listo para escanear.</div>
+  </div>
+
+  <div id="mobile-results" class="d-grid gap-2 mt-3"></div>
+</div>
+
+<script>
+(function() {
+  const input = document.getElementById('mobile-search');
+  const results = document.getElementById('mobile-results');
+  const status = document.getElementById('mobile-status');
+  const clearBtn = document.getElementById('mobile-clear');
+  const areasLista = {{ areas_lista|map(attribute='nombre')|list|tojson }};
+  const maquinasLista = {{ maquinas|tojson }};
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const cacheKey = 'erp_salida_movil_config';
+  let timer = null;
+  let ultimoTexto = '';
+
+  function hoyISO() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  function cargarConfigSalida() {
+    try {
+      return JSON.parse(localStorage.getItem(cacheKey) || '{}');
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function guardarConfigSalida(form) {
+    const data = new FormData(form);
+    localStorage.setItem(cacheKey, JSON.stringify({
+      responsable: data.get('responsable') || '',
+      no_vale: data.get('no_vale') || '',
+      tipo_vale: data.get('tipo_vale') || 'normal',
+      area: data.get('area') || '',
+      maquina: data.get('maquina') || '',
+      fecha_vale: data.get('fecha_vale') || hoyISO()
+    }));
+  }
+
+  function opciones(valores, seleccionado, placeholder) {
+    const opts = [`<option value="">${htmlSeguro(placeholder)}</option>`];
+    valores.forEach(valor => {
+      const sel = String(valor || '') === String(seleccionado || '') ? ' selected' : '';
+      opts.push(`<option value="${htmlSeguro(valor)}"${sel}>${htmlSeguro(valor)}</option>`);
+    });
+    return opts.join('');
+  }
+
+  function normalizarValeEnForm(form) {
+    const tipo = form.querySelector('[name="tipo_vale"]').value;
+    const vale = form.querySelector('[name="no_vale"]');
+    const areaWrap = form.querySelector('.js-area-wrap');
+    const maquinaWrap = form.querySelector('.js-maquina-wrap');
+    if (tipo === 'mantenimiento') {
+      areaWrap.style.display = 'none';
+      maquinaWrap.style.display = 'none';
+      vale.value = `M-${limpiarNumeroVale(vale.value, 'M-')}`;
+    } else if (tipo === 'maquinados') {
+      areaWrap.style.display = 'none';
+      maquinaWrap.style.display = '';
+      vale.value = `M-${limpiarNumeroVale(vale.value, 'M-')}`;
+    } else {
+      areaWrap.style.display = '';
+      maquinaWrap.style.display = 'none';
+      const actual = vale.value.trim();
+      if (actual.toUpperCase() === 'M-' || actual.toUpperCase() === 'MAQ-') vale.value = '';
+    }
+    protegerPrefijoVale(form);
+  }
+
+  function prefijoValeForm(form) {
+    const tipo = form.querySelector('[name="tipo_vale"]').value;
+    if (tipo === 'mantenimiento') return 'M-';
+    if (tipo === 'maquinados') return 'M-';
+    return '';
+  }
+
+  function limpiarNumeroVale(valor, prefijo) {
+    let texto = String(valor || '').trim();
+    if (prefijo === 'M-') {
+      texto = texto.replace(/^M\s*-?/i, '').replace(/^MAQ\s*-?/i, '');
+    }
+    return texto;
+  }
+
+  function protegerPrefijoVale(form) {
+    const prefijo = prefijoValeForm(form);
+    if (!prefijo) return;
+    const vale = form.querySelector('[name="no_vale"]');
+    if (!vale.value.toUpperCase().startsWith(prefijo)) {
+      vale.value = prefijo + limpiarNumeroVale(vale.value, prefijo);
+    }
+    if (vale.selectionStart < prefijo.length) {
+      vale.setSelectionRange(prefijo.length, prefijo.length);
+    }
+  }
+
+  function instalarProteccionVale(form) {
+    const vale = form.querySelector('[name="no_vale"]');
+    vale.addEventListener('keydown', (e) => {
+      const prefijo = prefijoValeForm(form);
+      if (!prefijo) return;
+      const inicio = vale.selectionStart;
+      const fin = vale.selectionEnd;
+      if ((e.key === 'Backspace' && inicio <= prefijo.length && fin <= prefijo.length) ||
+          (e.key === 'Delete' && inicio < prefijo.length)) {
+        e.preventDefault();
+        vale.setSelectionRange(prefijo.length, prefijo.length);
+      }
+    });
+    vale.addEventListener('input', () => protegerPrefijoVale(form));
+    vale.addEventListener('click', () => protegerPrefijoVale(form));
+    vale.addEventListener('focus', () => protegerPrefijoVale(form));
+  }
+
+  function htmlSeguro(valor) {
+    return String(valor ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+  }
+
+  function renderProductos(productos, q) {
+    results.innerHTML = '';
+    if (!q) {
+      status.textContent = 'Listo para escanear.';
+      return;
+    }
+    if (!productos.length) {
+      status.textContent = 'Sin resultados.';
+      results.innerHTML = '<div class="mobile-product-card text-center text-muted">No se encontró producto.</div>';
+      return;
+    }
+    status.textContent = productos.length === 1 ? '1 resultado.' : `${productos.length} resultados.`;
+    productos.forEach((p, idx) => {
+      const exacto = String(p.codigo_barras || '').toUpperCase() === q.toUpperCase();
+      const cfg = cargarConfigSalida();
+      const formId = `sale-${p.id}-${idx}`;
+      const card = document.createElement('div');
+      card.className = `mobile-product-card${exacto ? ' exacto' : ''}`;
+      card.innerHTML = `
+        <div class="d-flex justify-content-between gap-2">
+          <div>
+            <div class="mobile-product-code font-monospace">${htmlSeguro(p.codigo)}</div>
+            <div class="mobile-product-bars font-monospace">${htmlSeguro(p.codigo_barras || '')}</div>
+          </div>
+          ${exacto ? '<span class="badge bg-success align-self-start">Escaneado</span>' : ''}
+        </div>
+        <div class="mobile-product-desc">${htmlSeguro(p.descripcion)}</div>
+        <div class="mobile-stock">
+          <span class="text-muted">Stock actual</span>
+          <strong>${htmlSeguro(p.stock_actual)} <span style="font-size:.9rem">${htmlSeguro(p.unidad_medida)}</span></strong>
+        </div>
+        <div class="text-muted mt-2" style="font-size:.82rem">
+          ${p.ubicacion ? `Ubicación: ${htmlSeguro(p.ubicacion)}` : 'Sin ubicación'}
+          ${p.departamento ? ` | ${htmlSeguro(p.departamento)}` : ''}
+        </div>
+        <div class="mobile-actions">
+          <a class="btn btn-outline-primary" href="{{ url_for('inventario.index') }}?q=${encodeURIComponent(p.codigo_barras || p.codigo)}">
+            <i class="bi bi-box-seam"></i> Inventario
+          </a>
+          <button type="button" class="btn btn-outline-warning js-toggle-sale">
+            <i class="bi bi-arrow-up-circle"></i> Salida
+          </button>
+        </div>
+        <div class="mobile-quick-sale ${exacto ? 'open' : ''}">
+          <form class="js-sale-form" data-producto-id="${p.id}">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label fw-semibold">Cantidad</label>
+                <input type="number" name="cantidad" class="form-control" min="0.01" step="0.01" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold">Fecha</label>
+                <input type="date" name="fecha_vale" class="form-control" value="${htmlSeguro(cfg.fecha_vale || hoyISO())}">
+              </div>
+              <div class="col-12">
+                <label class="form-label fw-semibold">Recibió</label>
+                <input type="text" name="responsable" class="form-control" value="${htmlSeguro(cfg.responsable || '')}" required>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold">Tipo</label>
+                <select name="tipo_vale" class="form-select js-tipo-vale">
+                  <option value="normal"${(cfg.tipo_vale || 'normal') === 'normal' ? ' selected' : ''}>Normal</option>
+                  <option value="mantenimiento"${cfg.tipo_vale === 'mantenimiento' ? ' selected' : ''}>Mantenimiento</option>
+                  <option value="maquinados"${cfg.tipo_vale === 'maquinados' ? ' selected' : ''}>Maquinados</option>
+                </select>
+              </div>
+              <div class="col-6">
+                <label class="form-label fw-semibold">Vale</label>
+                <input type="text" name="no_vale" class="form-control" value="${htmlSeguro(cfg.no_vale || '')}" required>
+              </div>
+              <div class="col-12 js-area-wrap">
+                <label class="form-label fw-semibold">Área</label>
+                <select name="area" class="form-select">${opciones(areasLista, cfg.area || p.departamento || '', 'Sin área')}</select>
+              </div>
+              <div class="col-12 js-maquina-wrap" style="display:none">
+                <label class="form-label fw-semibold">Máquina</label>
+                <select name="maquina" class="form-select">${opciones(maquinasLista, cfg.maquina || '', 'Selecciona máquina')}</select>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Factura</label>
+                <input type="text" name="no_factura" class="form-control" placeholder="Opcional">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Remisión</label>
+                <input type="text" name="no_remision" class="form-control" placeholder="Opcional">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Observaciones</label>
+                <textarea name="observaciones" class="form-control" rows="2"></textarea>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-warning w-100 mt-3">
+              <i class="bi bi-check-lg"></i> Registrar salida
+            </button>
+            <div class="mobile-sale-status text-muted mt-2"></div>
+          </form>
+        </div>
+      `;
+      results.appendChild(card);
+      const panel = card.querySelector('.mobile-quick-sale');
+      const toggle = card.querySelector('.js-toggle-sale');
+      const form = card.querySelector('.js-sale-form');
+      const tipo = form.querySelector('.js-tipo-vale');
+      toggle.addEventListener('click', () => {
+        panel.classList.toggle('open');
+        if (panel.classList.contains('open')) form.querySelector('[name="cantidad"]').focus();
+      });
+      tipo.addEventListener('change', () => normalizarValeEnForm(form));
+      instalarProteccionVale(form);
+      normalizarValeEnForm(form);
+      form.addEventListener('submit', registrarSalida);
+    });
+  }
+
+  function registrarSalida(e) {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const statusForm = form.querySelector('.mobile-sale-status');
+    const boton = form.querySelector('button[type="submit"]');
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.producto_id = form.dataset.productoId;
+    data.tipo_movimiento = 'normal';
+    guardarConfigSalida(form);
+    statusForm.className = 'mobile-sale-status text-muted mt-2';
+    statusForm.textContent = 'Guardando...';
+    boton.disabled = true;
+    fetch(`{{ url_for('salidas.api_movil_registrar') }}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+      body: JSON.stringify(data)
+    })
+      .then(async r => {
+        const json = await r.json().catch(() => ({}));
+        if (!r.ok || !json.ok) throw new Error(json.error || 'No se pudo registrar la salida.');
+        return json;
+      })
+      .then(json => {
+        statusForm.className = 'mobile-sale-status text-success fw-semibold mt-2';
+        statusForm.textContent = `${json.mensaje} Stock nuevo: ${json.stock_actual} ${json.unidad_medida}.`;
+        form.querySelector('[name="cantidad"]').value = '';
+        form.querySelector('[name="no_factura"]').value = '';
+        form.querySelector('[name="no_remision"]').value = '';
+        form.querySelector('[name="observaciones"]').value = '';
+        input.value = '';
+        setTimeout(() => {
+          renderProductos([], '');
+          input.focus();
+        }, 1400);
+      })
+      .catch(err => {
+        statusForm.className = 'mobile-sale-status text-danger fw-semibold mt-2';
+        statusForm.textContent = err.message;
+      })
+      .finally(() => {
+        boton.disabled = false;
+      });
+  }
+
+  function buscar() {
+    const q = input.value.trim();
+    ultimoTexto = q;
+    clearTimeout(timer);
+    if (q.length < 2) {
+      renderProductos([], q);
+      return;
+    }
+    status.textContent = 'Buscando...';
+    timer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          if (q !== ultimoTexto) return;
+          renderProductos(data, q);
+        })
+        .catch(() => {
+          status.textContent = 'No se pudo buscar. Revisa la conexión.';
+        });
+    }, 120);
+  }
+
+  input.addEventListener('input', buscar);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      buscar();
+    }
+  });
+  clearBtn.addEventListener('click', () => {
+    input.value = '';
+    renderProductos([], '');
+    input.focus();
+  });
+})();
+</script>
+{% endblock %}

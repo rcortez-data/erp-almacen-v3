@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+
+{% block title %}Comparar Requisición vs Entradas{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2>📋 Comparar Requisición vs Entradas Recibidas</h2>
+            <hr>
+        </div>
+    </div>
+
+    <!-- INFORMACIÓN DE REQUISICIÓN -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <strong>Requisición AL-{{ requisicion.folio }}</strong>
+                    <span class="float-right">
+                        <span class="badge badge-info">{{ requisicion.estado_recepcion or 'pendiente' }}</span>
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <strong>Folio:</strong> AL-{{ requisicion.folio }}
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Fecha:</strong> {{ requisicion.fecha_requisicion or 'N/A' }}
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Departamento:</strong> {{ requisicion.departamento or 'N/A' }}
+                        </div>
+                        <div class="col-md-3">
+                            <strong>Entrada Vinculada:</strong> 
+                            {% if requisicion.no_entrada_vinculada %}
+                                <span class="badge badge-success">{{ requisicion.no_entrada_vinculada }}</span>
+                            {% else %}
+                                <span class="badge badge-secondary">No vinculada</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- COMPARACIÓN LADO A LADO -->
+    <div class="row">
+        <!-- LADO IZQUIERDO: ENTRADAS RECIBIDAS -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <strong>📦 Lo que llegó (Entradas)</strong>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    {% if entradas_items %}
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr class="bg-light">
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th>Cantidad</th>
+                                    <th>Factura</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for entrada in entradas_items %}
+                                <tr>
+                                    <td>
+                                        {% if entrada.codigo %}
+                                            <small class="badge badge-info">{{ entrada.codigo }}</small>
+                                        {% else %}
+                                            <small class="badge badge-secondary">SERVICIO</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if entrada.es_servicio %}
+                                            <strong>{{ entrada.concepto_servicio }}</strong>
+                                        {% else %}
+                                            <strong>{{ entrada.nombre }}</strong>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-primary">{{ entrada.cantidad }}</span>
+                                    </td>
+                                    <td>
+                                        <small>{{ entrada.no_factura or '-' }}</small>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <div class="alert alert-info">
+                            ℹ️ Sin entradas vinculadas
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- LADO DERECHO: REQUISICIÓN SOLICITADA -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <strong>📝 Lo que se solicitó (Requisición)</strong>
+                </div>
+                <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                    {% if items_requisicion %}
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr class="bg-light">
+                                    <th>Descripción</th>
+                                    <th>Cantidad</th>
+                                    <th>Unidad</th>
+                                    <th>Recibido</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in items_requisicion %}
+                                <tr data-item-id="{{ item.id }}" class="item-row">
+                                    <td>
+                                        <strong>{{ item.descripcion }}</strong>
+                                        {% if item.nombre %}
+                                            <br><small class="text-muted">{{ item.nombre }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-primary">{{ item.cantidad }}</span>
+                                    </td>
+                                    <td>{{ item.unidad }}</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm" role="group">
+                                            <!-- NO RECIBIDO -->
+                                            <button type="button" 
+                                                    class="btn btn-outline-danger marcar-btn" 
+                                                    data-item-id="{{ item.id }}" 
+                                                    data-recibido="0"
+                                                    title="No recibido"
+                                                    {% if item.recibido == 0 %}disabled{% endif %}>
+                                                Pendiente
+                                            </button>
+                                            
+                                            <!-- PARCIAL -->
+                                            <button type="button" 
+                                                    class="btn btn-outline-warning marcar-btn" 
+                                                    data-item-id="{{ item.id }}" 
+                                                    data-recibido="2"
+                                                    title="Parcialmente recibido"
+                                                    {% if item.recibido == 2 %}disabled{% endif %}>
+                                                Parcial
+                                            </button>
+                                            
+                                            <!-- SÍ RECIBIDO -->
+                                            <button type="button" 
+                                                    class="btn btn-outline-success marcar-btn" 
+                                                    data-item-id="{{ item.id }}" 
+                                                    data-recibido="1"
+                                                    title="Completamente recibido"
+                                                    {% if item.recibido == 1 %}disabled{% endif %}>
+                                                Completa
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% else %}
+                        <div class="alert alert-info">
+                            ℹ️ Sin items en la requisición
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RESUMEN Y ACCIONES -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <strong>📊 Resumen de Recepción</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="alert alert-info">
+                                <strong>Total Items:</strong>
+                                <h4 id="total-items">{{ items_requisicion|length }}</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="alert alert-success">
+                                <strong>Recibidos:</strong>
+                                <h4 id="items-recibidos">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="alert alert-warning">
+                                <strong>Parciales:</strong>
+                                <h4 id="items-parciales">0</h4>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="alert alert-danger">
+                                <strong>No Recibidos:</strong>
+                                <h4 id="items-no-recibidos">0</h4>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5>Estado de Requisición:</h5>
+                            <p>
+                                <span class="badge badge-lg" id="estado-badge">
+                                    {{ requisicion.estado_recepcion or 'pendiente' }}
+                                </span>
+                            </p>
+                        </div>
+                        <div class="col-md-6 text-right">
+                            <a href="{{ url_for('requisiciones_detalle', req_id=requisicion.id) }}" 
+                               class="btn btn-secondary">
+                                ← Volver
+                            </a>
+                            <button class="btn btn-primary" onclick="guardarCambios()">
+                                💾 Guardar Cambios
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    .item-row:hover {
+        background-color: #f5f5f5;
+    }
+    
+    .marcar-btn:disabled {
+        opacity: 1;
+        font-weight: bold;
+    }
+    
+    .badge-lg {
+        font-size: 18px;
+        padding: 10px 15px;
+    }
+    
+    .btn-group-sm .btn {
+        padding: 4px 8px;
+    }
+</style>
+
+<script>
+// Variables globales
+const reqId = {{ requisicion.id }};
+let cambios = [];
+
+// Event listeners para botones de marcar
+document.querySelectorAll('.marcar-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const itemId = this.dataset.itemId;
+        const recibido = this.dataset.recibido;
+        const row = this.closest('.item-row');
+        
+        // Registrar cambio
+        cambios.push({
+            item_id: itemId,
+            recibido: recibido
+        });
+        
+        // Marcar todos los botones como activos
+        row.querySelectorAll('.marcar-btn').forEach(b => b.disabled = false);
+        
+        // Deshabilitar el botón clickeado
+        this.disabled = true;
+        
+        // Cambiar color del row
+        row.style.backgroundColor = 
+            recibido == 1 ? '#d4edda' : 
+            recibido == 2 ? '#fff3cd' : 
+            '#f8d7da';
+        
+        // Actualizar resumen
+        actualizarResumen();
+    });
+});
+
+function actualizarResumen() {
+    const totalItems = document.querySelectorAll('.item-row').length;
+    let recibidos = 0, parciales = 0;
+    
+    document.querySelectorAll('.marcar-btn:disabled').forEach(btn => {
+        const recibido = btn.dataset.recibido;
+        if (recibido == 1) recibidos++;
+        else if (recibido == 2) parciales++;
+    });
+    
+    const noRecibidos = totalItems - recibidos - parciales;
+    
+    document.getElementById('items-recibidos').textContent = recibidos;
+    document.getElementById('items-parciales').textContent = parciales;
+    document.getElementById('items-no-recibidos').textContent = noRecibidos;
+    
+    // Determinar estado
+    let nuevoEstado = 'revision';
+    if (recibidos === totalItems) {
+        nuevoEstado = 'entregado';
+    } else if (recibidos > 0 || parciales > 0) {
+        nuevoEstado = 'parcial';
+    }
+    
+    document.getElementById('estado-badge').textContent = nuevoEstado;
+}
+
+function guardarCambios() {
+    if (cambios.length === 0) {
+        alert('No hay cambios para guardar');
+        return;
+    }
+    
+    // Guardar cada cambio
+    cambios.forEach(cambio => {
+        fetch(`/requisiciones/${reqId}/marcar-recibido`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(cambio)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.exito) {
+                alert('Error: ' + data.mensaje);
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    });
+    
+    cambios = [];
+    alert('✅ Cambios guardados exitosamente');
+}
+
+// Inicializar resumen al cargar
+document.addEventListener('DOMContentLoaded', actualizarResumen);
+</script>
+
+{% endblock %}

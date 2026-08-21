@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if montacargas_item else 'Nuevo' }} montacargas{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title">
+    <i class="bi bi-truck-front text-primary"></i>
+    {{ 'Editar montacargas' if montacargas_item else 'Nuevo montacargas' }}
+  </h1>
+  <a href="{{ url_for('montacargas.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="card" style="max-width:480px">
+  <div class="card-body">
+    <form method="POST">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Nombre o número <span class="text-danger">*</span></label>
+        <input type="text" name="nombre" class="form-control" required autocomplete="off"
+               value="{{ montacargas_item.nombre if montacargas_item else '' }}"
+               placeholder="Ej: Montacargas #1, MC.5">
+      </div>
+      {% if montacargas_item %}
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Estado</label>
+        <select name="activo" class="form-select">
+          <option value="1" {{ 'selected' if montacargas_item.activo }}>Activo</option>
+          <option value="0" {{ 'selected' if not montacargas_item.activo }}>Inactivo</option>
+        </select>
+      </div>
+      {% endif %}
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {{ 'Guardar cambios' if montacargas_item else 'Registrar montacargas' }}
+        </button>
+        <a href="{{ url_for('montacargas.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

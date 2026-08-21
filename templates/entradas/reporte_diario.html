@@ -1,0 +1,597 @@
+{% extends 'base.html' %}
+{% block title %}Reporte diario de entradas{% endblock %}
+{% block content %}
+<div class="topbar no-print">
+  <h1 class="page-title"><i class="bi bi-printer text-danger"></i> Reporte diario de entradas</h1>
+  <div class="d-flex gap-2 align-items-end">
+    <form method="GET" class="d-flex gap-2 align-items-end">
+      <div>
+        <label class="form-label mb-0" style="font-size:.75rem">Fecha</label>
+        <input type="date" name="fecha" class="form-control form-control-sm" value="{{ fecha }}" onchange="this.form.submit()">
+      </div>
+    </form>
+    {% if modo_impresion %}
+    <button onclick="window.print()" class="btn btn-sm btn-danger"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="{{ url_for('entradas.reporte_diario', fecha=fecha) }}" class="btn btn-sm btn-outline-secondary">Regresar</a>
+    {% else %}
+    <a href="{{ url_for('entradas.reporte_diario', fecha=fecha, imprimir=1) }}" class="btn btn-sm btn-danger"><i class="bi bi-printer"></i> Imprimir</a>
+    <a href="{{ url_for('entradas.index') }}" class="btn btn-sm btn-outline-secondary">Regresar</a>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .reporte-encabezado {
+    background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+    border-bottom: 3px solid #0d6efd;
+    padding: 3rem 2.5rem;
+    padding-right: 1.5rem;
+    margin-bottom: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .reporte-titulo {
+    color: #030303;
+    font-weight: 800;
+    font-size: 1.9rem;
+    text-align: center;
+    text-transform: uppercase;
+    margin-bottom: 1.2rem;
+    letter-spacing: 0.5px;
+  }
+  .reporte-folio {
+    color: #c00000;
+    font-weight: 800;
+    font-size: 2rem;
+    text-align: center;
+    margin-bottom: 1rem;
+  }
+  .reporte-fecha {
+    text-align: center;
+    font-size: 1.1rem;
+    margin-bottom: 0.5rem;
+    text-transform: capitalize;
+    color: #495057;
+    font-weight: 500;
+  }
+  .reporte-info-centrada {
+    text-align: center;
+    font-size: 0.9rem;
+    color: #495057;
+    margin-top: 0.8rem;
+  }
+  .reporte-info-derecha {
+    text-align: right;
+    font-size: 0.9rem;
+    color: #495057;
+    white-space: nowrap;
+    margin-left: 2rem;
+    margin-right: -4.5rem;
+    min-width: 7.5rem;
+  }
+  .tabla-reporte {
+    width: 100%;
+    margin-bottom: 2rem;
+    font-size: 0.95rem;
+  }
+  .tabla-reporte thead th {
+    background-color: #0d6efd;
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 0.5rem;
+    text-align: center;
+    border: 1px solid #0d6efd;
+  }
+  .tabla-reporte tbody td {
+    padding: 0.6rem 0.5rem;
+    border: 1px solid #dee2e6;
+    vertical-align: middle;
+  }
+  .tabla-reporte tbody tr:nth-child(even) {
+    background-color: #f8f9fa;
+  }
+  .tabla-reporte tbody tr:hover > td {
+    background-color: #fff3cd !important;
+    border-top-color: #ffc107 !important;
+    border-bottom-color: #ffc107 !important;
+    cursor: pointer;
+  }
+  .tabla-reporte tbody tr:hover > td:first-child {
+    box-shadow: inset 4px 0 0 #ffc107;
+  }
+  .tabla-reporte tfoot tr {
+    background-color: #f0f0f0;
+    font-weight: 700;
+  }
+  .tabla-reporte tfoot td {
+    padding: 0.75rem 0.5rem;
+    border: 2px solid #0d6efd;
+  }
+  .pagination-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #dee2e6;
+  }
+  .pagination-info {
+    color: #6c757d;
+    font-size: 0.9rem;
+  }
+  .verificacion-factura {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: center;
+    background: #f8f9fa;
+    border: 1px solid #d8dee6;
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
+  }
+  .verificacion-factura.con-seleccion {
+    position: fixed;
+    top: 0.75rem;
+    z-index: 1030;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.16);
+  }
+  .verificacion-placeholder {
+    display: none;
+  }
+  .verificacion-placeholder.activo {
+    display: block;
+  }
+  .verificacion-totales {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .verificacion-total {
+    min-width: 9.5rem;
+    text-align: right;
+  }
+  .verificacion-total span {
+    display: block;
+    color: #6c757d;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .fila-verificada {
+    background-color: #fff3cd !important;
+  }
+  .check-factura {
+    width: 1.15rem;
+    height: 1.15rem;
+    cursor: pointer;
+  }
+  @media print {
+    .no-print, .sidebar, .topbar { display: none !important; }
+    body { background: white !important; margin: 0; padding: 0; }
+    #main { margin-left: 0 !important; padding: 0 !important; }
+    @page {
+      size: landscape;
+      margin: 18mm 8mm 12mm 8mm;
+      @bottom-center {
+        content: "Página " counter(page) " de " counter(pages);
+        font-size: 8pt;
+        color: #333;
+      }
+    }
+    @page :first {
+      margin-top: 8mm;
+    }
+    html, body { width: 100%; }
+    .card { box-shadow: none !important; border: none !important; padding: 0 !important; }
+    .card-body { padding: 0 !important; }
+    .reporte-encabezado {
+      background: none !important;
+      border: none !important;
+      padding: 0 !important;
+      margin-bottom: 0.3rem !important;
+    }
+    .reporte-titulo {
+      font-size: 0.85rem !important;
+      margin-bottom: 0.05rem !important;
+      line-height: 1;
+    }
+    .reporte-folio {
+      font-size: 0.65rem !important;
+      margin-bottom: 0 !important;
+      line-height: 1;
+    }
+    .reporte-fecha {
+      display: block !important;
+      font-size: 0.55rem !important;
+      margin: 0 !important;
+      line-height: 1;
+      text-transform: capitalize;
+    }
+    .reporte-info-centrada {
+      font-size: 0.55rem !important;
+      text-align: center !important;
+      margin: 0 !important;
+      margin-bottom: 0.2rem !important;
+      padding: 0 !important;
+    }
+    .reporte-info-derecha {
+      font-size: 0.55rem !important;
+      text-align: right !important;
+      margin: 0 !important;
+      margin-left: 10mm !important;
+      margin-right: -4.4rem !important;
+      min-width: 25mm !important;
+      margin-bottom: 0.2rem !important;
+      padding: 0 !important;
+      padding-right: 0 !important;
+    }
+    .tabla-reporte {
+      font-size: 0.5rem !important;
+      margin-bottom: 0 !important;
+      width: 100%;
+    }
+    .table-responsive {
+      overflow: visible !important;
+    }
+    .tabla-reporte thead {
+      display: table-header-group;
+    }
+    .tabla-reporte tbody tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    .tabla-reporte th, .tabla-reporte td {
+      padding: 0.08rem 0.06rem !important;
+      border: 0.5px solid #000 !important;
+      overflow: hidden;
+      word-break: break-word;
+    }
+    .tabla-reporte thead th {
+      background-color: #d0d0d0 !important;
+      color: #000 !important;
+      font-size: 0.5rem !important;
+    }
+    .tabla-reporte tbody tr:nth-child(even) {
+      background-color: transparent !important;
+    }
+    .tabla-reporte tbody tr:hover {
+      background-color: transparent !important;
+    }
+    .tabla-reporte tfoot {
+      display: none !important;
+    }
+    .tabla-reporte tfoot.mostrar-totales {
+      display: table-row-group !important;
+    }
+    .tabla-reporte tfoot tr {
+      background-color: #e0e0e0 !important;
+      font-size: 0.58rem !important;
+      font-weight: 700 !important;
+    }
+    .tabla-reporte tfoot td {
+      border: 1px solid #000 !important;
+      padding: 0.16rem 0.1rem !important;
+      white-space: nowrap !important;
+    }
+    .pagination-container { display: none !important; }
+    .page-title { display: none !important; }
+    .alert { display: none !important; }
+  }
+</style>
+
+<div class="card">
+  <div class="card-body">
+    <div class="reporte-encabezado">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <div class="reporte-titulo">Entrada de insumos al Almacén General</div>
+          <div class="reporte-folio">Folio {{ folio }}</div>
+          <div class="reporte-fecha">{{ fecha_larga }}</div>
+        </div>
+        <div class="reporte-info-derecha">
+          <div><strong>FO-7.5-4-11</strong></div>
+          <div><strong>REV.0 MAY-25</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="verificacion-placeholder no-print" id="verificacion-placeholder"></div>
+    <div class="verificacion-factura no-print">
+      <div>
+        <strong>Verificacion de factura</strong>
+        <div class="text-muted" style="font-size:.82rem">Marca las filas de una factura para revisar el subtotal capturado.</div>
+      </div>
+      <div class="verificacion-totales">
+        <div class="verificacion-total">
+          <span>Filas</span>
+          <strong id="verif-filas">0</strong>
+        </div>
+        <div class="verificacion-total">
+          <span>Subtotal MXN</span>
+          <strong id="verif-subtotal-mxn">$0.00</strong>
+        </div>
+        <div class="verificacion-total">
+          <span>IVA MXN</span>
+          <strong id="verif-iva-mxn">$0.00</strong>
+        </div>
+        <div class="verificacion-total">
+          <span>Total MXN</span>
+          <strong id="verif-total-mxn">$0.00</strong>
+        </div>
+        <div class="verificacion-total">
+          <span>Subtotal USD</span>
+          <strong id="verif-subtotal-usd">$0.00</strong>
+        </div>
+        <div class="verificacion-total">
+          <span>IVA USD</span>
+          <strong id="verif-iva-usd">$0.00</strong>
+        </div>
+        <div class="verificacion-total">
+          <span>Total USD</span>
+          <strong id="verif-total-usd">$0.00</strong>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="limpiar-verificacion">
+          <i class="bi bi-x-lg"></i> Limpiar
+        </button>
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm mb-0 tabla-reporte">
+        <colgroup>
+          <col class="no-print" style="width: 4%;"><col style="width: 21%;"><col style="width: 6%;"><col style="width: 5%;"><col style="width: 8%;">
+          <col style="width: 7%;"><col style="width: 8%;"><col style="width: 8%;"><col style="width: 7%;">
+          <col style="width: 14%;"><col style="width: 7%;">
+        </colgroup>
+        <thead class="table-light">
+          <tr>
+            <th class="no-print">Check</th>
+            <th>Descripcion</th><th>Cant.</th><th>U.M.</th><th>Precio unitario</th>
+            <th>IVA</th><th>Importe total</th><th>Orden de compra</th><th>Factura</th><th>Proveedor</th><th>Depto.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if filas %}
+            {% for f in filas %}
+            <tr>
+              <td class="no-print" style="text-align: center;">
+                <input type="checkbox" class="form-check-input check-factura"
+                       data-subtotal="{{ '%.2f'|format(f.subtotal) }}"
+                       data-iva="{{ '%.2f'|format(f.iva) }}"
+                       data-total="{{ '%.2f'|format(f.importe_total) }}"
+                       data-currency="{{ 'USD' if f.es_dolar else 'MXN' }}">
+              </td>
+              <td>{% if f.es_servicio %}<span class="badge bg-warning text-dark" style="font-size:.55rem">Servicio</span> {% endif %}{{ f.descripcion }}</td>
+              <td style="text-align: right;">{{ f.cantidad }}</td>
+              <td style="text-align: center;">{{ f.unidad_medida }}</td>
+              <td style="text-align: right;">${{ f.precio_unitario|moneda }}{% if f.es_dolar %} <span class="badge bg-info text-dark" style="font-size:.55rem">USD</span>{% endif %}</td>
+              <td style="text-align: right;">${{ f.iva|moneda }}</td>
+              <td class="fw-semibold" style="text-align: right;">${{ f.importe_total|moneda }}{% if f.es_dolar %} <span style="font-size:.6rem">USD</span>{% endif %}</td>
+              <td style="text-align: center;">
+                {% if f.oc_pdf_url %}
+                <a href="{{ f.oc_pdf_url }}" class="oc-pdf-link" title="Abrir PDF de la orden de compra en Adobe">
+                  <i class="bi bi-file-earmark-pdf"></i> {{ f.orden_compra }}
+                </a>
+                {% else %}
+                {{ f.orden_compra }}
+                {% endif %}
+              </td>
+              <td style="text-align: center;">{{ f.no_factura }}</td>
+              <td>{{ f.proveedor_nombre }}</td>
+              <td style="text-align: center;">{{ f.departamento }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="11" class="text-center text-muted py-4">No hay entradas con factura registradas.</td></tr>
+          {% endif %}
+        </tbody>
+        {% if filas and es_ultima_pagina %}
+        <tfoot class="mostrar-totales">
+          <tr class="fila-total-mxn">
+            <td class="no-print"></td>
+            <td colspan="4" class="text-end">Totales MXN:</td>
+            <td style="text-align: right;">Subtotal ${{ total_importe_mxn|moneda }}</td>
+            <td style="text-align: right;">IVA ${{ total_iva_mxn|moneda }}</td>
+            <td style="text-align: right;">Total ${{ total_general_mxn|moneda }} MXN</td>
+            <td colspan="3"></td>
+          </tr>
+          {% if total_general_usd %}
+          <tr class="fila-total-usd">
+            <td class="no-print"></td>
+            <td colspan="4" class="text-end">Totales USD:</td>
+            <td style="text-align: right;">Subtotal ${{ total_importe_usd|moneda }}</td>
+            <td style="text-align: right;">IVA ${{ total_iva_usd|moneda }}</td>
+            <td style="text-align: right;">Total ${{ total_general_usd|moneda }} USD</td>
+            <td colspan="3"></td>
+          </tr>
+          {% endif %}
+        </tfoot>
+        {% endif %}
+      </table>
+    </div>
+
+    {% if total_paginas and total_paginas > 1 %}
+    <div class="pagination-container no-print">
+      <div class="pagination-info">Página <strong>{{ pagina_actual }}</strong> de <strong>{{ total_paginas }}</strong> | <strong>{{ registros_pagina }}</strong> de <strong>{{ total_registros }}</strong> registros</div>
+      <nav aria-label="Paginación">
+        <ul class="pagination mb-0">
+          {% if pagina_actual > 1 %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.reporte_diario', fecha=fecha, pagina=1, imprimir=1 if modo_impresion else None) }}"><i class="bi bi-chevron-double-left"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.reporte_diario', fecha=fecha, pagina=pagina_actual-1, imprimir=1 if modo_impresion else None) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
+          {% endif %}
+          {% set inicio = [1, pagina_actual - 2]|max %}
+          {% set fin = [total_paginas, pagina_actual + 2]|min %}
+          {% if inicio > 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+          {% for p in range(inicio, fin + 1) %}
+          {% if p == pagina_actual %}
+          <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+          {% else %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.reporte_diario', fecha=fecha, pagina=p, imprimir=1 if modo_impresion else None) }}">{{ p }}</a></li>
+          {% endif %}
+          {% endfor %}
+          {% if fin < total_paginas %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+          {% if pagina_actual < total_paginas %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.reporte_diario', fecha=fecha, pagina=pagina_actual+1, imprimir=1 if modo_impresion else None) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.reporte_diario', fecha=fecha, pagina=total_paginas, imprimir=1 if modo_impresion else None) }}"><i class="bi bi-chevron-double-right"></i></a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="modal fade no-print" id="modalFolio" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('entradas.editar_folio_diario') }}">
+        <input type="hidden" name="fecha" value="{{ fecha }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Corregir folio del reporte diario</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:.85rem">Corrige el folio de esta fecha.</p>
+          <label class="form-label fw-semibold">Folio correcto para esta fecha</label>
+          <input type="number" name="folio_nuevo" class="form-control" required min="0" value="{{ folio }}">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    const checks = Array.from(document.querySelectorAll('.check-factura'));
+    const panel = document.querySelector('.verificacion-factura');
+    const placeholder = document.getElementById('verificacion-placeholder');
+    const limpiar = document.getElementById('limpiar-verificacion');
+    const campos = {
+      filas: document.getElementById('verif-filas'),
+      subtotalMxn: document.getElementById('verif-subtotal-mxn'),
+      ivaMxn: document.getElementById('verif-iva-mxn'),
+      totalMxn: document.getElementById('verif-total-mxn'),
+      subtotalUsd: document.getElementById('verif-subtotal-usd'),
+      ivaUsd: document.getElementById('verif-iva-usd'),
+      totalUsd: document.getElementById('verif-total-usd')
+    };
+
+    function moneda(valor) {
+      return '$' + valor.toLocaleString('es-MX', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function recalcular() {
+      const totales = {
+        filas: 0,
+        subtotalMxn: 0,
+        ivaMxn: 0,
+        totalMxn: 0,
+        subtotalUsd: 0,
+        ivaUsd: 0,
+        totalUsd: 0
+      };
+
+      checks.forEach((check) => {
+        const fila = check.closest('tr');
+        fila.classList.toggle('fila-verificada', check.checked);
+        if (!check.checked) return;
+
+        totales.filas += 1;
+        const subtotal = Number(check.dataset.subtotal || 0);
+        const iva = Number(check.dataset.iva || 0);
+        const total = Number(check.dataset.total || 0);
+        if (check.dataset.currency === 'USD') {
+          totales.subtotalUsd += subtotal;
+          totales.ivaUsd += iva;
+          totales.totalUsd += total;
+        } else {
+          totales.subtotalMxn += subtotal;
+          totales.ivaMxn += iva;
+          totales.totalMxn += total;
+        }
+      });
+
+      campos.filas.textContent = totales.filas;
+      campos.subtotalMxn.textContent = moneda(totales.subtotalMxn);
+      campos.ivaMxn.textContent = moneda(totales.ivaMxn);
+      campos.totalMxn.textContent = moneda(totales.totalMxn);
+      campos.subtotalUsd.textContent = moneda(totales.subtotalUsd);
+      campos.ivaUsd.textContent = moneda(totales.ivaUsd);
+      campos.totalUsd.textContent = moneda(totales.totalUsd);
+      if (panel) {
+        fijarPanel(totales.filas > 0);
+      }
+    }
+
+    function fijarPanel(activo) {
+      if (!panel || !placeholder) return;
+      if (activo && !panel.classList.contains('con-seleccion')) {
+        const rect = panel.getBoundingClientRect();
+        placeholder.style.height = rect.height + 'px';
+        placeholder.classList.add('activo');
+        panel.style.left = rect.left + 'px';
+        panel.style.width = rect.width + 'px';
+        panel.classList.add('con-seleccion');
+      } else if (!activo) {
+        panel.classList.remove('con-seleccion');
+        panel.style.left = '';
+        panel.style.width = '';
+        placeholder.style.height = '';
+        placeholder.classList.remove('activo');
+      }
+    }
+
+    window.addEventListener('resize', function () {
+      if (!panel || !placeholder || !panel.classList.contains('con-seleccion')) return;
+      panel.classList.remove('con-seleccion');
+      panel.style.left = '';
+      panel.style.width = '';
+      placeholder.classList.remove('activo');
+      placeholder.style.height = '';
+      requestAnimationFrame(function () { fijarPanel(true); });
+    });
+
+    checks.forEach((check) => check.addEventListener('change', recalcular));
+    document.querySelectorAll('.tabla-reporte tbody tr').forEach((fila) => {
+      const check = fila.querySelector('.check-factura');
+      if (!check) return;
+      fila.addEventListener('click', function (event) {
+        if (event.target.closest('input, button, a, select, textarea, label')) return;
+        check.checked = !check.checked;
+        check.dispatchEvent(new Event('change', { bubbles: true }));
+      });
+    });
+    if (limpiar) {
+      limpiar.addEventListener('click', function () {
+        checks.forEach((check) => { check.checked = false; });
+        recalcular();
+      });
+    }
+  })();
+</script>
+{% if modo_impresion %}
+<script>
+  window.addEventListener('load', function () {
+    window.print();
+  });
+</script>
+{% endif %}
+{% endblock %}

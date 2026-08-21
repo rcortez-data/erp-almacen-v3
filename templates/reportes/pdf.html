@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Reporte de movimientos</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; margin: 1.5cm; }
+  h1 { font-size: 16px; margin-bottom: 4px; }
+  .meta { color: #666; font-size: 10px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #1a1d23; color: #fff; padding: 5px 6px; text-align: left; font-size: 10px; }
+  td { padding: 4px 6px; border-bottom: 1px solid #eee; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  .badge-e { background: #198754; color: #fff; padding: 1px 6px; border-radius: 3px; }
+  .badge-s { background: #fd7e14; color: #fff; padding: 1px 6px; border-radius: 3px; }
+  .footer { margin-top: 16px; font-size: 9px; color: #999; }
+  @media print {
+    button { display: none; }
+  }
+</style>
+</head>
+<body>
+<button onclick="window.print()" style="margin-bottom:12px;padding:4px 14px;cursor:pointer">
+  🖨️ Imprimir / Guardar PDF
+</button>
+<h1>Reporte de movimientos - ERP ALMACEN GENERAL</h1>
+<div class="meta">
+  Generado: {{ now }}
+  {% if fecha_ini or fecha_fin %}
+  &nbsp;|&nbsp; Periodo:
+  {{ fecha_ini if fecha_ini else '—' }} al {{ fecha_fin if fecha_fin else 'hoy' }}
+  {% endif %}
+  {% if tipo %}&nbsp;|&nbsp; Tipo: {{ tipo | capitalize }}{% endif %}
+  &nbsp;|&nbsp; Total: {{ movimientos|length }} registro(s)
+</div>
+
+{% set entradas_cnt = movimientos | selectattr('tipo', 'equalto', 'Entrada') | list | length %}
+{% set salidas_cnt  = movimientos | selectattr('tipo', 'equalto', 'Salida')  | list | length %}
+<div style="display:flex;gap:20px;margin-bottom:14px">
+  <div style="background:#d1e7dd;padding:5px 14px;border-radius:4px">
+    <b style="font-size:15px;color:#0a3622">{{ entradas_cnt }}</b> Entradas
+  </div>
+  <div style="background:#fff3cd;padding:5px 14px;border-radius:4px">
+    <b style="font-size:15px;color:#664d03">{{ salidas_cnt }}</b> Salidas
+  </div>
+  <div style="background:#cfe2ff;padding:5px 14px;border-radius:4px">
+    <b style="font-size:15px;color:#0a2472">{{ movimientos|length }}</b> Total
+  </div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Tipo</th><th>Folio</th><th>Código</th><th>Descripción</th>
+      <th>Cantidad</th><th>Unidad</th><th>Fecha</th><th>Usuario</th><th>Ref.</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for m in movimientos %}
+    <tr>
+      <td>
+        {% if m.tipo == 'Entrada' %}
+        <span class="badge-e">ENT</span>
+        {% else %}
+        <span class="badge-s">SAL</span>
+        {% endif %}
+      </td>
+      <td>{{ m.folio }}</td>
+      <td>{{ m.codigo }}</td>
+      <td>{{ m.descripcion }}</td>
+      <td>{{ m.cantidad }}</td>
+      <td>{{ m.unidad_medida }}</td>
+      <td>{{ m.fecha[:10] }}</td>
+      <td>{{ m.usuario or '—' }}</td>
+      <td>{{ m.no_factura or m.responsable or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="footer">ERP ALMACEN GENERAL - Documento generado el {{ now }}</div>
+</body>
+</html>

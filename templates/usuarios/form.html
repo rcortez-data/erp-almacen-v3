@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if usuario else 'Nuevo' }} usuario{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-person text-primary"></i>
+    {{ 'Editar usuario' if usuario else 'Nuevo usuario' }}
+  </h1>
+  <a href="{{ url_for('usuarios.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+<div class="card" style="max-width:480px">
+  <div class="card-body">
+    <form method="POST">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Nombre <span class="text-danger">*</span></label>
+        <input type="text" name="nombre" class="form-control" required autofocus
+               value="{{ usuario.nombre if usuario else '' }}">
+        <div class="form-text">Este nombre aparecera en el selector superior y se guardara en entradas y salidas.</div>
+      </div>
+      {% if usuario %}
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Estado</label>
+        <select name="activo" class="form-select">
+          <option value="1" {{ 'selected' if usuario.activo }}>Activo</option>
+          <option value="0" {{ 'selected' if not usuario.activo }}>Inactivo / baja</option>
+        </select>
+      </div>
+      {% endif %}
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {{ 'Guardar cambios' if usuario else 'Dar de alta' }}
+        </button>
+        <a href="{{ url_for('usuarios.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

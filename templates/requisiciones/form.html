@@ -1,0 +1,466 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if requisicion else 'Nueva' }} requisición{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title">
+    <i class="bi bi-file-earmark-text text-primary"></i>
+    {{ 'Editar requisición AL-' ~ requisicion.folio if requisicion else 'Nueva requisición' }}
+  </h1>
+  <a href="{{ url_for('requisiciones.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="card" style="max-width:900px">
+  <div class="card-body">
+    <form method="POST" id="form-requisicion" autocomplete="off">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Fecha de requisición</label>
+          <input type="date" name="fecha_requisicion" id="fecha_requisicion" class="form-control"
+                 value="{{ requisicion.fecha_requisicion if requisicion else hoy }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Fecha en que se necesita</label>
+          <input type="date" name="fecha_necesita" id="fecha_necesita" class="form-control"
+                 value="{{ requisicion.fecha_necesita if requisicion else '' }}">
+          <div class="form-text">Por defecto son 3 días después de la fecha de requisición; puedes cambiarla si se necesita antes o después.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Solicito (nombre de quien solicita)</label>
+          <input type="text" name="solicitante" class="form-control"
+                 value="{{ requisicion.solicitante if requisicion else '' }}" placeholder="Nombre de quien solicita">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Detalle / motivo</label>
+          <input type="text" name="asunto" class="form-control"
+                 value="{{ requisicion.asunto if requisicion else '' }}" placeholder="Ej: STOCK, PROYECTO X, MOTIVO...">
+          <div class="form-text">Va en el formato impreso junto al folio (celda R20).</div>
+        </div>
+      </div>
+
+      <div class="alert alert-light border py-2 mb-3" style="font-size:.82rem">
+        <i class="bi bi-info-circle"></i> Compras y Autorizó siempre es
+        <strong>Ing. Cristian Arteaga</strong> respectivamente — se ponen automáticamente en el formato impreso.
+      </div>
+
+      <hr>
+      <h6 class="text-muted mb-2">Partidas solicitadas (máximo {{ max_items }})</h6>
+      <div class="form-text mb-2">
+        Si el artículo ya está en tu catálogo, ligalo con el buscador de la columna "Producto del catálogo
+        (opcional)" — así, cuando registres la entrada, el sistema calculará solo cuánto ha llegado, sin que
+        tengas que capturar la recepción a mano. Si no lo ligas, al guardar se creará un producto nuevo con
+        stock 0 usando esa descripción.
+      </div>
+      <div class="table-responsive mb-3">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr>
+              <th style="width:110px">Cantidad</th>
+              <th style="width:150px">Unidad</th>
+              <th>Descripción</th>
+              <th style="width:260px">Producto del catálogo (opcional)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for i in range(1, max_items + 1) %}
+            {% set it = items[i-1] if items and i <= items|length else None %}
+            <tr>
+              <td><input type="number" step="0.01" min="0" name="cantidad_{{ i }}" class="form-control form-control-sm"
+                         value="{{ it.cantidad if it else '' }}"></td>
+              <td>
+                <select name="unidad_{{ i }}" class="form-select form-select-sm select-unidad" data-fila="{{ i }}">
+                  <option value="">Elegir...</option>
+                  {% set unidad_actual = unidad_singular(it.unidad) if it and it.unidad else '' %}
+                  {% for u in unidades %}
+                  <option value="{{ u }}" data-singular="{{ u }}" {{ 'selected' if unidad_actual == u }}>{{ u }}</option>
+                  {% endfor %}
+                  {% if unidad_actual and unidad_actual not in unidades %}
+                  <option value="{{ unidad_actual }}" data-singular="{{ unidad_actual }}" selected>{{ unidad_actual }} (valor anterior)</option>
+                  {% endif %}
+                </select>
+              </td>
+              <td><input type="text" name="descripcion_{{ i }}" class="form-control form-control-sm"
+                         value="{{ it.descripcion if it else '' }}" placeholder="Descripción del artículo"></td>
+              <td class="position-relative">
+                <input type="text" class="form-control form-control-sm buscador-cat" data-fila="{{ i }}"
+                       autocomplete="off" placeholder="Buscar código o descripción..."
+                       value="{{ (it.codigo ~ ' — ' ~ it.producto_descripcion) if it and it.producto_id else '' }}">
+                <input type="hidden" name="producto_id_{{ i }}" class="producto-id" data-fila="{{ i }}"
+                       value="{{ it.producto_id if it and it.producto_id else '' }}">
+                <div class="list-group position-absolute w-100 shadow-sm autocomplete-menu resultados-cat" data-fila="{{ i }}"
+                     style="z-index:30; max-height:220px; overflow-y:auto; display:none;"></div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">Observaciones</label>
+        <textarea name="observaciones" class="form-control" rows="2">{{ requisicion.observaciones if requisicion else '' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {{ 'Guardar cambios' if requisicion else 'Registrar requisición' }}
+        </button>
+        <a href="{{ url_for('requisiciones.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const fReq = document.getElementById('fecha_requisicion');
+  const fNec = document.getElementById('fecha_necesita');
+  fReq.addEventListener('change', function() {
+    if (!fNec.value || fNec.dataset.auto !== 'no') {
+      const d = new Date(this.value + 'T00:00:00');
+      d.setDate(d.getDate() + 3);
+      fNec.value = d.toISOString().slice(0, 10);
+      fNec.dataset.auto = 'yes';
+    }
+  });
+  fNec.addEventListener('input', function() { this.dataset.auto = 'no'; });
+  {% if not requisicion %}
+  if (fReq.value && !fNec.value) fReq.dispatchEvent(new Event('change'));
+  {% endif %}
+
+  // Buscador de producto del catálogo por fila (opcional, para vincular la partida)
+  const unidadSingularJs = {
+    PIEZAS: 'Pieza',
+    PIEZA: 'Pieza',
+    KILOS: 'Kilo',
+    KILO: 'Kilo',
+    KILOGRAMOS: 'Kilo',
+    KILOGRAMO: 'Kilo',
+    KG: 'Kilo',
+    LITROS: 'Litro',
+    LITRO: 'Litro',
+    METROS: 'Metro',
+    METRO: 'Metro',
+    CAJAS: 'Caja',
+    CAJA: 'Caja',
+    PAQUETES: 'Paquete',
+    PAQUETE: 'Paquete',
+    BOLSAS: 'Bolsa',
+    BOLSA: 'Bolsa',
+    BOTES: 'Bote',
+    BOTE: 'Bote',
+    CUBETAS: 'Cubeta',
+    CUBETA: 'Cubeta',
+    GALONES: 'Galon',
+    GALON: 'Galon',
+    GARRAFAS: 'Garrafa',
+    GARRAFA: 'Garrafa',
+    BIDONES: 'Bidon',
+    BIDON: 'Bidon',
+    ROLLOS: 'Rollo',
+    ROLLO: 'Rollo',
+    PARES: 'Par',
+    PAR: 'Par',
+    JUEGOS: 'Juego',
+    JUEGO: 'Juego',
+    MILLARES: 'Millar',
+    MILLAR: 'Millar',
+    LOTES: 'Lote',
+    LOTE: 'Lote',
+    SERVICIOS: 'Servicio',
+    SERVICIO: 'Servicio'
+  };
+
+  function unidadSingular(valor) {
+    const texto = (valor || '').trim();
+    if (!texto) return '';
+    return unidadSingularJs[texto.toUpperCase()] || texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
+  }
+
+  document.querySelectorAll('.buscador-cat').forEach(function(input) {
+    const fila = input.dataset.fila;
+    const resultados = document.querySelector(`.resultados-cat[data-fila="${fila}"]`);
+    const hiddenId = document.querySelector(`.producto-id[data-fila="${fila}"]`);
+    const filaDescripcion = document.querySelector(`input[name="descripcion_${fila}"]`);
+    const filaUnidad = document.querySelector(`.select-unidad[data-fila="${fila}"]`);
+    let debounceTimer = null;
+
+    function fijarUnidad(select, valor) {
+      const valorSingular = unidadSingular(valor);
+      if (!valorSingular) return;
+      let existe = Array.from(select.options).some(o => o.value === valorSingular);
+      if (!existe) {
+        const opt = document.createElement('option');
+        opt.value = valorSingular;
+        opt.dataset.singular = valorSingular;
+        opt.textContent = valorSingular;
+        select.appendChild(opt);
+      }
+      select.value = valorSingular;
+      actualizarTextoUnidad(select.dataset.fila);
+    }
+
+    input.addEventListener('input', function() {
+      hiddenId.value = '';
+      const q = this.value.trim();
+      clearTimeout(debounceTimer);
+      if (q.length < 2) { resultados.style.display = 'none'; return; }
+      debounceTimer = setTimeout(() => {
+        fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+          .then(r => r.json())
+          .then(data => {
+            resultados.innerHTML = '';
+            if (data.length === 0) {
+              resultados.innerHTML = '<div class="list-group-item text-muted py-1">Sin resultados.</div>';
+            } else {
+              data.forEach(p => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'list-group-item list-group-item-action py-1';
+                item.style.fontSize = '.8rem';
+                item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}`;
+                item.addEventListener('click', () => {
+                  input.value = `${p.codigo} — ${p.descripcion}`;
+                  hiddenId.value = p.id;
+                  if (!filaDescripcion.value) filaDescripcion.value = p.descripcion;
+                  if (!filaUnidad.value) fijarUnidad(filaUnidad, p.unidad_medida);
+                  resultados.style.display = 'none';
+                  guardarBorradorRequisicion();
+                });
+                resultados.appendChild(item);
+              });
+            }
+            resultados.style.display = 'block';
+          });
+      }, 250);
+    });
+
+    input.addEventListener('keydown', function(e) {
+      if (e.key !== 'Enter') return;
+      const primeraOpcion = resultados.querySelector('.list-group-item-action');
+      if (resultados.style.display !== 'none' && primeraOpcion) {
+        e.preventDefault();
+        primeraOpcion.click();
+        avanzarCampo(input);
+      }
+    });
+  });
+
+  function camposNavegables() {
+    return Array.from(document.querySelectorAll('form input:not([type="hidden"]), form select, form textarea, form button[type="submit"]'))
+      .filter(el => !el.disabled && el.offsetParent !== null);
+  }
+
+  function avanzarCampo(actual) {
+    const campos = camposNavegables();
+    const idx = campos.indexOf(actual);
+    const siguiente = campos[idx + 1];
+    if (siguiente) {
+      siguiente.focus();
+      if (typeof siguiente.select === 'function' && siguiente.tagName !== 'SELECT') {
+        siguiente.select();
+      }
+    }
+  }
+
+  document.querySelector('form').addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    if (e.target.tagName === 'TEXTAREA') return;
+    if (e.target.classList.contains('buscador-cat')) return;
+
+    e.preventDefault();
+    if (e.target.type === 'submit') return;
+    avanzarCampo(e.target);
+  });
+
+  const pluralesUnidad = {
+    Pieza: 'Piezas',
+    Kilo: 'Kilos',
+    Litro: 'Litros',
+    Metro: 'Metros',
+    Caja: 'Cajas',
+    Paquete: 'Paquetes',
+    Bolsa: 'Bolsas',
+    Bote: 'Botes',
+    Cubeta: 'Cubetas',
+    Galon: 'Galones',
+    Garrafa: 'Garrafas',
+    Bidon: 'Bidones',
+    Rollo: 'Rollos',
+    Par: 'Pares',
+    Juego: 'Juegos',
+    Millar: 'Millares',
+    Lote: 'Lotes',
+    Servicio: 'Servicios'
+  };
+
+  function actualizarTextoUnidad(fila) {
+    const cantidad = parseFloat(document.querySelector(`input[name="cantidad_${fila}"]`)?.value || '0');
+    const select = document.querySelector(`.select-unidad[data-fila="${fila}"]`);
+    if (!select) return;
+    Array.from(select.options).forEach((opt) => {
+      if (!opt.value) return;
+      const singular = opt.dataset.singular || opt.value;
+      opt.textContent = cantidad >= 2 ? (pluralesUnidad[singular] || singular) : singular;
+    });
+  }
+
+  document.querySelectorAll('.select-unidad').forEach((select) => {
+    actualizarTextoUnidad(select.dataset.fila);
+  });
+  document.querySelectorAll('input[name^="cantidad_"]').forEach((input) => {
+    const fila = input.name.replace('cantidad_', '');
+    input.addEventListener('input', () => actualizarTextoUnidad(fila));
+    input.addEventListener('change', () => actualizarTextoUnidad(fila));
+  });
+
+  {% if not requisicion %}
+  const borradorKey = 'erp_requisicion_nueva_borrador_v1';
+  const formRequisicion = document.getElementById('form-requisicion');
+  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const formularioLimpio = new URLSearchParams(window.location.search).get('limpio') === '1';
+  let borradorTimer = null;
+  let borradorActivo = true;
+
+  function selectorPorName(name) {
+    return `[name="${String(name).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`;
+  }
+
+  function datosBorradorRequisicion() {
+    const datos = {};
+    const formData = new FormData(formRequisicion);
+    formData.forEach((valor, key) => {
+      if (key !== '_csrf_token') datos[key] = valor;
+    });
+    document.querySelectorAll('.buscador-cat').forEach((el) => {
+      datos[`buscador_cat_${el.dataset.fila}`] = el.value;
+    });
+    datos._guardado = new Date().toISOString();
+    return datos;
+  }
+
+  function aplicarDatosBorrador(datos) {
+    if (!datos) return;
+    Object.entries(datos).forEach(([key, valor]) => {
+      if (key === '_guardado') return;
+      let el = document.querySelector(selectorPorName(key));
+      if (!el && key.startsWith('buscador_cat_')) {
+        const fila = key.replace('buscador_cat_', '');
+        el = document.querySelector(`.buscador-cat[data-fila="${fila}"]`);
+      }
+      if (!el) return;
+      if (el.tagName === 'SELECT' && valor && !Array.from(el.options).some(o => o.value === valor)) {
+        const opt = document.createElement('option');
+        opt.value = valor;
+        opt.textContent = `${valor} (borrador)`;
+        el.appendChild(opt);
+      }
+      el.value = valor;
+    });
+  }
+
+  function guardarBorradorServidor(datos, inmediato = false) {
+    const payload = JSON.stringify(datos);
+    fetch(`{{ url_for('requisiciones.borrador') }}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+      body: payload,
+      keepalive: inmediato
+    }).catch(() => {});
+  }
+
+  function guardarBorradorRequisicion(inmediato = false) {
+    inmediato = inmediato === true;
+    if (!borradorActivo) return;
+    const datos = datosBorradorRequisicion();
+    localStorage.setItem(borradorKey, JSON.stringify(datos));
+    clearTimeout(borradorTimer);
+    if (inmediato) {
+      guardarBorradorServidor(datos, true);
+      return;
+    }
+    borradorTimer = setTimeout(() => guardarBorradorServidor(datos), 350);
+  }
+
+  function limpiarFormularioNuevo() {
+    borradorActivo = false;
+    clearTimeout(borradorTimer);
+    localStorage.removeItem(borradorKey);
+    formRequisicion.reset();
+    formRequisicion.querySelectorAll('input:not([type="hidden"]), textarea').forEach((el) => {
+      if (el.type !== 'date') el.value = '';
+    });
+    formRequisicion.querySelectorAll('input[type="hidden"]').forEach((el) => {
+      if (el.name !== '_csrf_token') el.value = '';
+    });
+    formRequisicion.querySelectorAll('select').forEach((el) => el.selectedIndex = 0);
+    document.querySelectorAll('.buscador-cat').forEach((el) => el.value = '');
+    fReq.value = '{{ hoy }}';
+    fNec.value = '';
+    fNec.dataset.auto = '';
+    fReq.dispatchEvent(new Event('change'));
+    fetch(`{{ url_for('requisiciones.borrador') }}`, {
+      method: 'DELETE',
+      headers: {'X-CSRFToken': csrfToken},
+      keepalive: true
+    }).catch(() => {});
+    window.history.replaceState({}, document.title, `{{ url_for('requisiciones.nuevo') }}`);
+    borradorActivo = true;
+  }
+
+  function restaurarBorradorRequisicion() {
+    if (formularioLimpio) {
+      localStorage.removeItem(borradorKey);
+      return;
+    }
+    const crudo = localStorage.getItem(borradorKey);
+    if (crudo) {
+      try {
+        aplicarDatosBorrador(JSON.parse(crudo));
+      } catch (_) {
+        localStorage.removeItem(borradorKey);
+      }
+    }
+
+    fetch(`{{ url_for('requisiciones.borrador') }}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data && data.datos) {
+          aplicarDatosBorrador(data.datos);
+          localStorage.setItem(borradorKey, JSON.stringify(data.datos));
+        }
+      })
+      .catch(() => {});
+  }
+
+  function hayPartidasParaGuardar() {
+    for (let i = 1; i <= {{ max_items }}; i++) {
+      const cantidad = document.querySelector(selectorPorName(`cantidad_${i}`))?.value;
+      const descripcion = document.querySelector(selectorPorName(`descripcion_${i}`))?.value?.trim();
+      if (cantidad && descripcion) return true;
+    }
+    return false;
+  }
+
+  if (formularioLimpio) {
+    limpiarFormularioNuevo();
+  } else {
+    restaurarBorradorRequisicion();
+  }
+  formRequisicion.addEventListener('input', () => guardarBorradorRequisicion());
+  formRequisicion.addEventListener('change', () => guardarBorradorRequisicion());
+  window.addEventListener('pagehide', () => guardarBorradorRequisicion(true));
+  formRequisicion.addEventListener('submit', function() {
+    if (hayPartidasParaGuardar()) guardarBorradorRequisicion(true);
+  });
+  {% else %}
+  function guardarBorradorRequisicion() {}
+  {% endif %}
+
+  document.addEventListener('click', function(e) {
+    document.querySelectorAll('.resultados-cat').forEach(function(r) {
+      if (!r.contains(e.target) && !e.target.classList.contains('buscador-cat')) r.style.display = 'none';
+    });
+  });
+</script>
+{% endblock %}

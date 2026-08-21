@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar vale de montacargas' if editar else 'Registrar vale de montacargas' }}{% endblock %}
+{% block content %}
+{% set d = vale if editar else doc %}
+<div class="topbar">
+  <h1 class="page-title">
+    <i class="bi bi-clipboard-check text-info"></i>
+    {{ 'Editar vale de montacargas' if editar else 'Registrar vale de montacargas' }}
+  </h1>
+  <a href="{{ url_for('vales_montacargas.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> {{ 'Regresar' if editar else 'Ver listado' }}
+  </a>
+</div>
+
+{% if not editar %}
+<div class="alert alert-secondary py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-info-circle"></i> No afecta el inventario. Al guardar, el formulario queda listo para
+  capturar el siguiente vale.
+</div>
+{% else %}
+<div class="alert alert-info py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-info-circle"></i> Folio <strong>{{ vale.folio }}</strong>.
+</div>
+{% endif %}
+
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="POST" id="form-vale-mc">
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Recibió (montacarguista) <span class="text-danger">*</span></label>
+          <input type="text" name="responsable" class="form-control" required {{ 'autofocus' if not d or not d.responsable }}
+                 value="{{ d.responsable if d else '' }}" placeholder="Nombre completo">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Folio de vale <span class="text-danger">*</span></label>
+          <input type="text" name="no_vale" class="form-control" required {{ 'autofocus' if not editar and d and d.responsable }}
+                 value="{{ d.no_vale if d else '' }}" placeholder="Ej: VALE-0123">
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Área</label>
+          <div class="input-group">
+            <select name="area_id" id="area_id" class="form-select">
+              <option value="">Selecciona...</option>
+              {% for a in areas_lista %}
+              <option value="{{ a.id }}"
+                {{ 'selected' if (d.area_id|string if d else (vale.area_id|string if vale else '')) == a.id|string }}>
+                {{ a.nombre }}
+              </option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-secondary" id="btn-abrir-alta-area" title="Dar de alta un área nueva">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>
+          <div class="form-text">¿No está en la lista? Usa el botón <i class="bi bi-plus-lg"></i> para darla de alta.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Montacargas <span class="text-danger">*</span></label>
+          <div class="input-group">
+            <select name="montacargas_id" id="montacargas_id" class="form-select" required>
+              <option value="">Selecciona...</option>
+              {% for m in montacargas_lista %}
+              <option value="{{ m.id }}"
+                {{ 'selected' if (d.montacargas_id|string if d else '') == m.id|string }}>
+                {{ m.nombre }}
+              </option>
+              {% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-secondary" id="btn-abrir-alta-mc" title="Dar de alta un montacargas nuevo">
+              <i class="bi bi-plus-lg"></i>
+            </button>
+          </div>
+          <div class="form-text">¿No está en la lista? Usa el botón <i class="bi bi-plus-lg"></i> para darlo de alta.</div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Cantidad <span class="text-danger">*</span></label>
+          <div class="input-group" style="max-width:220px">
+            <input type="number" name="cantidad" class="form-control" min="1" step="1"
+                   value="{{ d.cantidad if d else '' }}">
+            <span class="input-group-text">piezas</span>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Fecha del vale</label>
+          <input type="date" name="fecha_vale" class="form-control" value="{{ (vale.fecha_vale or vale.fecha[:10]) if editar else (doc.get('fecha_vale') or ahora[:10]) }}">
+          <div class="form-text">Esta fecha si se puede cambiar.</div>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">Observaciones</label>
+        <textarea name="observaciones" class="form-control" rows="2">{{ d.observaciones if d else '' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-info text-white">
+          <i class="bi bi-check-lg"></i> {{ 'Guardar cambios' if editar else 'Registrar vale' }}
+        </button>
+        <a href="{{ url_for('vales_montacargas.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: alta rápida de montacargas (cuando no está en la lista) -->
+<div class="modal fade" id="modalAltaMC" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-truck-front"></i> Dar de alta montacargas</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="alta-mc-error" class="alert alert-danger py-1 px-2" style="display:none; font-size:.85rem"></div>
+        <label class="form-label fw-semibold">Nombre o número</label>
+        <input type="text" id="alta-mc-nombre" class="form-control" placeholder="Ej: Montacargas #3, MC.6" autofocus>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" id="btn-guardar-alta-mc" class="btn btn-success">
+          <i class="bi bi-check-lg"></i> Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: alta rápida de área (cuando no está en la lista) -->
+<div class="modal fade" id="modalAltaArea" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-diagram-3"></i> Dar de alta área</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="alta-area-error" class="alert alert-danger py-1 px-2" style="display:none; font-size:.85rem"></div>
+        <label class="form-label fw-semibold">Nombre del área</label>
+        <input type="text" id="alta-area-nombre" class="form-control" placeholder="Ej: Flexo 2, Mantenimiento" autofocus>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" id="btn-guardar-alta-area" class="btn btn-success">
+          <i class="bi bi-check-lg"></i> Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const selectMC = document.getElementById('montacargas_id');
+  const btnAbrirAltaMC = document.getElementById('btn-abrir-alta-mc');
+  const modalAltaMC = new bootstrap.Modal(document.getElementById('modalAltaMC'));
+  const inputAltaMC = document.getElementById('alta-mc-nombre');
+  const errorAltaMC = document.getElementById('alta-mc-error');
+  const btnGuardarAltaMC = document.getElementById('btn-guardar-alta-mc');
+
+  btnAbrirAltaMC.addEventListener('click', () => {
+    inputAltaMC.value = '';
+    errorAltaMC.style.display = 'none';
+    modalAltaMC.show();
+  });
+
+  btnGuardarAltaMC.addEventListener('click', () => {
+    const nombre = inputAltaMC.value.trim();
+    if (!nombre) {
+      errorAltaMC.textContent = 'El nombre o número es obligatorio.';
+      errorAltaMC.style.display = 'block';
+      return;
+    }
+    const formData = new FormData();
+    formData.append('nombre', nombre);
+    fetch("{{ url_for('montacargas.api_crear') }}", { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          errorAltaMC.textContent = data.error;
+          errorAltaMC.style.display = 'block';
+          return;
+        }
+        const opt = document.createElement('option');
+        opt.value = data.id;
+        opt.textContent = data.nombre;
+        opt.selected = true;
+        selectMC.appendChild(opt);
+        modalAltaMC.hide();
+      })
+      .catch(() => {
+        errorAltaMC.textContent = 'No se pudo guardar. Intenta de nuevo.';
+        errorAltaMC.style.display = 'block';
+      });
+  });
+
+  const selectArea = document.getElementById('area_id');
+  const btnAbrirAltaArea = document.getElementById('btn-abrir-alta-area');
+  const modalAltaArea = new bootstrap.Modal(document.getElementById('modalAltaArea'));
+  const inputAltaArea = document.getElementById('alta-area-nombre');
+  const errorAltaArea = document.getElementById('alta-area-error');
+  const btnGuardarAltaArea = document.getElementById('btn-guardar-alta-area');
+
+  btnAbrirAltaArea.addEventListener('click', () => {
+    inputAltaArea.value = '';
+    errorAltaArea.style.display = 'none';
+    modalAltaArea.show();
+  });
+
+  btnGuardarAltaArea.addEventListener('click', () => {
+    const nombre = inputAltaArea.value.trim();
+    if (!nombre) {
+      errorAltaArea.textContent = 'El nombre del área es obligatorio.';
+      errorAltaArea.style.display = 'block';
+      return;
+    }
+    const formData = new FormData();
+    formData.append('nombre', nombre);
+    fetch("{{ url_for('areas.api_crear') }}", { method: 'POST', body: formData })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) {
+          errorAltaArea.textContent = data.error;
+          errorAltaArea.style.display = 'block';
+          return;
+        }
+        const opt = document.createElement('option');
+        opt.value = data.id;
+        opt.textContent = data.nombre;
+        opt.selected = true;
+        selectArea.appendChild(opt);
+        modalAltaArea.hide();
+      })
+      .catch(() => {
+        errorAltaArea.textContent = 'No se pudo guardar. Intenta de nuevo.';
+        errorAltaArea.style.display = 'block';
+      });
+  });
+</script>
+{% endblock %}

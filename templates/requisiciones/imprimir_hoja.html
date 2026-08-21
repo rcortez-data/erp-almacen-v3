@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Requisicion AL-{{ requisicion.folio }}</title>
+<style>
+  @page {
+    size: letter portrait;
+    margin: 0;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    background: #eef1f4;
+    color: #111;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 11px;
+  }
+
+  .toolbar {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .toolbar button,
+  .toolbar a {
+    border: 1px solid #9ca3af;
+    background: #fff;
+    color: #111827;
+    cursor: pointer;
+    font: inherit;
+    padding: 7px 14px;
+    text-decoration: none;
+  }
+
+  .toolbar .primary {
+    background: #b91c1c;
+    border-color: #991b1b;
+    color: #fff;
+  }
+
+  .sheet {
+    position: relative;
+    width: 8.5in;
+    height: 11in;
+    margin: 0 auto 16px;
+    background: #fff;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+    overflow: hidden;
+  }
+
+  .print-text {
+    position: absolute;
+    line-height: 1.05;
+    white-space: nowrap;
+    overflow: hidden;
+    color: #000;
+  }
+
+  .qty {
+    width: 0.58in;
+    text-align: right;
+  }
+
+  .unit {
+    width: 1.10in;
+    text-align: center;
+  }
+
+  .desc {
+    width: 9cm;
+    height: 4.6mm;
+    white-space: nowrap;
+    overflow: hidden;
+    line-height: 1;
+  }
+
+  .date {
+    width: 1.28in;
+    text-align: center;
+  }
+
+  .almacen {
+    width: 3.46in;
+    text-align: center;
+  }
+
+  .folio-detail {
+    width: 5.25in;
+    white-space: nowrap;
+  }
+
+  .solicitante {
+    width: 1.72in;
+    text-align: center;
+  }
+
+  .firma {
+    width: 1.85in;
+    text-align: center;
+  }
+
+  @media print {
+    body {
+      background: #fff;
+    }
+
+    .toolbar {
+      display: none;
+    }
+
+    .sheet {
+      margin: 0;
+      box-shadow: none;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="toolbar">
+  <button type="button" class="primary" onclick="window.print()">Imprimir / Guardar PDF</button>
+  <a href="{{ url_for('requisiciones.detalle', rid=requisicion.id) }}">Volver al detalle</a>
+</div>
+
+<main class="sheet" aria-label="Textos para formato fisico">
+  <div class="print-text almacen" style="left:0.71in; top:1.57in;">ALMACEN GENERAL</div>
+  <div class="print-text date" style="left:4.18in; top:1.57in;">{{ fecha_necesita }}</div>
+  <div class="print-text date" style="left:6.82in; top:1.57in;">{{ fecha_requisicion }}</div>
+
+  {% for n in range(max_items) %}
+    {% set it = items[n] if n < (items|length) else none %}
+    {% set ajuste_y = ((n - 1) * 0.039) if n >= 2 else 0 %}
+    {% set y = 2.16 + (n * 0.235) - ajuste_y %}
+    {% if it %}
+      <div class="print-text qty" style="left:0.90in; top:{{ y }}in;">{{ "%g"|format(it.cantidad) }}</div>
+      <div class="print-text unit" style="left:1.78in; top:{{ y }}in;">{{ unidad_para_cantidad(it.unidad, it.cantidad) }}</div>
+      <div class="print-text desc" style="left:2.90in; top:{{ y }}in;">{{ it.descripcion }}</div>
+    {% endif %}
+  {% endfor %}
+
+  <div class="print-text folio-detail" style="left:1.66in; top:4.15in;">
+    (AL-{{ requisicion.folio }}) {{ requisicion.asunto or '' }}
+  </div>
+
+  <div class="print-text solicitante" style="left:0.72in; top:4.75in;">{{ requisicion.solicitante or '' }}</div>
+  <div class="print-text firma" style="left:2.90in; top:4.75in;">{{ requisicion.visto_bueno or 'ANGELES CHICHIA' }}</div>
+  <div class="print-text firma" style="left:5.67in; top:4.75in;">{{ requisicion.autorizo or 'ING. CRISTIAN ARTEAGA' }}</div>
+</main>
+
+<script>
+  function ajustarDescripciones() {
+    document.querySelectorAll('.desc').forEach((el) => {
+      let size = 11;
+      el.style.fontSize = size + 'px';
+      while ((el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight) && size > 6) {
+        size -= 0.25;
+        el.style.fontSize = size + 'px';
+      }
+    });
+  }
+
+  window.addEventListener('load', () => {
+    ajustarDescripciones();
+    {% if auto_print %}
+    window.print();
+    {% endif %}
+  });
+</script>
+</body>
+</html>

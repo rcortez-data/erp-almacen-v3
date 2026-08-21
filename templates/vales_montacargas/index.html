@@ -1,0 +1,268 @@
+{% extends 'base.html' %}
+{% block title %}Vales de Montacargas{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-clipboard-check text-info"></i> Vales de Montacargas</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('montacargas.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-truck-front"></i> Administrar montacargas
+    </a>
+    <a href="{{ url_for('vales_montacargas.nuevo') }}" class="btn btn-info btn-sm text-white">
+      <i class="bi bi-plus-lg"></i> Registrar vale
+    </a>
+  </div>
+</div>
+
+<div class="alert alert-secondary py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-info-circle"></i> Este apartado es independiente del inventario: solo lleva el control de
+  cuántas piezas (tanques) saca cada montacarguista y en cuál montacargas. No descuenta stock de productos.
+</div>
+
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-2">
+        <label class="form-label mb-0" style="font-size:.75rem">Recibió (montacarguista)</label>
+        <select name="q_resp" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          {% for responsable in responsables_lista %}
+          <option value="{{ responsable.responsable }}" {{ 'selected' if q_resp == responsable.responsable }}>
+            {{ responsable.responsable }}
+          </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-0" style="font-size:.75rem">Área</label>
+        <select name="q_area" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          {% for area in areas_lista %}
+          <option value="{{ area.nombre }}" {{ 'selected' if q_area == area.nombre }}>{{ area.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-0" style="font-size:.75rem">Montacargas</label>
+        <select name="montacargas_id" class="form-select form-select-sm">
+          <option value="">Todos</option>
+          {% for m in montacargas_lista %}
+          <option value="{{ m.id }}" {{ 'selected' if montacargas_id|string == m.id|string }}>{{ m.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-0" style="font-size:.75rem">Folio de vale</label>
+        <input type="text" name="q_vale" class="form-control form-control-sm" placeholder="Vale..." value="{{ q_vale }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-0" style="font-size:.75rem">Desde</label>
+        <input type="date" name="fecha_ini" class="form-control form-control-sm" value="{{ fecha_ini }}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label mb-0" style="font-size:.75rem">Hasta</label>
+        <input type="date" name="fecha_fin" class="form-control form-control-sm" value="{{ fecha_fin }}">
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button>
+        <a href="{{ url_for('vales_montacargas.index', fecha_ini='', fecha_fin='') }}" class="btn btn-sm btn-outline-secondary">Ver todos</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- RESUMEN: piezas por montacarguista y montacargas en el rango filtrado -->
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-bar-chart"></i> Resumen del periodo
+      {% if fecha_ini or fecha_fin %}<span class="text-muted" style="font-size:.8rem">({{ fecha_ini or '...' }} a {{ fecha_fin or '...' }})</span>{% endif %}
+    </span>
+    <span class="badge bg-info text-dark">{{ total_piezas_periodo|round(2) }} piezas en total</span>
+  </div>
+  <div class="list-group list-group-flush">
+    <div class="list-group-item px-0">
+      <button type="button"
+              class="btn btn-link text-decoration-none w-100 d-flex align-items-center justify-content-between px-3 py-2 resumen-grupo-toggle"
+              data-target="resumen-montacarguistas"
+              aria-expanded="false">
+        <span class="fw-semibold text-start">
+          <i class="bi bi-chevron-right me-1"></i>Montacarguistas (recibió)
+        </span>
+        <span class="text-muted" style="font-size:.82rem">
+          {{ resumen_responsables|length }} persona(s)
+        </span>
+      </button>
+      <div id="resumen-montacarguistas" style="display:none">
+        {% for grupo in resumen_responsables %}
+        <div class="border-top">
+          <button type="button"
+                  class="btn btn-link text-decoration-none w-100 d-flex align-items-center justify-content-between px-4 py-2 resumen-responsable-toggle"
+                  data-target="resumen-responsable-{{ loop.index }}"
+                  aria-expanded="false">
+            <span class="fw-semibold text-start">
+              <i class="bi bi-chevron-right me-1"></i>{{ grupo.responsable }}
+            </span>
+            <span class="text-muted" style="font-size:.82rem">
+              {{ grupo.total_vales }} vale(s) · {{ grupo.total_piezas|round(2) }} piezas
+            </span>
+          </button>
+          <div id="resumen-responsable-{{ loop.index }}" class="px-4 pb-2" style="display:none">
+            <div class="table-responsive">
+              <table class="table table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th>Montacargas</th>
+                    <th class="text-end">No. de vales</th>
+                    <th class="text-end">Piezas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for r in grupo.detalles %}
+                  <tr>
+                    <td>{{ r.montacargas_nombre or '—' }}</td>
+                    <td class="text-end">{{ r.total_vales }}</td>
+                    <td class="text-end fw-semibold">{{ r.total_piezas|round(2) }}</td>
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-3 border-top">Sin vales registrados en este periodo.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th class="col-code">Folio</th><th class="col-compact">Folio vale</th>
+          <th class="col-medium">Recibió</th><th class="col-medium">Área</th>
+          <th class="col-medium">Montacargas</th><th class="col-compact">Piezas</th>
+          <th class="col-medium">Usuario</th><th class="col-fecha">Fecha vale</th><th class="col-acciones"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in vales %}
+        <tr>
+          <td><span class="badge bg-info text-dark">{{ v.folio }}</span></td>
+          <td>{{ v.no_vale }}</td>
+          <td>{{ v.responsable }}</td>
+          <td>{{ v.area_nombre or '—' }}</td>
+          <td>{{ v.montacargas_nombre or '—' }}</td>
+          <td class="fw-bold">{{ v.cantidad|round(2) }} pza(s)</td>
+          <td>{{ v.usuario_nombre or '—' }}</td>
+          <td>{{ (v.fecha_vale or v.fecha[:10])|fecha_vale }}</td>
+          <td>
+            <a href="{{ url_for('vales_montacargas.editar', vid=v.id) }}" class="btn btn-sm btn-outline-primary py-0 px-1">
+              <i class="bi bi-pencil-square"></i>
+            </a>
+            <form method="POST" action="{{ url_for('vales_montacargas.eliminar', vid=v.id) }}" class="d-inline"
+                  onsubmit="return confirm('¿Eliminar este vale de montacargas? Esta acción no se puede deshacer.');">
+              <button type="submit" class="btn btn-sm btn-outline-danger py-0 px-1">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">No se encontraron registros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.8rem">{{ vales|length }} registro(s)</div>
+</div>
+
+<!-- PAGINACIÓN -->
+{% if total_paginas and total_paginas > 1 %}
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div style="color: #6c757d; font-size: 0.9rem;">
+        Página <strong>{{ pagina_actual }}</strong> de <strong>{{ total_paginas }}</strong>
+        | <strong>{{ registros_pagina }}</strong> de <strong>{{ total_registros }}</strong> registros
+      </div>
+      <nav aria-label="Paginación">
+        <ul class="pagination mb-0 flex-wrap">
+          {% if pagina_actual > 1 %}
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('vales_montacargas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q_resp=q_resp, q_area=q_area, q_vale=q_vale, montacargas_id=montacargas_id, pagina=1) }}">
+              <i class="bi bi-chevron-double-left"></i>
+            </a>
+          </li>
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('vales_montacargas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q_resp=q_resp, q_area=q_area, q_vale=q_vale, montacargas_id=montacargas_id, pagina=pagina_actual-1) }}">
+              <i class="bi bi-chevron-left"></i> Anterior
+            </a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
+          {% endif %}
+
+          {% set inicio = [1, pagina_actual - 2]|max %}
+          {% set fin = [total_paginas, pagina_actual + 2]|min %}
+
+          {% if inicio > 1 %}
+          <li class="page-item disabled"><span class="page-link">...</span></li>
+          {% endif %}
+
+          {% for p in range(inicio, fin + 1) %}
+          {% if p == pagina_actual %}
+          <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+          {% else %}
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('vales_montacargas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q_resp=q_resp, q_area=q_area, q_vale=q_vale, montacargas_id=montacargas_id, pagina=p) }}">{{ p }}</a>
+          </li>
+          {% endif %}
+          {% endfor %}
+
+          {% if fin < total_paginas %}
+          <li class="page-item disabled"><span class="page-link">...</span></li>
+          {% endif %}
+
+          {% if pagina_actual < total_paginas %}
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('vales_montacargas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q_resp=q_resp, q_area=q_area, q_vale=q_vale, montacargas_id=montacargas_id, pagina=pagina_actual+1) }}">
+              Siguiente <i class="bi bi-chevron-right"></i>
+            </a>
+          </li>
+          <li class="page-item">
+            <a class="page-link" href="{{ url_for('vales_montacargas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q_resp=q_resp, q_area=q_area, q_vale=q_vale, montacargas_id=montacargas_id, pagina=total_paginas) }}">
+              <i class="bi bi-chevron-double-right"></i>
+            </a>
+          </li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(() => {
+  document.querySelectorAll('.resumen-grupo-toggle, .resumen-responsable-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const panel = document.getElementById(btn.dataset.target);
+      const icon = btn.querySelector('.bi-chevron-right');
+      const abierto = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+      if (panel) panel.style.display = abierto ? 'block' : 'none';
+      if (icon) icon.style.transform = abierto ? 'rotate(90deg)' : 'rotate(0deg)';
+    });
+  });
+})();
+</script>
+{% endblock %}

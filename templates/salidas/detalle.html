@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Detalle salida {{ salida.folio }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-arrow-up-circle text-warning"></i> Detalle de salida</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('salidas.editar', sid=salida.id) }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil-square"></i> Editar
+    </a>
+    <form method="POST" action="{{ url_for('salidas.eliminar', sid=salida.id) }}" class="d-inline"
+          onsubmit="return confirm('¿Eliminar esta salida? Se revertirá el stock que descontó. Esta acción no se puede deshacer.');">
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash"></i> Eliminar
+      </button>
+    </form>
+    <a href="{{ url_for('salidas.index') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Regresar
+    </a>
+  </div>
+</div>
+<div class="card" style="max-width:600px">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Folio: <span class="badge bg-warning text-dark">{{ salida.folio }}</span></strong>
+    <small class="text-muted">Vale: {{ (salida.fecha_vale or salida.fecha[:10])|fecha_vale }}</small>
+  </div>
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-4">Producto</dt>
+      <dd class="col-sm-8">{{ salida.codigo }} — {{ salida.descripcion }}</dd>
+      <dt class="col-sm-4">Cantidad</dt>
+      <dd class="col-sm-8 fw-bold text-danger">
+        -{{ salida.cantidad|cantidad_unidad(salida.unidad_medida) }}
+        {% if salida.unidad_compra and salida.factor_conversion %}
+        <br><span class="text-muted fw-normal" style="font-size:.85rem">
+          = {{ (salida.cantidad * salida.factor_conversion)|moneda }} {{ salida.unidad_compra }}
+        </span>
+        {% endif %}
+      </dd>
+      <dt class="col-sm-4">Área</dt>
+      <dd class="col-sm-8">{{ salida.area or '—' }}</dd>
+      <dt class="col-sm-4">Tipo de vale</dt>
+      <dd class="col-sm-8">{{ salida.tipo_vale or 'normal' }}</dd>
+      <dt class="col-sm-4">Máquina</dt>
+      <dd class="col-sm-8">{{ salida.maquina or '—' }}</dd>
+      <dt class="col-sm-4">Recibió</dt>
+      <dd class="col-sm-8">{{ salida.responsable }}</dd>
+      <dt class="col-sm-4">Folio de vale</dt>
+      <dd class="col-sm-8">{{ salida.no_vale or '—' }}</dd>
+      <dt class="col-sm-4">Factura</dt>
+      <dd class="col-sm-8">{{ salida.no_factura or '—' }}</dd>
+      <dt class="col-sm-4">Remisión</dt>
+      <dd class="col-sm-8">{{ salida.no_remision or '—' }}</dd>
+      <dt class="col-sm-4">Registró</dt>
+      <dd class="col-sm-8">{{ salida.usuario_nombre or '—' }}</dd>
+      <dt class="col-sm-4">Observaciones</dt>
+      <dd class="col-sm-8">{{ salida.observaciones or '—' }}</dd>
+    </dl>
+  </div>
+</div>
+{% endblock %}

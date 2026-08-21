@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% block title %}Inventario actual{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-clipboard-data text-primary"></i> Inventario actual</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('reportes.inventario_csv') }}" class="btn btn-sm btn-success">
+      <i class="bi bi-file-earmark-excel"></i> Exportar CSV
+    </a>
+    <a href="{{ url_for('reportes.inventario_pdf') }}" class="btn btn-sm btn-danger" target="_blank">
+      <i class="bi bi-file-earmark-pdf"></i> Ver PDF
+    </a>
+  </div>
+</div>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th class="col-code">Código</th><th class="col-desc">Descripción</th><th class="col-medium">Categoría</th><th class="col-compact">Unidad</th>
+          <th class="col-medium">Ubicación</th><th class="col-compact">Stock actual</th><th class="col-compact">Stock mín.</th><th class="col-compact">Estado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in productos %}
+        <tr class="{{ 'table-warning' if p.stock_actual <= p.stock_minimo and p.stock_minimo > 0 }}">
+          <td class="font-monospace fw-semibold">{{ p.codigo }}</td>
+          <td>{{ p.descripcion }}</td>
+          <td><span class="badge bg-secondary">{{ p.categoria or '—' }}</span></td>
+          <td>{{ p.stock_actual|cantidad_unidad(p.unidad_medida) }}</td>
+          <td>{{ p.ubicacion or '—' }}</td>
+          <td class="{{ 'text-danger fw-bold' if p.stock_actual <= p.stock_minimo and p.stock_minimo > 0 else 'fw-semibold' }}">
+            {{ p.stock_actual }}
+          </td>
+          <td>{{ p.stock_minimo }}</td>
+          <td>
+            {% if p.stock_actual <= p.stock_minimo and p.stock_minimo > 0 %}
+            <span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> Bajo</span>
+            {% elif p.stock_actual == 0 %}
+            <span class="badge bg-secondary">Sin stock</span>
+            {% else %}
+            <span class="badge bg-success">OK</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.8rem">
+    {{ productos|length }} productos · Generado: {{ now }}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,590 @@
+{% extends 'base.html' %}
+{% block title %}Inventario{% endblock %}
+{% block content %}
+<style>
+  .stock-real-panel-row { display: none; }
+  .stock-real-panel-row.activo { display: table-row; }
+  .stock-real-panel {
+    display: flex;
+    gap: .65rem;
+    justify-content: flex-end;
+    align-items: center;
+    background: #f8f9fa;
+    border: 1px solid #d8dee6;
+    border-radius: 8px;
+    padding: .75rem;
+  }
+  .stock-real-panel input {
+    max-width: 9rem;
+    text-align: right;
+  }
+  .stock-real-guardado {
+    outline: 2px solid #198754;
+    outline-offset: -2px;
+    transition: outline-color .2s ease;
+  }
+</style>
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-box-seam"></i> Inventario</span>
+    <h1 class="page-title mb-1">Catalogo de productos</h1>
+    <div class="text-muted" style="font-size:.88rem">
+      Busca, cuenta, revisa stock y consulta movimientos desde una sola vista.
+    </div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('inventario.etiquetas') }}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-upc-scan"></i> Etiquetas
+    </a>
+    <a href="{{ url_for('inventario.duplicados') }}" class="btn btn-sm btn-outline-warning">
+      <i class="bi bi-copy"></i> Posibles duplicados
+    </a>
+    {% if session.get('rol') == 'admin' %}
+    <a href="{{ url_for('inventario.stock_caldera_2026') }}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-calculator"></i> Recalcular Caldera 2026
+    </a>
+    {% endif %}
+    {% if session.get('rol') == 'admin' %}
+    <a href="{{ url_for('inventario.nuevo') }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg"></i> Nuevo producto
+    </a>
+    <a href="{{ url_for('inventario.bajas') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-archive"></i> Historial de bajas
+    </a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="module-stats mb-3">
+  <div class="mini-stat">
+    <span class="mini-stat-label">Resultado filtrado</span>
+    <strong>{{ total_registros }}</strong>
+    <small>{{ registros_pagina }} en esta pagina</small>
+  </div>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado='faltante') }}">
+    <span class="mini-stat-label">Faltantes</span>
+    <strong class="text-danger">{{ total_faltantes }}</strong>
+    <small>marcados con X</small>
+  </a>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado='contado') }}">
+    <span class="mini-stat-label">Contados</span>
+    <strong class="text-success">{{ total_contados }}</strong>
+    <small>confirmados</small>
+  </a>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado='sin_revisar') }}">
+    <span class="mini-stat-label">Sin revisar</span>
+    <strong>{{ total_sin_revisar }}</strong>
+    <small>pendientes</small>
+  </a>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Stock bajo</span>
+    <strong class="text-warning">{{ total_stock_bajo }}</strong>
+    <small>con minimo activo</small>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-lg-4 col-md-6">
+        <label class="form-label">Producto</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+        <input type="text" name="q" class="form-control" placeholder="Codigo, barras, descripcion o categoria" value="{{ q }}">
+        </div>
+      </div>
+      <div class="col-lg-3 col-md-6">
+        <label class="form-label">Ubicacion o departamento</label>
+        <input type="text" name="q_ubi" class="form-control" placeholder="Ej: estante, area, maquina" value="{{ q_ubi }}">
+      </div>
+      <div class="col-lg-2 col-md-6">
+        <label class="form-label">Categoria</label>
+        <select name="cat" class="form-select">
+          <option value="">Todas</option>
+          {% for c in categorias %}
+          <option value="{{ c.id }}" {{ 'selected' if cat == c.id|string }}>{{ c.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-lg-2 col-md-6">
+        <label class="form-label">Conteo fisico</label>
+        <select name="estado" class="form-select">
+          <option value="">Todos</option>
+          <option value="sin_revisar" {{ 'selected' if estado == 'sin_revisar' }}>Sin revisar</option>
+          <option value="contado" {{ 'selected' if estado == 'contado' }}>Contados</option>
+          <option value="faltante" {{ 'selected' if estado == 'faltante' }}>Faltantes</option>
+        </select>
+      </div>
+      <div class="col-lg-1 col-md-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary w-100" title="Buscar">
+          <i class="bi bi-search"></i>
+        </button>
+        <a href="{{ url_for('inventario.index') }}" class="btn btn-outline-secondary" title="Limpiar">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if session.get('rol') == 'admin' and total_faltantes > 0 %}
+<div class="card mb-3 border-danger">
+  <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <strong><i class="bi bi-x-circle-fill text-danger"></i> Hay {{ total_faltantes }} producto(s) marcados como faltantes.</strong>
+      <div class="text-muted" style="font-size:.82rem">Puedes darlos de baja al terminar el conteo fisico.</div>
+    </div>
+    <form method="POST" action="{{ url_for('inventario.eliminar_faltantes') }}"
+          onsubmit="return confirm('Dar de baja TODOS los productos marcados con X ({{ total_faltantes }})? Se conserva su historial de entradas/salidas.');">
+      <button type="submit" class="btn btn-sm btn-danger">
+        <i class="bi bi-archive"></i> Dar de baja faltantes
+      </button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="card inventory-table-card">
+  <form method="POST" action="{{ url_for('inventario.baja_multiple') }}" id="form-baja-lote">
+    <div class="table-toolbar">
+      <div>
+        <strong>Productos activos</strong>
+        <span class="text-muted" style="font-size:.82rem">Pagina {{ pagina_actual }} de {{ total_paginas or 1 }}</span>
+      </div>
+      <div class="d-flex gap-2 align-items-center flex-wrap">
+        <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
+        {% if session.get('rol') == 'admin' %}
+        <button type="button" class="btn btn-sm btn-outline-success" id="btn-etiquetas-lote">
+          <i class="bi bi-upc-scan"></i> Etiquetas (<span id="contador-etiquetas">0</span>)
+        </button>
+        <button type="submit" class="btn btn-sm btn-outline-danger" id="btn-baja-lote">
+          <i class="bi bi-archive"></i> Dar de baja (<span id="contador-sel">0</span>)
+        </button>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover table-sticky-col align-middle mb-0 inventory-table">
+        <thead>
+          <tr>
+            {% if session.get('rol') == 'admin' %}
+            <th class="col-compact"><input type="checkbox" id="chk-todos" title="Seleccionar todos"></th>
+            {% endif %}
+            <th class="col-compact">Conteo</th>
+            <th class="col-code">Codigo</th>
+            <th class="col-code">Barras</th>
+            <th class="col-desc">Descripcion</th>
+            <th class="col-compact text-end">Stock</th>
+            <th class="col-compact">Unidad</th>
+            <th class="col-medium">Departamento</th>
+            <th class="col-medium">Categoria</th>
+            <th class="col-medium">Ubicacion</th>
+            <th class="col-compact text-end">Min.</th>
+            <th class="col-acciones text-end">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in productos %}
+          {% set stock_bajo = p.stock_actual <= p.stock_minimo and p.stock_minimo > 0 %}
+          <tr class="{{ 'row-stock-low' if stock_bajo }} fila-producto"
+              data-pid="{{ p.id }}" data-estado="{{ p.estado_fisico or '' }}">
+            {% if session.get('rol') == 'admin' %}
+            <td class="col-compact"><input type="checkbox" name="ids" value="{{ p.id }}" class="chk-producto"></td>
+            {% endif %}
+            <td class="col-compact text-nowrap">
+              <button type="button" class="btn btn-sm btn-count {{ 'btn-success' if p.estado_fisico == 'contado' else 'btn-outline-success' }}"
+                      data-estado="contado" title="Marcar como contado">
+                <i class="bi bi-check-lg"></i>
+              </button>
+              <button type="button" class="btn btn-sm btn-count {{ 'btn-danger' if p.estado_fisico == 'faltante' else 'btn-outline-danger' }}"
+                      data-estado="faltante" title="Marcar como faltante">
+                <i class="bi bi-x-lg"></i>
+              </button>
+            </td>
+            <td><span class="font-monospace fw-semibold">{{ p.codigo }}</span></td>
+            <td>
+              <span class="font-monospace text-success fw-semibold" style="font-size:.82rem">{{ p.codigo_barras or '-' }}</span>
+            </td>
+            <td class="col-wrap">
+              <div class="fw-semibold">{{ p.descripcion }}</div>
+              {% if stock_bajo %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> Stock bajo</span>
+              {% endif %}
+            </td>
+            <td class="col-compact text-end {{ 'text-danger fw-bold' if stock_bajo else 'fw-semibold' }}"
+                data-stock-cell="{{ p.id }}">
+              <span class="stock-actual-label">{{ p.stock_actual }}</span>
+              {% if p.unidad_compra and p.factor_conversion %}
+              <br><span class="text-muted fw-normal stock-conversion-label" style="font-size:.72rem"
+                        data-factor="{{ p.factor_conversion }}" data-unidad-compra="{{ p.unidad_compra|e }}">
+                = {{ (p.stock_actual * p.factor_conversion)|moneda }} {{ p.unidad_compra }}
+              </span>
+              {% endif %}
+            </td>
+            <td class="col-compact">{{ p.unidad_medida }}</td>
+            <td class="col-wrap" style="max-width:140px">
+              {{ p.departamento or p.departamento_nombre_historico or '-' }}
+              {% if not p.departamento and p.departamento_nombre_historico %}
+              <span class="badge bg-secondary" style="font-size:.6rem" title="Departamento historico">archivado</span>
+              {% endif %}
+            </td>
+            <td class="col-wrap" style="max-width:140px">
+              <span class="badge bg-light text-dark border" style="white-space:normal">{{ p.categoria or '-' }}</span>
+              {% if not p.categoria_id and p.categoria %}
+              <span class="badge bg-secondary" style="font-size:.6rem" title="Categoria historica">archivado</span>
+              {% endif %}
+            </td>
+            <td class="col-wrap" style="max-width:120px">{{ p.ubicacion or '-' }}</td>
+            <td class="col-compact text-end">{{ p.stock_minimo }}</td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm" role="group" aria-label="Acciones">
+                <a href="{{ url_for('inventario.etiquetas', ids=p.id) }}" class="btn btn-outline-success" title="Imprimir etiqueta">
+                  <i class="bi bi-upc-scan"></i>
+                </a>
+                <a href="{{ url_for('inventario.movimientos', pid=p.id) }}" class="btn btn-outline-secondary" title="Historial">
+                  <i class="bi bi-clock-history"></i>
+                </a>
+                {% if session.get('rol') == 'admin' %}
+                <a href="{{ url_for('inventario.editar', pid=p.id) }}" class="btn btn-outline-primary" title="Editar">
+                  <i class="bi bi-pencil"></i>
+                </a>
+                <button type="button" class="btn btn-outline-success btn-stock-real"
+                        title="Fijar stock real contado"
+                        data-pid="{{ p.id }}"
+                        data-codigo="{{ p.codigo|e }}"
+                        data-descripcion="{{ p.descripcion|e }}"
+                        data-stock="{{ p.stock_actual }}"
+                        data-unidad="{{ p.unidad_medida|e }}">
+                  <i class="bi bi-clipboard-check"></i>
+                </button>
+                <button type="button" class="btn btn-outline-danger btn-baja-rapida"
+                        title="Dar de baja" data-pid="{{ p.id }}">
+                  <i class="bi bi-archive"></i>
+                </button>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+          {% if session.get('rol') == 'admin' %}
+          <tr class="stock-real-panel-row" data-stock-editor="{{ p.id }}">
+            <td colspan="12">
+              <div class="stock-real-panel">
+                <div class="me-auto text-start">
+                  <div class="fw-semibold">Fijar stock real contado</div>
+                  <div class="text-muted" style="font-size:.82rem">
+                    {{ p.codigo }} · {{ p.descripcion }}
+                  </div>
+                </div>
+                <label class="form-label mb-0 fw-semibold" for="stock-real-inline-{{ p.id }}">Cantidad</label>
+                <input type="number" id="stock-real-inline-{{ p.id }}"
+                       class="form-control form-control-sm stock-real-inline-input"
+                       min="0" step="0.01" value="{{ p.stock_actual }}"
+                       aria-label="Stock real contado">
+                <span class="text-muted" style="font-size:.85rem">{{ p.unidad_medida }}</span>
+                <button type="button" class="btn btn-sm btn-success btn-stock-real-guardar"
+                        data-pid="{{ p.id }}" title="Guardar stock real">
+                  <i class="bi bi-check-lg"></i> Guardar
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-secondary btn-stock-real-cancelar"
+                        data-pid="{{ p.id }}" title="Cancelar">
+                  <i class="bi bi-x-lg"></i>
+                </button>
+                <span class="badge bg-success d-none stock-real-aviso">Guardado</span>
+              </div>
+            </td>
+          </tr>
+          {% endif %}
+          {% else %}
+          <tr><td colspan="11" class="empty-state">No se encontraron productos.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+</div>
+
+{% if total_paginas and total_paginas > 1 %}
+<div class="card mt-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div class="text-muted" style="font-size:.9rem">
+        Pagina <strong>{{ pagina_actual }}</strong> de <strong>{{ total_paginas }}</strong>
+        | <strong>{{ registros_pagina }}</strong> de <strong>{{ total_registros }}</strong> productos
+      </div>
+      <nav aria-label="Paginacion">
+        <ul class="pagination mb-0 flex-wrap">
+          {% if pagina_actual > 1 %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado=estado, pagina=1) }}"><i class="bi bi-chevron-double-left"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado=estado, pagina=pagina_actual-1) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
+          {% endif %}
+
+          {% set inicio = [1, pagina_actual - 2]|max %}
+          {% set fin = [total_paginas, pagina_actual + 2]|min %}
+          {% if inicio > 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+          {% for p in range(inicio, fin + 1) %}
+          {% if p == pagina_actual %}
+          <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+          {% else %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado=estado, pagina=p) }}">{{ p }}</a></li>
+          {% endif %}
+          {% endfor %}
+          {% if fin < total_paginas %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+
+          {% if pagina_actual < total_paginas %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado=estado, pagina=pagina_actual+1) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('inventario.index', q=q, q_ubi=q_ubi, cat=cat, estado=estado, pagina=total_paginas) }}"><i class="bi bi-chevron-double-right"></i></a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<form method="POST" id="form-baja-uno" style="display:none"></form>
+
+<div class="modal fade" id="modalStockReal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" id="form-stock-real">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="bi bi-clipboard-check text-success"></i> Fijar stock real</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <div class="fw-semibold" id="stock-real-producto"></div>
+            <div class="text-muted" id="stock-real-descripcion" style="font-size:.88rem"></div>
+            <div class="text-muted mt-1" style="font-size:.82rem">Stock actual en sistema: <strong id="stock-real-actual"></strong></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Stock real contado <span class="text-danger">*</span></label>
+            <div class="input-group">
+              <input type="number" name="stock_real" id="stock-real-input" class="form-control" min="0" step="0.01" required>
+              <span class="input-group-text" id="stock-real-unidad"></span>
+            </div>
+            <div class="form-text">Esto fija el stock actual como punto de partida y marca el producto como contado.</div>
+          </div>
+          <div class="mb-0">
+            <label class="form-label">Nota opcional</label>
+            <textarea name="motivo" class="form-control" rows="2" placeholder="Ej: Conteo fisico inicial"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-success">
+            <i class="bi bi-check-lg"></i> Guardar stock real
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+  const contenedor = document.body;
+  const modalStockRealEl = document.getElementById('modalStockReal');
+  const modalStockReal = modalStockRealEl ? new bootstrap.Modal(modalStockRealEl) : null;
+  const formStockReal = document.getElementById('form-stock-real');
+
+  function actualizarContador() {
+    const marcados = document.querySelectorAll('.chk-producto:checked').length;
+    const contador = document.getElementById('contador-sel');
+    const contadorEtiquetas = document.getElementById('contador-etiquetas');
+    const btnLote = document.getElementById('btn-baja-lote');
+    const btnEtiquetas = document.getElementById('btn-etiquetas-lote');
+    if (contador) contador.textContent = marcados;
+    if (contadorEtiquetas) contadorEtiquetas.textContent = marcados;
+    if (btnLote) btnLote.disabled = false;
+    if (btnEtiquetas) btnEtiquetas.disabled = false;
+  }
+
+  contenedor.addEventListener('change', function(e) {
+    if (e.target && e.target.id === 'chk-todos') {
+      document.querySelectorAll('.chk-producto').forEach(chk => chk.checked = e.target.checked);
+      actualizarContador();
+    } else if (e.target && e.target.classList.contains('chk-producto')) {
+      actualizarContador();
+    }
+  });
+
+  const formLote = document.getElementById('form-baja-lote');
+  const btnEtiquetasLote = document.getElementById('btn-etiquetas-lote');
+  if (btnEtiquetasLote) {
+    btnEtiquetasLote.addEventListener('click', function() {
+      const seleccionados = Array.from(document.querySelectorAll('.chk-producto:checked')).map(chk => chk.value);
+      if (seleccionados.length === 0) {
+        alert('Selecciona al menos un producto para imprimir etiquetas.');
+        return;
+      }
+      const params = new URLSearchParams();
+      seleccionados.forEach(id => params.append('ids', id));
+      window.location.href = `{{ url_for('inventario.etiquetas') }}?${params.toString()}`;
+    });
+  }
+  if (formLote) {
+    formLote.addEventListener('submit', function(e) {
+      const marcados = document.querySelectorAll('.chk-producto:checked').length;
+      if (marcados === 0) {
+        e.preventDefault();
+        alert('Selecciona al menos un producto con su casilla antes de dar de baja.');
+        return;
+      }
+      if (!confirm(`Dar de baja ${marcados} producto(s)? Se guardaran tu usuario y la fecha.`)) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  contenedor.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-baja-rapida');
+    if (!btn) return;
+    if (!confirm('Dar de baja este producto? Se guardaran tu usuario y la fecha.')) return;
+    const form = document.getElementById('form-baja-uno');
+    form.action = "{{ url_for('inventario.baja', pid=0) }}".replace('/0', '/' + btn.dataset.pid);
+    form.submit();
+  });
+
+  contenedor.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-stock-real');
+    if (!btn) return;
+    const pid = btn.dataset.pid;
+    document.querySelectorAll('.stock-real-panel-row.activo').forEach(editor => {
+      if (editor.dataset.stockEditor !== pid) editor.classList.remove('activo');
+    });
+    const editor = document.querySelector(`.stock-real-panel-row[data-stock-editor="${pid}"]`);
+    if (!editor) return;
+    const input = editor.querySelector('.stock-real-inline-input');
+    input.value = btn.dataset.stock || '0';
+    editor.classList.add('activo');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+  });
+
+  contenedor.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-stock-real-cancelar');
+    if (!btn) return;
+    const editor = document.querySelector(`.stock-real-panel-row[data-stock-editor="${btn.dataset.pid}"]`);
+    if (editor) editor.classList.remove('activo');
+  });
+
+  contenedor.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-stock-real-guardar');
+    if (!btn) return;
+    const pid = btn.dataset.pid;
+    const editor = document.querySelector(`.stock-real-panel-row[data-stock-editor="${pid}"]`);
+    const input = editor ? editor.querySelector('.stock-real-inline-input') : null;
+    if (!input) return;
+    const valor = input.value.trim();
+    if (valor === '' || Number(valor) < 0) {
+      alert('Captura un stock real valido.');
+      input.focus();
+      return;
+    }
+
+    btn.disabled = true;
+    fetch("{{ url_for('inventario.stock_real', pid=0) }}".replace('/0', '/' + pid), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: new URLSearchParams({stock_real: valor, motivo: 'Conteo fisico desde inventario'})
+    })
+    .then(r => r.text().then(texto => {
+      let data;
+      try {
+        data = JSON.parse(texto);
+      } catch (err) {
+        data = {ok: false, error: 'El servidor no respondio como se esperaba. Refresca la pagina e intenta de nuevo.'};
+      }
+      return {ok: r.ok, data};
+    }))
+    .then(({ok, data}) => {
+      if (!ok || !data.ok) {
+        alert(data.error || 'No se pudo guardar el stock real.');
+        return;
+      }
+      const fila = editor ? editor.previousElementSibling : null;
+      const stockCell = document.querySelector(`[data-stock-cell="${pid}"]`);
+      const stockLabel = stockCell ? stockCell.querySelector('.stock-actual-label') : null;
+      const conversion = stockCell ? stockCell.querySelector('.stock-conversion-label') : null;
+      const btnAbrir = fila ? fila.querySelector('.btn-stock-real') : null;
+      if (stockLabel) stockLabel.textContent = data.stock_label;
+      if (conversion) {
+        const factor = Number(conversion.dataset.factor || 0);
+        const unidadCompra = conversion.dataset.unidadCompra || '';
+        conversion.textContent = `= ${(Number(data.stock || 0) * factor).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${unidadCompra}`;
+      }
+      if (btnAbrir) btnAbrir.dataset.stock = data.stock_label;
+      if (fila) {
+        fila.dataset.estado = 'contado';
+        fila.classList.add('stock-real-guardado');
+        const btnOk = fila.querySelector('.btn-count[data-estado="contado"]');
+        const btnX = fila.querySelector('.btn-count[data-estado="faltante"]');
+        if (btnOk) btnOk.className = 'btn btn-sm btn-count btn-success';
+        if (btnX) btnX.className = 'btn btn-sm btn-count btn-outline-danger';
+        setTimeout(() => fila.classList.remove('stock-real-guardado'), 1600);
+      }
+      input.value = data.stock_label;
+      const aviso = editor.querySelector('.stock-real-aviso');
+      if (aviso) {
+        aviso.textContent = 'Guardado';
+        aviso.classList.remove('d-none');
+        setTimeout(() => aviso.classList.add('d-none'), 1800);
+      }
+      setTimeout(() => editor.classList.remove('activo'), 450);
+    })
+    .catch(() => alert('No se pudo guardar el stock real. Intenta de nuevo.'))
+    .finally(() => { btn.disabled = false; });
+  });
+
+  contenedor.addEventListener('keydown', function(e) {
+    if (!e.target.classList.contains('stock-real-inline-input')) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      e.target.closest('.stock-real-panel-row')?.querySelector('.btn-stock-real-guardar')?.click();
+    }
+    if (e.key === 'Escape') {
+      e.target.closest('.stock-real-panel-row')?.classList.remove('activo');
+    }
+  });
+
+  contenedor.addEventListener('click', function(e) {
+    const btn = e.target.closest('.btn-count');
+    if (!btn) return;
+    const fila = btn.closest('.fila-producto');
+    const pid = fila.dataset.pid;
+    const estadoActual = fila.dataset.estado;
+    const estadoClic = btn.dataset.estado;
+    const nuevoEstado = (estadoActual === estadoClic) ? 'limpiar' : estadoClic;
+
+    fetch("{{ url_for('inventario.marcar_estado', pid=0) }}".replace('/0', '/' + pid), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'estado=' + nuevoEstado
+    })
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      fila.dataset.estado = data.estado || '';
+      const btnOk = fila.querySelector('.btn-count[data-estado="contado"]');
+      const btnX = fila.querySelector('.btn-count[data-estado="faltante"]');
+      btnOk.className = 'btn btn-sm btn-count ' + (data.estado === 'contado' ? 'btn-success' : 'btn-outline-success');
+      btnX.className = 'btn btn-sm btn-count ' + (data.estado === 'faltante' ? 'btn-danger' : 'btn-outline-danger');
+    })
+    .catch(() => alert('No se pudo actualizar el estado. Intenta de nuevo.'));
+  });
+})();
+</script>
+{% endblock %}

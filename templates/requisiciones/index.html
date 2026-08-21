@@ -1,0 +1,384 @@
+{% extends 'base.html' %}
+{% block title %}Requisiciones{% endblock %}
+{% block content %}
+<style>
+  .folio-badge {
+    background: #fff7cc;
+    border: 1px solid #c9a227;
+    color: #3f2f00;
+    font-weight: 700;
+  }
+
+  .partidas-preview {
+    cursor: help;
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+  }
+
+  .requisition-complete-row > td {
+    background-color: #d9f7e4 !important;
+    border-color: #a7e8bd !important;
+  }
+
+  .requisition-complete-row:hover > td {
+    background-color: #c7f0d7 !important;
+  }
+
+  .requisition-review-row > td {
+    background-color: #fff1bf !important;
+    border-color: #f4d77d !important;
+  }
+
+  .requisition-review-row:hover > td {
+    background-color: #ffe7a3 !important;
+  }
+
+  .select-col {
+    width: 38px;
+    text-align: center;
+  }
+</style>
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-file-earmark-text"></i> Requisiciones</span>
+    <h1 class="page-title mb-1">Control de requisiciones</h1>
+    <div class="text-muted" style="font-size:.88rem">
+      Seguimiento de solicitudes, compras, facturas y recepciones.
+    </div>
+  </div>
+  <div class="quick-actions">
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalFolio">
+      <i class="bi bi-gear"></i> Corregir folio
+    </button>
+    <a href="{{ url_for('requisiciones.nuevo') }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-plus-lg"></i> Nueva requisicion
+    </a>
+  </div>
+</div>
+
+<div class="module-stats mb-3">
+  <div class="mini-stat">
+    <span class="mini-stat-label">Resultado</span>
+    <strong>{{ total_registros }}</strong>
+    <small>{{ registros_pagina }} en esta pagina</small>
+  </div>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado='pendiente') }}">
+    <span class="mini-stat-label">Pendientes</span>
+    <strong>{{ resumen_estados.pendiente }}</strong>
+    <small>sin recibir</small>
+  </a>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado='revision') }}">
+    <span class="mini-stat-label">Revision</span>
+    <strong class="text-warning">{{ resumen_estados.revision }}</strong>
+    <small>requieren validar</small>
+  </a>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado='parcial') }}">
+    <span class="mini-stat-label">Parciales</span>
+    <strong class="text-info">{{ resumen_estados.parcial }}</strong>
+    <small>recibidas parcial</small>
+  </a>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado='completa') }}">
+    <span class="mini-stat-label">Completas</span>
+    <strong class="text-success">{{ resumen_estados.completa }}</strong>
+    <small>cerradas</small>
+  </a>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-lg-2 col-md-4">
+        <label class="form-label">Folio</label>
+        <input type="text" name="folio" class="form-control" placeholder="AL-94" value="{{ q_folio }}">
+      </div>
+      <div class="col-lg-2 col-md-4">
+        <label class="form-label">Descripción</label>
+        <input type="text" name="descripcion" class="form-control" placeholder="Motivo" value="{{ q_descripcion }}">
+      </div>
+      <div class="col-lg-3 col-md-4">
+        <label class="form-label">Descripción partida</label>
+        <input type="text" name="partida" class="form-control" placeholder="Producto solicitado" value="{{ q_partida }}">
+      </div>
+      <div class="col-lg-2 col-md-4">
+        <label class="form-label">OC</label>
+        <input type="text" name="oc" class="form-control" placeholder="Orden compra" value="{{ q_oc }}">
+      </div>
+      <div class="col-lg-2 col-md-4">
+        <label class="form-label">Factura</label>
+        <input type="text" name="factura" class="form-control" placeholder="Factura" value="{{ q_factura }}">
+      </div>
+      <div class="col-lg-1 col-md-4">
+        <label class="form-label">Estado</label>
+        <select name="estado" class="form-select">
+          <option value="">Todos</option>
+          <option value="pendiente" {{ 'selected' if estado_f == 'pendiente' }}>Pendiente</option>
+          <option value="revision" {{ 'selected' if estado_f == 'revision' }}>Revision</option>
+          <option value="parcial" {{ 'selected' if estado_f == 'parcial' }}>Parcial</option>
+          <option value="completa" {{ 'selected' if estado_f == 'completa' }}>Completa</option>
+        </select>
+      </div>
+      <div class="col-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary w-100" title="Buscar">
+          <i class="bi bi-search"></i>
+        </button>
+        <a href="{{ url_for('requisiciones.index') }}" class="btn btn-outline-secondary" title="Limpiar">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card requisitions-table-card">
+  <div class="table-toolbar">
+    <div>
+      <strong>Requisiciones registradas</strong>
+      <span class="text-muted" style="font-size:.82rem">Pagina {{ pagina_actual }} de {{ total_paginas or 1 }}</span>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      <form method="POST" action="{{ url_for('requisiciones.marcar_completas') }}" id="form-completar-seleccionadas" class="d-inline preserve-scroll">
+        <button type="submit" class="btn btn-sm btn-outline-success" id="btn-completar-seleccionadas" disabled>
+          <i class="bi bi-check2-circle"></i> Completar seleccionadas
+          <span class="badge text-bg-success ms-1" id="contador-seleccionadas">0</span>
+        </button>
+      </form>
+      {% if filtros_activos %}
+      <span class="lab-pill"><i class="bi bi-funnel"></i> Filtro activo</span>
+      {% endif %}
+      <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 requisitions-table">
+      <thead>
+        <tr>
+          <th class="select-col">
+            <input type="checkbox" class="form-check-input" id="seleccionar-todas-requisiciones" title="Seleccionar todas">
+          </th>
+          <th class="col-code">Folio</th>
+          <th class="col-fecha">Fecha</th>
+          <th class="col-medium">Departamento</th>
+          <th class="col-medium">Solicitante</th>
+          <th class="col-desc">Descripción</th>
+          <th class="col-compact text-end">Partidas</th>
+          <th class="col-compact">OC</th>
+          <th class="col-compact">Factura</th>
+          <th class="col-compact">Estado</th>
+          <th class="col-acciones text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in requisiciones %}
+        <tr class="{% if r.estado_visible == 'completa' %}requisition-complete-row{% elif r.estado_visible == 'revision' %}requisition-review-row{% endif %}">
+          <td class="select-col">
+            {% if r.estado_visible != 'completa' %}
+            <input type="checkbox" class="form-check-input requisicion-check" value="{{ r.id }}" title="Seleccionar AL-{{ r.folio }}">
+            {% endif %}
+          </td>
+          <td><span class="badge folio-badge">AL-{{ r.folio }}</span></td>
+          <td>{{ r.fecha_requisicion or r.fecha[:10] }}</td>
+          <td class="col-wrap" style="max-width:150px">{{ r.departamento or '-' }}</td>
+          <td class="col-wrap" style="max-width:150px">{{ r.solicitante or '-' }}</td>
+          <td class="col-wrap"><div class="fw-semibold">{{ r.asunto or '-' }}</div></td>
+          <td class="text-end fw-semibold">
+            <span class="partidas-preview"
+                  data-bs-toggle="popover"
+                  data-bs-trigger="hover focus"
+                  data-bs-placement="left"
+                  data-bs-html="true"
+                  data-bs-title="Partidas AL-{{ r.folio }}"
+                  data-bs-content="{% for p in r.partidas_preview %}{{ p|e }}{% if not loop.last %}<br>{% endif %}{% endfor %}">
+              {{ r.num_items }}
+            </span>
+          </td>
+          <td>{{ r.orden_compra or '-' }}</td>
+          <td>{{ r.no_factura or '-' }}</td>
+          <td>
+            {% if r.estado == 'revision' %}
+              <span class="badge bg-warning text-dark"><i class="bi bi-eye"></i> Revision</span>
+            {% elif r.estado_calc == 'completa' or r.estado == 'completa' %}
+              <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Completa</span>
+            {% elif r.estado_calc == 'parcial' or r.estado == 'parcial' %}
+              <span class="badge bg-info text-white"><i class="bi bi-exclamation-circle-fill"></i> Parcial</span>
+            {% else %}
+              <span class="badge bg-secondary"><i class="bi bi-hourglass-end"></i> Pendiente</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Acciones">
+              <a href="{{ url_for('requisiciones.detalle', rid=r.id) }}" class="btn btn-outline-secondary" title="Detalle">
+                <i class="bi bi-eye"></i>
+              </a>
+              <a href="{{ url_for('requisiciones.editar', rid=r.id) }}" class="btn btn-outline-primary" title="Editar">
+                <i class="bi bi-pencil-square"></i>
+              </a>
+              <a href="{{ url_for('requisiciones.imprimir_hoja', rid=r.id, auto=1) }}" class="btn btn-outline-danger" title="Imprimir" target="_blank" rel="noopener">
+                <i class="bi bi-printer"></i>
+              </a>
+              {% if r.estado_visible != 'completa' %}
+              <form method="POST" action="{{ url_for('requisiciones.marcar_completa', rid=r.id) }}" class="d-inline preserve-scroll"
+                    onsubmit="return confirm('Marcar AL-{{ r.folio }} como completa?');">
+                <button type="submit" class="btn btn-outline-success" title="Marcar completa">
+                  <i class="bi bi-check2-circle"></i>
+                </button>
+              </form>
+              {% endif %}
+              <form method="POST" action="{{ url_for('requisiciones.eliminar', rid=r.id) }}" class="d-inline"
+                    onsubmit="return confirm('Se eliminara la informacion permanentemente. Seguro que deseas eliminar esta requisicion?');">
+                <button type="submit" class="btn btn-outline-danger" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" class="empty-state">No se encontraron requisiciones.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.82rem">{{ requisiciones|length }} registro(s) en esta pagina</div>
+</div>
+
+{% if total_paginas and total_paginas > 1 %}
+<div class="card mt-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div class="text-muted" style="font-size:.9rem">
+        Pagina <strong>{{ pagina_actual }}</strong> de <strong>{{ total_paginas }}</strong>
+        | <strong>{{ registros_pagina }}</strong> de <strong>{{ total_registros }}</strong> requisiciones
+      </div>
+      <nav aria-label="Paginacion">
+        <ul class="pagination mb-0 flex-wrap">
+          {% if pagina_actual > 1 %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado=estado_f, pagina=1) }}"><i class="bi bi-chevron-double-left"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado=estado_f, pagina=pagina_actual-1) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
+          {% endif %}
+
+          {% set inicio = [1, pagina_actual - 2]|max %}
+          {% set fin = [total_paginas, pagina_actual + 2]|min %}
+          {% if inicio > 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+          {% for p in range(inicio, fin + 1) %}
+          {% if p == pagina_actual %}
+          <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+          {% else %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado=estado_f, pagina=p) }}">{{ p }}</a></li>
+          {% endif %}
+          {% endfor %}
+          {% if fin < total_paginas %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+
+          {% if pagina_actual < total_paginas %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado=estado_f, pagina=pagina_actual+1) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado=estado_f, pagina=total_paginas) }}"><i class="bi bi-chevron-double-right"></i></a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="modalFolio" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('requisiciones.editar_folio') }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Corregir consecutivo de folio</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="font-size:.85rem">
+            Captura el ultimo folio real usado; el siguiente que se genere sera ese numero + 1.
+          </p>
+          <label class="form-label fw-semibold">Ultimo folio real usado</label>
+          <input type="number" name="folio_nuevo" class="form-control" required min="0" placeholder="Ej: 45">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+  document.querySelectorAll('[data-bs-toggle="popover"]').forEach((el) => {
+    new bootstrap.Popover(el, {
+      container: 'body',
+      sanitize: false
+    });
+  });
+
+  const scrollKey = 'erp_requisiciones_scroll_y';
+  const formCompletar = document.getElementById('form-completar-seleccionadas');
+  const btnCompletar = document.getElementById('btn-completar-seleccionadas');
+  const contadorSeleccionadas = document.getElementById('contador-seleccionadas');
+  const checkTodas = document.getElementById('seleccionar-todas-requisiciones');
+
+  function checksRequisiciones() {
+    return Array.from(document.querySelectorAll('.requisicion-check'));
+  }
+
+  function actualizarSeleccion() {
+    const checks = checksRequisiciones();
+    const seleccionadas = checks.filter(ch => ch.checked);
+    contadorSeleccionadas.textContent = seleccionadas.length;
+    btnCompletar.disabled = seleccionadas.length === 0;
+    if (checkTodas) {
+      checkTodas.checked = checks.length > 0 && seleccionadas.length === checks.length;
+      checkTodas.indeterminate = seleccionadas.length > 0 && seleccionadas.length < checks.length;
+    }
+  }
+
+  checkTodas?.addEventListener('change', () => {
+    checksRequisiciones().forEach(ch => ch.checked = checkTodas.checked);
+    actualizarSeleccion();
+  });
+
+  checksRequisiciones().forEach(ch => ch.addEventListener('change', actualizarSeleccion));
+
+  formCompletar?.addEventListener('submit', (e) => {
+    const seleccionadas = checksRequisiciones().filter(ch => ch.checked);
+    if (!seleccionadas.length) {
+      e.preventDefault();
+      return;
+    }
+    if (!confirm(`Marcar ${seleccionadas.length} requisición(es) como completas?`)) {
+      e.preventDefault();
+      return;
+    }
+    formCompletar.querySelectorAll('input[name="requisicion_ids"]').forEach(input => input.remove());
+    seleccionadas.forEach(ch => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'requisicion_ids';
+      input.value = ch.value;
+      formCompletar.appendChild(input);
+    });
+    sessionStorage.setItem(scrollKey, String(window.scrollY));
+  });
+
+  document.querySelectorAll('form.preserve-scroll').forEach(form => {
+    form.addEventListener('submit', () => {
+      sessionStorage.setItem(scrollKey, String(window.scrollY));
+    });
+  });
+
+  window.addEventListener('load', () => {
+    const y = sessionStorage.getItem(scrollKey);
+    if (y !== null) {
+      sessionStorage.removeItem(scrollKey);
+      setTimeout(() => window.scrollTo(0, Number(y) || 0), 0);
+    }
+  });
+</script>
+{% endblock %}

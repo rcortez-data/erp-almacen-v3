@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+{% block title %}Stock mensual completo{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-boxes"></i> Balance mensual</span>
+    <h1 class="page-title mb-1">Stock de todos los productos</h1>
+    <div class="text-muted">{{ total }} productos activos · consulta y auditoría en páginas de 100.</div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('balance.index', anio=anio, mes=mes) }}" class="btn btn-sm btn-outline-secondary">Vista por selección</a>
+    <a href="{{ url_for('balance.exportar_todos_csv', anio=anio, mes=mes) }}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV completo
+    </a>
+  </div>
+</div>
+
+<form method="GET" class="card filter-card mb-3">
+  <div class="card-body row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label">Mes</label>
+      <select name="mes" class="form-select">
+        {% for i in range(1,13) %}<option value="{{ i }}" {{ 'selected' if i == mes }}>{{ meses[i] }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Año</label>
+      <select name="anio" class="form-select">
+        {% for a in range(anio_actual-5, anio_actual+1) %}<option value="{{ a }}" {{ 'selected' if a == anio }}>{{ a }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Buscar producto</label>
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="Código o descripción">
+    </div>
+    <div class="col-md-2"><button class="btn btn-primary w-100">Consultar</button></div>
+  </div>
+</form>
+
+<div class="alert alert-info py-2">
+  La existencia final proviene de Productos. Las diferencias se corrigen mediante movimientos de ajuste auditados.
+</div>
+
+<div class="row g-2 mb-3">
+  <div class="col-md-3"><div class="card card-body py-2"><small>Productos activos</small><strong>{{ resumen_periodo.total }}</strong></div></div>
+  <div class="col-md-3"><div class="card card-body py-2"><small>Cerrados</small><strong class="text-success">{{ resumen_periodo.cerrados }}</strong></div></div>
+  <div class="col-md-3"><div class="card card-body py-2"><small>Pendientes</small><strong class="text-warning">{{ resumen_periodo.pendientes }}</strong></div></div>
+  <div class="col-md-3"><div class="card card-body py-2"><small>Estado del mes</small><strong class="{{ 'text-danger' if periodo and periodo.estado == 'cerrado' else 'text-success' }}">{{ 'CERRADO' if periodo and periodo.estado == 'cerrado' else 'ABIERTO' }}</strong></div></div>
+</div>
+
+{% if periodo and periodo.estado == 'cerrado' %}
+  {% if session.get('rol') == 'admin' %}
+  <form method="POST" action="{{ url_for('balance.reabrir_periodo') }}" class="card card-body mb-3">
+    <input type="hidden" name="anio" value="{{ anio }}"><input type="hidden" name="mes" value="{{ mes }}">
+    <div class="row g-2 align-items-end"><div class="col-md-9"><label class="form-label">Motivo obligatorio para reabrir</label><input name="motivo" minlength="8" required class="form-control"></div><div class="col-md-3"><button class="btn btn-warning w-100">Reabrir mes</button></div></div>
+  </form>
+  {% endif %}
+{% elif session.get('rol') in ('admin', 'almacen') %}
+  <form method="POST" action="{{ url_for('balance.cerrar_periodo') }}" class="text-end mb-3" onsubmit="return confirm('¿Cerrar y bloquear este mes? Los productos pendientes seguirán indicados en el reporte.');">
+    <input type="hidden" name="anio" value="{{ anio }}"><input type="hidden" name="mes" value="{{ mes }}">
+    <button class="btn btn-danger"><i class="bi bi-lock"></i> Cerrar y bloquear mes</button>
+  </form>
+{% endif %}
+
+<form method="POST">
+  <input type="hidden" name="anio" value="{{ anio }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+  <input type="hidden" name="pagina" value="{{ pagina }}">
+  <input type="hidden" name="q" value="{{ q }}">
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead><tr>
+          <th>Código</th><th>Descripción</th><th>Inicio del mes</th>
+          <th>Entradas</th><th>Salidas registradas</th><th>Existencia en Productos</th><th>Auditoría</th>
+        </tr></thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td class="font-monospace">{{ f.codigo }}<input type="hidden" name="producto_ids" value="{{ f.producto_id }}"></td>
+            <td>{{ f.descripcion }}<br><small class="text-muted">{{ f.unidad_medida }}</small></td>
+            <td>
+              <input type="number" step="0.01" min="0" class="form-control form-control-sm inicio-total"
+                     data-producto="{{ f.producto_id }}" data-unidad-stock="{{ f.unidad_medida }}" name="inicio_{{ f.producto_id }}" value="{{ f.existencia_inicio }}">
+              <small class="text-muted">{{ f.unidad_medida }}</small>
+              {% if f.unidad_compra and f.factor_conversion %}
+              <div class="input-group input-group-sm mt-1">
+                <input type="number" step="0.01" min="0" class="form-control balance-compra-total"
+                       name="inicio_compra_{{ f.producto_id }}"
+                       data-target="inicio"
+                       data-producto="{{ f.producto_id }}"
+                       data-factor="{{ f.factor_conversion }}"
+                       value="{{ f.existencia_inicio_compra if f.existencia_inicio_compra is not none else '' }}">
+                <span class="input-group-text">{{ f.unidad_compra }}</span>
+              </div>
+              {% endif %}
+            </td>
+            <td class="text-success">+{{ f.entradas_mes }}
+              {% if f.unidad_compra and f.entradas_mes_compra is not none %}
+              <br><small class="text-muted">= {{ f.entradas_mes_compra }} {{ f.unidad_compra }}</small>
+              {% endif %}
+            </td>
+            <td><input type="number" step="0.01" min="0" class="form-control form-control-sm salida-total"
+                       data-producto="{{ f.producto_id }}" data-entradas="{{ f.entradas_mes }}"
+                       data-unidad-stock="{{ f.unidad_medida }}"
+                       name="salidas_{{ f.producto_id }}" value="{{ f.salidas_manual if f.salidas_manual is not none else '' }}"
+                       placeholder="0">
+              {% if f.unidad_compra and f.factor_conversion %}
+              <div class="input-group input-group-sm mt-1">
+                <input type="number" step="0.01" min="0" class="form-control balance-compra-total"
+                       name="salidas_compra_{{ f.producto_id }}"
+                       data-target="salidas"
+                       data-producto="{{ f.producto_id }}"
+                       data-factor="{{ f.factor_conversion }}"
+                       value="{{ f.salidas_manual_compra if f.salidas_manual_compra is not none else '' }}"
+                       placeholder="{{ f.unidad_compra }}">
+                <span class="input-group-text">{{ f.unidad_compra }}</span>
+              </div>
+              {% endif %}
+            </td>
+            <td class="fw-bold text-primary" id="final-total-{{ f.producto_id }}">{{ f.existencia_final if f.existencia_final is not none else '—' }}</td>
+            <td>{% if f.salidas_manual is not none %}<span class="badge bg-success">Cerrado</span>{% else %}<span class="badge bg-warning text-dark">Pendiente</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="card-footer d-flex justify-content-between align-items-center">
+      <span>Página {{ pagina }} de {{ total_paginas }}</span>
+      {% if not periodo or periodo.estado != 'cerrado' %}<button class="btn btn-success"><i class="bi bi-check-lg"></i> Guardar esta página</button>{% endif %}
+    </div>
+  </div>
+</form>
+
+<nav class="mt-3"><ul class="pagination justify-content-center">
+  <li class="page-item {{ 'disabled' if pagina <= 1 }}"><a class="page-link" href="{{ url_for('balance.todos_productos', anio=anio, mes=mes, q=q, pagina=pagina-1) }}">Anterior</a></li>
+  <li class="page-item disabled"><span class="page-link">{{ pagina }} / {{ total_paginas }}</span></li>
+  <li class="page-item {{ 'disabled' if pagina >= total_paginas }}"><a class="page-link" href="{{ url_for('balance.todos_productos', anio=anio, mes=mes, q=q, pagina=pagina+1) }}">Siguiente</a></li>
+</ul></nav>
+
+<script>
+function actualizarTotal(pid) {
+  const inicio = document.querySelector(`.inicio-total[data-producto="${pid}"]`);
+  const salida = document.querySelector(`.salida-total[data-producto="${pid}"]`);
+  const final = document.getElementById(`final-total-${pid}`);
+  if (!inicio || !salida || !final || salida.value === '') return;
+  const resultado = Number(inicio.value) + Number(salida.dataset.entradas) - Number(salida.value);
+  const compraInput = document.querySelector(`.balance-compra-total[data-producto="${pid}"]`);
+  const factor = compraInput ? Number(compraInput.dataset.factor || 0) : 0;
+  const unidadCompra = compraInput?.parentElement?.querySelector('.input-group-text')?.textContent || '';
+  const unidadStock = salida.dataset.unidadStock || '';
+  const resultadoStock = resultado.toFixed(2);
+  const resultadoCompra = (resultado * factor).toFixed(2);
+  if (factor && unidadCompra) {
+    final.innerHTML = `${resultadoCompra} ${unidadCompra}<br><span class="fw-normal" style="font-size:.72rem">= ${resultadoStock} ${unidadStock}</span>`;
+  } else {
+    final.textContent = `${resultadoStock} ${unidadStock}`;
+  }
+  final.classList.toggle('text-danger', resultado < 0);
+  final.classList.toggle('text-primary', resultado >= 0);
+}
+document.querySelectorAll('.inicio-total, .salida-total').forEach(el => {
+  el.addEventListener('input', () => actualizarTotal(el.dataset.producto));
+});
+document.querySelectorAll('.balance-compra-total').forEach(input => {
+  input.addEventListener('input', () => {
+    const factor = Number(input.dataset.factor || 0);
+    if (!factor || input.value === '') return;
+    const targetClass = input.dataset.target === 'inicio' ? 'inicio-total' : 'salida-total';
+    const destino = document.querySelector(`.${targetClass}[data-producto="${input.dataset.producto}"]`);
+    if (!destino) return;
+    const convertido = Number(input.value) / factor;
+    const unidadStock = destino.dataset.unidadStock || '';
+    destino.value = unidadStock.toUpperCase().includes('PIEZA') ? String(Math.round(convertido)) : convertido.toFixed(4);
+    actualizarTotal(input.dataset.producto);
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>{{ titulo_reporte }}</title>
+<style>
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10px; color: #1f2937; margin: 1.2cm; }
+  .header { border-bottom: 3px solid #2563eb; padding-bottom: 10px; margin-bottom: 16px; }
+  h1 { color: #123b68; font-size: 20px; letter-spacing: .2px; margin: 0 0 5px; }
+  .meta { color: #64748b; font-size: 10px; margin: 0; }
+  table { width: 100%; border-collapse: collapse; border: 2px solid #526b84; border-radius: 5px; overflow: hidden; }
+  th { background: #123b68; color: #fff; padding: 8px 7px; text-align: left; font-size: 9px; text-transform: uppercase; letter-spacing: .25px; border: 1.5px solid #081f38; }
+  td { padding: 7px; border: 1.5px solid #8da1b5; }
+  tr:nth-child(even) td { background: #fff; }
+  .txt-r { text-align: right; }
+  .footer { margin-top: 16px; font-size: 9px; color: #64748b; border-top: 1px solid #dbe4ef; padding-top: 8px; }
+  .badge { background: #eee; color: #555; border-radius: 3px; padding: 1px 5px; font-size: 8px; }
+  tfoot td { font-weight: bold; border: 1.5px solid #526b84; border-top: 2px solid #123b68; background: #fff; }
+  @media print { button { display: none; } }
+</style>
+</head>
+<body>
+<button onclick="window.print()" style="margin-bottom:12px;padding:4px 14px;cursor:pointer">
+  Imprimir / Guardar PDF
+</button>
+<div class="header">
+  <h1>{{ titulo_reporte }}</h1>
+  <div class="meta">Periodo: {{ meses[mes] }} {{ anio }}</div>
+</div>
+<table>
+  <thead>
+    <tr>
+      <th>Descripcion</th>
+      <th>Conversion</th>
+      <th class="txt-r">Existencia inicial</th>
+      <th class="txt-r">Entradas mes</th>
+      <th class="txt-r">Salidas mes</th>
+      <th class="txt-r">Existencia final</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in filas %}
+    <tr>
+      <td>{{ f.descripcion }}</td>
+      <td>
+        {% if f.unidad_compra and f.factor_conversion %}
+          1 {{ f.unidad_medida|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_compra) }}
+        {% else %}—{% endif %}
+      </td>
+      <td class="txt-r">
+        {{ f.existencia_inicio }} {{ f.unidad_medida }}
+        {% if f.unidad_compra and f.factor_conversion %}<br><span style="color:#888;font-size:9px">= {{ f.existencia_inicio_compra|moneda }} {{ f.unidad_compra }}</span>{% endif %}
+      </td>
+      <td class="txt-r">
+        {{ f.entradas_mes }} {{ f.unidad_medida }}
+        {% if f.unidad_compra and f.entradas_mes_compra is not none %}<br><span style="color:#888;font-size:9px">= {{ f.entradas_mes_compra|moneda }} {{ f.unidad_compra }}</span>{% endif %}
+      </td>
+      <td class="txt-r">
+        {{ f.salidas_registradas if f.salidas_registradas is not none else '-' }} {{ f.unidad_medida }}
+        {% if f.unidad_compra and f.factor_conversion and f.salidas_registradas_compra is not none %}<br><span style="color:#888;font-size:9px">= {{ f.salidas_registradas_compra|moneda }} {{ f.unidad_compra }}</span>{% endif %}
+      </td>
+      <td class="txt-r">
+        {{ f.existencia_final if f.existencia_final is not none else 'pendiente' }} {{ f.unidad_medida }}
+        {% if f.unidad_compra and f.factor_conversion and f.existencia_final_compra is not none %}<br><span style="color:#888;font-size:9px">= {{ f.existencia_final_compra|moneda }} {{ f.unidad_compra }}</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</body>
+</html>

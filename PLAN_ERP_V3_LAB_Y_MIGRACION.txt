@@ -1,0 +1,128 @@
+PLAN ERP ALMACEN V3 LAB Y MIGRACION
+===================================
+
+Sistema actual en uso:
+C:\Users\Almacen\Desktop\ERP\erp_almacen_v2
+
+Ruta recomendada para trabajar la nueva version de laboratorio:
+C:\Users\Almacen\Desktop\ERP\erp_almacen_v3_lab
+
+Regla principal:
+No modificar directamente el sistema actual para cambios grandes de UX/UI,
+base de datos o arquitectura. Primero trabajar en erp_almacen_v3_lab,
+probar por partes y despues implementar al sistema real cuando este validado.
+
+
+FASE 1 - COPIA DE LABORATORIO
+-----------------------------
+Objetivo:
+Crear una copia completa del sistema actual en:
+C:\Users\Almacen\Desktop\ERP\erp_almacen_v3_lab
+
+Acciones:
+- Copiar codigo, templates, rutas, requirements y base de datos.
+- Confirmar que arranca separado del sistema actual.
+- Usar otro puerto si hace falta, por ejemplo http://127.0.0.1:5001.
+- Probar login, dashboard, inventario, entradas, salidas y reportes.
+
+Resultado esperado:
+Tener un sistema laboratorio que se pueda romper, corregir y mejorar sin
+afectar el sistema real.
+
+
+FASE 2 - REDISENO UX/UI
+-----------------------
+Objetivo:
+Modernizar la experiencia visual sin cambiar todavia la logica principal.
+
+Acciones:
+- Redisenar menu lateral, encabezados, tarjetas y tablas.
+- Mejorar formularios de captura para Entradas, Salidas, Inventario y Requisiciones.
+- Hacer filtros mas claros y faciles de usar.
+- Mejorar vistas de impresion donde aplique.
+- Mantener Bootstrap para reducir riesgo.
+
+Resultado esperado:
+Sistema mas moderno, mas facil de leer y mas rapido para capturar.
+
+
+FASE 3 - ORDENAR BASE DE DATOS
+------------------------------
+Objetivo:
+Preparar el sistema para cambiar de SQLite a una base mas robusta.
+
+Acciones:
+- Separar mejor las consultas SQL del codigo de pantallas.
+- Documentar tablas principales y relaciones.
+- Revisar campos historicos, catalogos, usuarios, departamentos y permisos.
+- Preparar una capa de acceso a datos para que no todo dependa directo de sqlite3.
+
+Resultado esperado:
+Que el sistema siga funcionando con SQLite, pero quede listo para migrar a PostgreSQL.
+
+
+FASE 4 - MIGRACION A POSTGRESQL
+-------------------------------
+Objetivo:
+Probar una base robusta para varios usuarios y crecimiento de la empresa.
+
+Opciones:
+1. Local:
+   PostgreSQL instalado en una PC/servidor dentro de la empresa.
+   Ventaja: funciona en red local y no depende tanto de internet.
+
+2. Online:
+   PostgreSQL en nube.
+   Ventaja: acceso desde mas lugares y respaldos mas profesionales.
+   Requiere internet estable y buena seguridad.
+
+Acciones:
+- Crear esquema PostgreSQL.
+- Migrar copia de datos desde SQLite.
+- Probar entradas, salidas, requisiciones, reportes y usuarios.
+- Comparar totales contra SQLite para validar que no se perdio informacion.
+
+Resultado esperado:
+Sistema probado contra PostgreSQL antes de decidir si se implementa.
+
+
+FASE 5 - MULTIDEPARTAMENTOS Y PERMISOS
+--------------------------------------
+Objetivo:
+Preparar el ERP para conectar mas areas de la empresa.
+
+Acciones:
+- Crear roles reales: admin, almacen, compras, produccion, mantenimiento, consulta.
+- Agregar permisos por modulo.
+- Ligar movimientos, requisiciones y reportes a departamentos.
+- Crear reportes por area/departamento.
+- Mantener historial de actividad por usuario.
+
+Resultado esperado:
+Base para que otros departamentos usen el mismo sistema sin mezclar permisos ni datos.
+
+
+FASE 6 - IMPLEMENTACION AL SISTEMA REAL
+---------------------------------------
+Objetivo:
+Pasar cambios validados desde v3_lab al sistema que se usa diariamente.
+
+Acciones:
+- Hacer respaldo completo del sistema real.
+- Aplicar cambios ya probados.
+- Validar con datos reales.
+- Confirmar que los usuarios pueden trabajar normalmente.
+- Mantener plan de rollback por si algo falla.
+
+Resultado esperado:
+Sistema real actualizado sin improvisar y con respaldo.
+
+
+NOTAS DE TRABAJO
+----------------
+- Cada cambio importante debe probarse primero en erp_almacen_v3_lab.
+- No borrar respaldos sin autorizacion.
+- Antes de tocar la base real, hacer copia de almacen.db.
+- Cada fase debe cerrarse con pruebas y revision manual.
+- Si se migra a PostgreSQL, SQLite debe conservarse como respaldo historico.
+

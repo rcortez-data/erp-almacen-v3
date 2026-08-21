@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Etiquetas de entradas</title>
+  <style>
+    @page {
+      size: 101mm 76mm;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #e5e7eb;
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #fff;
+      border-bottom: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+
+    .toolbar button,
+    .toolbar a {
+      border: 1px solid #9ca3af;
+      background: #fff;
+      color: #111827;
+      border-radius: 6px;
+      padding: 7px 11px;
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .toolbar button.primary {
+      border-color: #15803d;
+      background: #15803d;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .toolbar form {
+      display: inline;
+    }
+
+    .sheet {
+      position: relative;
+      width: 101mm;
+      min-height: 76mm;
+      margin: 12px auto;
+      background: #fff;
+      page-break-after: always;
+      overflow: hidden;
+      font-weight: 900;
+      text-transform: uppercase;
+    }
+
+    .field {
+      position: absolute;
+      min-width: 0;
+    }
+
+    .label {
+      display: inline-block;
+      padding-bottom: .4mm;
+      border-bottom: .35mm solid #111827;
+      font-size: 8.2px;
+      line-height: 1;
+      letter-spacing: .3px;
+      color: #111827;
+      white-space: nowrap;
+    }
+
+    .value {
+      margin-top: 3.1mm;
+      font-size: var(--value-font-size, 12.5px);
+      line-height: 1.08;
+      color: #111827;
+      overflow-wrap: anywhere;
+    }
+
+    .code { left: 5mm; top: 6mm; width: 42mm; }
+    .qty { left: 5mm; top: 24mm; width: 34mm; }
+    .rem { left: 5mm; top: 39mm; width: 42mm; }
+    .prov { left: 5mm; top: 62mm; width: 42mm; }
+    .prod { left: 52mm; top: 6mm; width: 44mm; }
+    .loc { left: 52mm; top: 43mm; width: 44mm; }
+    .maq { left: 52mm; top: 57mm; width: 44mm; }
+
+    .code .value {
+      font-size: 15px;
+    }
+
+    .qty .value {
+      font-size: 14px;
+    }
+
+    .prod .value {
+      font-size: var(--desc-font-size, 15px);
+      line-height: 1.1;
+      max-height: 42mm;
+      overflow: hidden;
+    }
+
+    .loc .value,
+    .maq .value {
+      font-size: 13px;
+      max-height: 10mm;
+      overflow: hidden;
+    }
+
+    .prov .label {
+      font-size: 7px;
+    }
+
+    .prov .value {
+      margin-top: 1.6mm;
+      font-size: 8px;
+      max-height: 5.5mm;
+      overflow: hidden;
+    }
+
+    .doc-line {
+      display: block;
+      font-size: 10.5px;
+      line-height: 1.12;
+    }
+
+    .empty {
+      width: 101mm;
+      margin: 20px auto;
+      background: #fff;
+      padding: 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      .sheet {
+        margin: 0;
+        width: 101mm;
+        height: 76mm;
+        min-height: 76mm;
+        page-break-after: always;
+      }
+
+      .sheet:last-child {
+        page-break-after: auto;
+      }
+
+      .empty {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div>
+      <strong>{{ etiquetas|length }}</strong> etiqueta(s) de entrada
+    </div>
+    <div>
+      <a href="{{ url_for('entradas.index') }}">Regresar</a>
+      <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}">
+        {% for key, value in request.args.items() %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        {% for value in request.args.getlist('ids') %}
+        <input type="hidden" name="ids" value="{{ value }}">
+        {% endfor %}
+        <input type="hidden" name="volver" value="{{ request.full_path }}">
+        <button type="submit" class="primary">Imprimir {{ printer_name }}</button>
+      </form>
+      <button type="button" onclick="window.print()">Vista navegador</button>
+    </div>
+  </div>
+
+  {% if etiquetas %}
+    {% for e in etiquetas %}
+    <section class="sheet">
+      <div>
+        <div class="field code">
+          <div class="label">Codigo sistema</div>
+          <div class="value">{{ e.codigo or '---' }}</div>
+        </div>
+        <div class="field qty">
+          <div class="label">Cantidad</div>
+          <div class="value">{{ e.cantidad_label }} {{ e.unidad_label or '' }}</div>
+        </div>
+
+        <div class="field rem">
+          <div class="label">Factura/Remision</div>
+          <div class="value">
+            {% for doc in e.documentos_label %}
+            <span class="doc-line">{{ doc }}</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="field prod">
+          <div class="label">Producto</div>
+          <div class="value desc js-fit-desc">{{ e.descripcion or '---' }}</div>
+        </div>
+
+        <div class="field loc">
+          <div class="label">Ubicacion</div>
+          <div class="value js-fit-desc">{{ e.ubicacion or '---' }}</div>
+        </div>
+
+        <div class="field maq">
+          <div class="label">Categoria o maquina</div>
+          <div class="value js-fit-desc">{{ e.maquina_categoria_label }}</div>
+        </div>
+
+        <div class="field prov">
+          <div class="label">Proveedor</div>
+          <div class="value">{{ e.proveedor_nombre or '---' }}</div>
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+  {% else %}
+  <div class="empty">
+    No hay entradas para imprimir. Filtra por factura, remision, OC o selecciona una entrada.
+  </div>
+  {% endif %}
+
+  <script>
+    function ajustarDescripciones() {
+      document.querySelectorAll('.js-fit-desc').forEach((el) => {
+        let size = el.closest('.prod') ? 15 : 13;
+        el.style.setProperty('--desc-font-size', `${size}px`);
+        while ((el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) && size > 8) {
+          size -= 0.5;
+          el.style.setProperty('--desc-font-size', `${size}px`);
+        }
+      });
+    }
+
+    window.addEventListener('load', ajustarDescripciones);
+    window.addEventListener('beforeprint', ajustarDescripciones);
+  </script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Áreas{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-diagram-3 text-primary"></i> Áreas</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('vales_montacargas.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i> Volver a Vales
+    </a>
+    <a href="{{ url_for('areas.nuevo') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg"></i> Nueva área
+    </a>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="Buscar por nombre..." value="{{ q }}">
+      </div>
+      <input type="hidden" name="ver" value="{{ ver }}">
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button>
+        <a href="{{ url_for('areas.index', ver=ver) }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+      </div>
+      <div class="col-auto ms-auto btn-group btn-group-sm" role="group">
+        <a href="{{ url_for('areas.index', ver='activos', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='activos' else 'btn-outline-primary' }}">
+          Activas ({{ total_activos }})
+        </a>
+        <a href="{{ url_for('areas.index', ver='archivados', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='archivados' else 'btn-outline-primary' }}">
+          Archivadas ({{ total_archivados }})
+        </a>
+        <a href="{{ url_for('areas.index', ver='todos', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='todos' else 'btn-outline-primary' }}">
+          Todas
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th class="col-desc">Área</th>
+          <th class="col-compact">Estado</th>
+          <th class="col-acciones">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in areas %}
+        <tr class="{{ '' if a.activo else 'table-secondary text-muted' }}">
+          <td class="fw-semibold">{{ a.nombre }}</td>
+          <td>
+            {% if a.activo %}
+            <span class="badge bg-success">Activa</span>
+            {% else %}
+            <span class="badge bg-secondary">Inactiva</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('areas.editar', aid=a.id) }}"
+               class="btn btn-sm btn-outline-primary py-0 px-2">
+              <i class="bi bi-pencil"></i> Editar
+            </a>
+            {% if session.get('rol') == 'admin' %}
+            <button type="button"
+                    class="btn btn-sm btn-outline-danger py-0 px-2 btn-eliminar-uno"
+                    data-action="{{ url_for('areas.eliminar', aid=a.id) }}"
+                    data-nombre="{{ a.nombre }}">
+              <i class="bi bi-trash"></i> Eliminar
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="text-center text-muted py-4">No se encontraron áreas.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.8rem">{{ areas|length }} áreas</div>
+</div>
+
+<form id="form-eliminar-uno" method="POST" action=""></form>
+
+<script>
+  const formEliminarUno = document.getElementById('form-eliminar-uno');
+  document.querySelectorAll('.btn-eliminar-uno').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const nombre = this.dataset.nombre;
+      if (!confirm(`¿Eliminar el área "${nombre}" permanentemente? Los vales ya registrados conservarán su nombre en el historial.`)) return;
+      formEliminarUno.action = this.dataset.action;
+      formEliminarUno.submit();
+    });
+  });
+</script>
+{% endblock %}

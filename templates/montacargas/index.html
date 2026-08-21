@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+{% block title %}Montacargas{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-truck-front text-primary"></i> Montacargas</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('vales_montacargas.index') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-arrow-left"></i> Volver a Vales
+    </a>
+    <a href="{{ url_for('montacargas.nuevo') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg"></i> Nuevo montacargas
+    </a>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="Buscar por nombre o número..." value="{{ q }}">
+      </div>
+      <input type="hidden" name="ver" value="{{ ver }}">
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button>
+        <a href="{{ url_for('montacargas.index', ver=ver) }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+      </div>
+      <div class="col-auto ms-auto btn-group btn-group-sm" role="group">
+        <a href="{{ url_for('montacargas.index', ver='activos', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='activos' else 'btn-outline-primary' }}">
+          Activos ({{ total_activos }})
+        </a>
+        <a href="{{ url_for('montacargas.index', ver='archivados', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='archivados' else 'btn-outline-primary' }}">
+          Archivados ({{ total_archivados }})
+        </a>
+        <a href="{{ url_for('montacargas.index', ver='todos', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='todos' else 'btn-outline-primary' }}">
+          Todos
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          <th class="col-desc">Montacargas</th>
+          <th class="col-compact">Estado</th>
+          <th class="col-acciones">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in montacargas %}
+        <tr class="{{ '' if m.activo else 'table-secondary text-muted' }}">
+          <td class="fw-semibold">{{ m.nombre }}</td>
+          <td>
+            {% if m.activo %}
+            <span class="badge bg-success">Activo</span>
+            {% else %}
+            <span class="badge bg-secondary">Inactivo</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('montacargas.editar', mid=m.id) }}"
+               class="btn btn-sm btn-outline-primary py-0 px-2">
+              <i class="bi bi-pencil"></i> Editar
+            </a>
+            {% if session.get('rol') == 'admin' %}
+            <button type="button"
+                    class="btn btn-sm btn-outline-danger py-0 px-2 btn-eliminar-uno"
+                    data-action="{{ url_for('montacargas.eliminar', mid=m.id) }}"
+                    data-nombre="{{ m.nombre }}">
+              <i class="bi bi-trash"></i> Eliminar
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="3" class="text-center text-muted py-4">No se encontraron montacargas.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.8rem">{{ montacargas|length }} montacargas</div>
+</div>
+
+<form id="form-eliminar-uno" method="POST" action=""></form>
+
+<script>
+  const formEliminarUno = document.getElementById('form-eliminar-uno');
+  document.querySelectorAll('.btn-eliminar-uno').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const nombre = this.dataset.nombre;
+      if (!confirm(`¿Eliminar el montacargas "${nombre}" permanentemente? Los vales ya registrados conservarán su nombre en el historial.`)) return;
+      formEliminarUno.action = this.dataset.action;
+      formEliminarUno.submit();
+    });
+  });
+</script>
+{% endblock %}

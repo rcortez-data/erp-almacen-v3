@@ -1,0 +1,311 @@
+{% extends 'base.html' %}
+{% block title %}Balance mensual{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-calculator"></i> Balance</span>
+    <h1 class="page-title mb-1">Stock mensual de productos</h1>
+    <div class="text-muted" style="font-size:.88rem">Productos es la existencia oficial; este módulo audita diferencias contra movimientos.</div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('balance.todos_productos', anio=anio, mes=mes) }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-boxes"></i> Todos los productos
+    </a>
+    <a href="{{ url_for('balance.administrar_bloques') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-pencil"></i> Administrar bloques
+    </a>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <div class="row g-3 mb-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Mes</label>
+        <select name="mes" form="form-periodo" class="form-select" onchange="document.getElementById('form-periodo').submit()">
+          {% for i in range(1,13) %}
+          <option value="{{ i }}" {{ 'selected' if i == mes }}>{{ meses[i] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Año</label>
+        <select name="anio" form="form-periodo" class="form-select" onchange="document.getElementById('form-periodo').submit()">
+          {% for a in range(anio_actual-3, anio_actual+1) %}
+          <option value="{{ a }}" {{ 'selected' if a == anio }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <div class="alert alert-secondary py-2 mb-0" style="font-size:.82rem">
+          <i class="bi bi-info-circle"></i> La existencia final mostrada es la de <b>Productos</b>. Las diferencias se corrigen con entradas o salidas de ajuste auditadas.
+        </div>
+      </div>
+    </div>
+
+    <hr>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <label class="form-label fw-semibold mb-0">📦 Cargar bloques predefinidos</label>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-md-6">
+        <form method="POST" action="{{ url_for('balance.cargar_bloque', bloque_id=1) }}">
+          <input type="hidden" name="anio" value="{{ anio }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <button type="submit" class="btn btn-outline-primary w-100" title="Carga 16 productos para fabricación">
+            <i class="bi bi-box2"></i> Insumos Producción (16 art.)
+          </button>
+        </form>
+      </div>
+      <div class="col-md-6">
+        <form method="POST" action="{{ url_for('balance.cargar_bloque', bloque_id=2) }}">
+          <input type="hidden" name="anio" value="{{ anio }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <button type="submit" class="btn btn-outline-success w-100" title="Carga 16 productos para calderas">
+            <i class="bi bi-gear"></i> Insumos Caldera (16 art.)
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <hr>
+    <label class="form-label fw-semibold">Agregar producto al balance</label>
+    <form method="POST" id="form-balance">
+      <div class="row g-2 mb-2">
+        <div class="col-md-8 position-relative">
+          <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
+                 placeholder="Busca por código o descripción, ej: tornillo 1/4">
+          <input type="hidden" name="producto_id" id="producto_id">
+          <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+               style="z-index:20; max-height:280px; overflow-y:auto; display:none;"></div>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" name="accion" value="agregar_producto" id="btn-agregar" class="btn btn-primary w-100">
+            <i class="bi bi-plus-lg"></i> Agregar
+          </button>
+        </div>
+        {% if filas %}
+        <div class="col-md-2">
+          <button type="submit" name="accion" value="limpiar_seleccion" class="btn btn-outline-danger w-100"
+                  onclick="return confirm('¿Quitar todos los productos de esta selección?')">
+            <i class="bi bi-x-lg"></i> Limpiar
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<form method="GET" id="form-periodo"></form>
+
+{% if filas %}
+<form method="POST">
+  <input type="hidden" name="mes" value="{{ mes }}">
+  <input type="hidden" name="anio" value="{{ anio }}">
+  <div class="card">
+    <div class="card-header py-3 d-flex justify-content-between align-items-center">
+      <h2 class="panel-title mb-0">Balance de {{ meses[mes] }} {{ anio }}</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="{{ url_for('balance.imprimir', anio=anio, mes=mes, tipo=tipo_reporte, productos=filas|map(attribute='producto_id')|join(',')) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-printer"></i> Imprimir selección
+        </a>
+      </div>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle reports-table">
+        <thead>
+          <tr>
+            <th class="col-code">Código</th><th class="col-desc">Descripción</th>
+            <th>Conversión</th>
+            <th>Existencia inicial</th><th>Entradas del mes</th>
+            <th>Salidas registradas</th>
+            <th>Existencia final</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td class="font-monospace">{{ f.codigo }}</td>
+            <td>{{ f.descripcion }}</td>
+            <td class="text-muted" style="white-space:nowrap;font-size:.78rem">
+              {% if f.unidad_compra and f.factor_conversion %}
+                1 {{ f.unidad_medida|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_compra) }}
+              {% else %}—{% endif %}
+            </td>
+            <td style="min-width:145px">
+              {{ f.existencia_inicio }}
+              <span class="text-muted" style="font-size:.72rem">{{ f.unidad_medida }}</span>
+              {% if f.unidad_compra and f.factor_conversion %}
+              <div class="input-group input-group-sm mt-1">
+                <input type="number" step="0.01" min="0" name="inicio_compra_{{ f.producto_id }}"
+                       class="form-control balance-compra"
+                       data-target="inicio"
+                       data-producto="{{ f.producto_id }}"
+                       data-factor="{{ f.factor_conversion }}"
+                       value="{{ f.existencia_inicio_compra if f.existencia_inicio_compra is not none else '' }}"
+                       aria-label="Existencia inicial en {{ f.unidad_compra }} de {{ f.codigo }}">
+                <span class="input-group-text">{{ f.unidad_compra }}</span>
+              </div>
+              <span class="text-muted" style="font-size:.72rem">1 {{ f.unidad_medida }} = {{ f.factor_conversion }} {{ f.unidad_compra }}</span>
+              {% endif %}
+              {% if f.inicio_guardado %}
+              <span class="badge bg-success" style="font-size:.65rem">punto de partida guardado</span>
+              {% elif f.inicio_es_estimado %}
+              <span class="badge bg-warning text-dark" style="font-size:.65rem" title="No hay cierre anterior; revisa y captura el dato correcto">capturar/revisar</span>
+              {% else %}
+              <span class="badge bg-info text-dark" style="font-size:.65rem">cierre anterior</span>
+              {% endif %}
+            </td>
+            <td class="text-success">+{{ f.entradas_mes|cantidad_unidad(f.unidad_medida) }}
+              {% if f.unidad_compra and f.entradas_mes_compra is not none %}<br><span class="text-muted" style="font-size:.72rem">= {{ f.entradas_mes_compra }} {{ f.unidad_compra }}</span>{% endif %}
+            </td>
+            <td>
+              {{ f.salidas_registradas|cantidad_unidad(f.unidad_medida) }}
+            </td>
+            <td id="final-{{ f.producto_id }}" class="fw-bold text-primary final-balance"
+                data-factor="{{ f.factor_conversion or '' }}"
+                data-unidad-stock="{{ f.unidad_medida }}"
+                data-unidad-compra="{{ f.unidad_compra or '' }}">
+              {{ f.existencia_final|cantidad_unidad(f.unidad_medida) }}
+              {% if f.existencia_final is not none and f.unidad_compra and f.factor_conversion %}
+              <br><span class="fw-normal" style="font-size:.72rem">= {{ f.existencia_final_compra|moneda }} {{ f.unidad_compra }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1"
+                      onclick="document.getElementById('quitar-producto-id').value='{{ f.producto_id }}'; document.getElementById('form-quitar-oculto').submit();">
+                <i class="bi bi-x"></i>
+              </button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="fw-bold">
+            <td colspan="8" class="text-end">Total salidas manuales:</td>
+            <td class="text-danger">
+              {{ total_consumo }}
+              {% if total_consumo_compra %}
+              <br><span class="fw-normal" style="font-size:.72rem">= {{ total_consumo_compra|moneda }} KG</span>
+              {% endif %}
+            </td>
+            <td>Stock final total: {{ total_existencia_final }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    <div class="card-footer">
+      <span class="text-muted" style="font-size:.85rem">Las correcciones se registran desde Entradas/Salidas como movimiento de ajuste.</span>
+    </div>
+  </div>
+</form>
+{% else %}
+<div class="card"><div class="card-body text-center text-muted py-5">
+  Agrega productos para armar el balance de {{ meses[mes] }} {{ anio }}.
+</div></div>
+{% endif %}
+
+<form method="POST" action="{{ url_for('balance.quitar') }}" id="form-quitar-oculto" style="display:none">
+  <input type="hidden" name="producto_id" id="quitar-producto-id">
+  <input type="hidden" name="anio" value="{{ anio }}">
+  <input type="hidden" name="mes" value="{{ mes }}">
+</form>
+
+<script>
+  document.querySelectorAll('.salida-manual').forEach(input => {
+    const actualizarFinal = () => {
+      const salida = input.value === '' ? null : Number(input.value);
+      const inicioInput = document.querySelector(`.inicio-mes[data-producto="${input.dataset.producto}"]`);
+      const destino = document.getElementById(input.dataset.finalId);
+      if (!destino || !inicioInput || salida === null || Number.isNaN(salida)) return;
+      const final = Number(inicioInput.value) + Number(input.dataset.entradas) - salida;
+      const factor = Number(destino.dataset.factor || 0);
+      const unidadStock = destino.dataset.unidadStock || '';
+      const unidadCompra = destino.dataset.unidadCompra || '';
+      const finalStock = final.toFixed(2);
+      const finalCompra = (final * factor).toFixed(2);
+      if (factor && unidadCompra) {
+        destino.innerHTML = `<span class="final-compra">${finalCompra} ${unidadCompra}</span><br><span class="fw-normal final-stock" style="font-size:.72rem">= ${finalStock} ${unidadStock}</span>`;
+      } else {
+        destino.innerHTML = `<span class="final-stock">${finalStock} ${unidadStock}</span>`;
+      }
+      destino.classList.toggle('text-danger', final < 0);
+      destino.classList.toggle('text-primary', final >= 0);
+      const diff = document.getElementById(input.dataset.diffId);
+      if (diff) {
+        const diferencia = salida - Number(input.dataset.vales || 0);
+        diff.textContent = `${diferencia.toFixed(2)} ${unidadStock}`;
+        diff.classList.toggle('text-danger', diferencia > 0);
+        diff.classList.toggle('text-success', diferencia < 0);
+        diff.classList.toggle('text-muted', diferencia === 0);
+      }
+    };
+    input.addEventListener('input', actualizarFinal);
+    document.querySelector(`.inicio-mes[data-producto="${input.dataset.producto}"]`)
+      ?.addEventListener('input', actualizarFinal);
+  });
+
+  document.querySelectorAll('.balance-compra').forEach(input => {
+    input.addEventListener('input', () => {
+      const factor = Number(input.dataset.factor || 0);
+      if (!factor || input.value === '') return;
+      const producto = input.dataset.producto;
+      const targetClass = input.dataset.target === 'inicio' ? 'inicio-mes' : 'salida-manual';
+      const destino = document.querySelector(`.${targetClass}[data-producto="${producto}"]`);
+      if (!destino) return;
+      const unidadStock = destino.dataset.unidadStock || '';
+      const convertido = Number(input.value) / factor;
+      destino.value = unidadStock.toUpperCase().includes('PIEZA') ? String(Math.round(convertido)) : convertido.toFixed(4);
+      destino.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  });
+
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoIdInput = document.getElementById('producto_id');
+  let debounceTimer = null;
+
+  buscador.addEventListener('input', function() {
+    productoIdInput.value = '';
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { resultados.style.display = 'none'; return; }
+    debounceTimer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          if (data.length === 0) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}`;
+              item.addEventListener('click', () => {
+                buscador.value = `${p.codigo} — ${p.descripcion}`;
+                productoIdInput.value = p.id;
+                resultados.style.display = 'none';
+              });
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!resultados.contains(e.target) && e.target !== buscador) resultados.style.display = 'none';
+  });
+
+  document.getElementById('btn-agregar').addEventListener('click', function(e) {
+    if (!productoIdInput.value) {
+      e.preventDefault();
+      alert('Selecciona un producto de la lista de resultados.');
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Movimientos — {{ producto.codigo }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-clock-history text-primary"></i> Historial de movimientos</h1>
+  <a href="{{ url_for('inventario.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <div class="row">
+      <div class="col-md-3"><small class="text-muted">Código</small><div class="fw-bold font-monospace">{{ producto.codigo }}</div></div>
+      <div class="col-md-5"><small class="text-muted">Descripción</small><div>{{ producto.descripcion }}</div></div>
+      <div class="col-md-2"><small class="text-muted">Unidad</small><div>{{ producto.unidad_medida }}</div></div>
+      <div class="col-md-2"><small class="text-muted">Stock actual</small><div class="fw-bold text-primary">{{ producto.stock_actual }}</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header py-2"><strong><i class="bi bi-arrow-down-circle text-success"></i> Entradas</strong></div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Folio</th><th>Cantidad</th><th>Factura</th><th>Remisión</th><th>Fecha</th></tr></thead>
+          <tbody>
+            {% for e in entradas %}
+            <tr>
+              <td><span class="badge bg-success">{{ e.folio }}</span></td>
+              <td class="text-success fw-bold">+{{ e.cantidad }}</td>
+              <td>{{ e.no_factura or '—' }}</td>
+              <td>{{ e.no_remision or '—' }}</td>
+              <td>{{ e.fecha[:10] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted">Sin entradas</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-header py-2"><strong><i class="bi bi-arrow-up-circle text-warning"></i> Salidas</strong></div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+          <thead><tr><th>Folio</th><th>Cantidad</th><th>Recibió</th><th>Fecha</th></tr></thead>
+          <tbody>
+            {% for s in salidas %}
+            <tr>
+              <td><span class="badge bg-warning text-dark">{{ s.folio }}</span></td>
+              <td class="text-danger fw-bold">-{{ s.cantidad }}</td>
+              <td>{{ s.responsable }}</td>
+              <td>{{ s.fecha[:10] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">Sin salidas</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.secret_key
+almacen*.db
+flask_session/
+logs/
+backups_db/
+exports/
+*.zip
+ORDENES DE COMPRA/
+*.xlsm

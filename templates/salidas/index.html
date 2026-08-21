@@ -1,0 +1,243 @@
+{% extends 'base.html' %}
+{% block title %}Salidas de material{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-arrow-up-circle"></i> Salidas</span>
+    <h1 class="page-title mb-1">Salidas de material</h1>
+    <div class="text-muted" style="font-size:.88rem">
+      Consulta vales, responsables, areas y material entregado.
+    </div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('salidas.nuevo') }}" class="btn btn-sm btn-warning">
+      <i class="bi bi-plus-lg"></i> Registrar salida
+    </a>
+    <a href="{{ url_for('salidas.consumo_mensual') }}" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-fire"></i> Consumo físico mensual
+    </a>
+  </div>
+</div>
+
+<div class="module-stats mb-3">
+  <div class="mini-stat">
+    <span class="mini-stat-label">Registros</span>
+    <strong>{{ total_registros }}</strong>
+    <small>{{ registros_pagina }} en esta pagina</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Cantidad salida</span>
+    <strong class="text-danger">{{ total_cantidad|moneda }}</strong>
+    <small>{{ 'filtrado' if filtro_activo else 'total de consulta' }}</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Vales</span>
+    <strong>{{ total_vales }}</strong>
+    <small>folios distintos</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Ajustes</span>
+    <strong>{{ total_ajustes }}</strong>
+    <small>movimientos de ajuste</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Pagina</span>
+    <strong>{{ pagina_actual }}</strong>
+    <small>de {{ total_paginas or 1 }}</small>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-xl-3 col-md-6">
+        <label class="form-label">Producto o folio</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" name="q" class="form-control" placeholder="Folio, codigo, barras, producto" value="{{ q }}">
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-6">
+        <label class="form-label">Recibio</label>
+        <input type="text" name="q_resp" class="form-control" placeholder="Nombre" value="{{ q_resp }}">
+      </div>
+      <div class="col-xl-2 col-md-6">
+        <label class="form-label">Area</label>
+        <select name="q_area" class="form-select">
+          <option value="">Todas</option>
+          {% for area in areas_lista %}
+          <option value="{{ area.nombre }}" {{ 'selected' if q_area == area.nombre }}>{{ area.nombre }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-xl-2 col-md-6">
+        <label class="form-label">Vale / documento</label>
+        <input type="text" name="q_vale" class="form-control" placeholder="Vale, factura, remision, maquina" value="{{ q_vale }}">
+      </div>
+      <div class="col-xl-1 col-md-6">
+        <label class="form-label">Desde</label>
+        <input type="date" name="fecha_ini" class="form-control" value="{{ fecha_ini }}">
+      </div>
+      <div class="col-xl-1 col-md-6">
+        <label class="form-label">Hasta</label>
+        <input type="date" name="fecha_fin" class="form-control" value="{{ fecha_fin }}">
+      </div>
+      <div class="col-xl-1 col-md-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary w-100" title="Buscar">
+          <i class="bi bi-search"></i>
+        </button>
+        <a href="{{ url_for('salidas.index') }}" class="btn btn-outline-secondary" title="Limpiar">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card exits-table-card">
+  <div class="table-toolbar">
+    <div>
+      <strong>Vales y salidas registradas</strong>
+      <span class="text-muted" style="font-size:.82rem">Pagina {{ pagina_actual }} de {{ total_paginas or 1 }}</span>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      {% if filtro_activo %}
+      <span class="lab-pill"><i class="bi bi-funnel"></i> Filtro activo</span>
+      {% endif %}
+      <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 exits-table">
+      <thead>
+        <tr>
+          <th class="col-code">Folio</th>
+          <th class="col-code">Codigo</th>
+          <th class="col-desc">Descripcion</th>
+          <th class="col-compact text-end">Cantidad</th>
+          <th class="col-medium">Area</th>
+          <th class="col-medium">Maquina</th>
+          <th class="col-medium">Recibio</th>
+          <th class="col-compact">Vale</th>
+          <th class="col-compact">Factura/Rem.</th>
+          <th class="col-medium">Usuario</th>
+          <th class="col-fecha">Fecha</th>
+          <th class="col-acciones text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in salidas %}
+        <tr>
+          <td>
+            <span class="badge bg-warning text-dark">{{ s.folio }}</span>
+            {% if s.tipo_movimiento == 'ajuste' %}<span class="badge bg-dark">Ajuste</span>{% endif %}
+          </td>
+          <td class="font-monospace fw-semibold">
+            {{ s.codigo }}
+            {% if s.codigo_barras %}
+            <br><span class="text-success" style="font-size:.72rem">{{ s.codigo_barras }}</span>
+            {% endif %}
+          </td>
+          <td class="col-wrap">
+            <div class="fw-semibold">{{ s.descripcion }}</div>
+          </td>
+          <td class="text-end fw-bold text-danger">
+            -{{ s.cantidad|cantidad_unidad(s.unidad_medida) }}
+            {% if s.unidad_compra and s.factor_conversion %}
+            <br><span class="text-muted fw-normal" style="font-size:.72rem">
+              = {{ (s.cantidad * s.factor_conversion)|moneda }} {{ s.unidad_compra }}
+            </span>
+            {% endif %}
+          </td>
+          <td class="col-wrap" style="max-width:160px">{{ s.area or '-' }}</td>
+          <td class="col-wrap" style="max-width:150px">{{ s.maquina or '-' }}</td>
+          <td class="col-wrap" style="max-width:170px">{{ s.responsable }}</td>
+          <td>{{ s.no_vale or '-' }}</td>
+          <td>
+            {% if s.no_factura %}<div><strong>F:</strong> {{ s.no_factura }}</div>{% endif %}
+            {% if s.no_remision %}<div><strong>R:</strong> {{ s.no_remision }}</div>{% endif %}
+            {% if not s.no_factura and not s.no_remision %}-{% endif %}
+          </td>
+          <td>{{ s.usuario_nombre or '-' }}</td>
+          <td>{{ (s.fecha_vale or s.fecha[:10])|fecha_vale }}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Acciones">
+              <a href="{{ url_for('salidas.detalle', sid=s.id) }}" class="btn btn-outline-secondary" title="Detalle">
+                <i class="bi bi-eye"></i>
+              </a>
+              <a href="{{ url_for('salidas.editar', sid=s.id) }}" class="btn btn-outline-primary" title="Editar">
+                <i class="bi bi-pencil-square"></i>
+              </a>
+              <form method="POST" action="{{ url_for('salidas.eliminar', sid=s.id) }}" class="d-inline"
+                    onsubmit="return confirm('Eliminar esta salida? Se revertira el stock que desconto. Esta accion no se puede deshacer.');">
+                <button type="submit" class="btn btn-outline-danger" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="12" class="empty-state">No se encontraron registros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.82rem">
+    <div class="d-flex justify-content-between flex-wrap gap-2">
+      <span>{{ salidas|length }} registro(s) en esta pagina</span>
+      {% if filtro_activo %}
+      <span>
+        Cantidad total filtrada: <strong class="text-danger">{{ total_cantidad|moneda }}</strong>
+        &nbsp;|&nbsp; Vales: <strong>{{ total_vales }}</strong>
+        &nbsp;|&nbsp; Ajustes: <strong>{{ total_ajustes }}</strong>
+      </span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if total_paginas and total_paginas > 1 %}
+<div class="card mt-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div class="text-muted" style="font-size:.9rem">
+        Pagina <strong>{{ pagina_actual }}</strong> de <strong>{{ total_paginas }}</strong>
+        | <strong>{{ registros_pagina }}</strong> de <strong>{{ total_registros }}</strong> registros
+      </div>
+      <nav aria-label="Paginacion">
+        <ul class="pagination mb-0 flex-wrap">
+          {% if pagina_actual > 1 %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=1) }}"><i class="bi bi-chevron-double-left"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=pagina_actual-1) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
+          {% endif %}
+
+          {% set inicio = [1, pagina_actual - 2]|max %}
+          {% set fin = [total_paginas, pagina_actual + 2]|min %}
+          {% if inicio > 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+          {% for p in range(inicio, fin + 1) %}
+          {% if p == pagina_actual %}
+          <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+          {% else %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=p) }}">{{ p }}</a></li>
+          {% endif %}
+          {% endfor %}
+          {% if fin < total_paginas %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+
+          {% if pagina_actual < total_paginas %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=pagina_actual+1) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=total_paginas) }}"><i class="bi bi-chevron-double-right"></i></a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
