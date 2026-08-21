@@ -1,0 +1,20 @@
+cd "C:\Users\Almacen\Desktop"
+git clone https://github.com/rcortez-data/erp-almacen-v3.git
+
+
+
+
+luego de ejecutar estos comandos, usa:
+
+
+		git pull
+
+este funciona para traer cambios aplicados en el trabajo o en casa y poder llevar los cambios al trabajo o casa.
+
+
+
+Despues para guardar cambios es:
+
+git add .
+git commit -m "Descripcion del cambio"
+git push
