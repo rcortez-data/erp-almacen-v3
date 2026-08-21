@@ -103,4 +103,6 @@ DEPARTAMENTOS = sorted([
     'Comedor',
     'Aduana',
     'Montacargas',
+    'Edificios',
+    
 ], key=str.lower)
