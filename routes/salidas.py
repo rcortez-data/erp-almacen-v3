@@ -353,7 +353,7 @@ def nuevo():
             conn.close()
             return redirect(url_for('salidas.nuevo'))
 
-        elif accion == 'agregar_documento':
+        elif accion in ('agregar_documento', 'agregar_documento_seleccionados'):
             documento_tipo = request.form.get('documento_tipo')
             documento_valor = (request.form.get('documento_valor') or '').strip()
             columnas = {'oc': 'e.orden_compra', 'factura': 'e.no_factura', 'remision': 'e.no_remision'}
