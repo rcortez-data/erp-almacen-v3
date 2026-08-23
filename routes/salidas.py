@@ -346,6 +346,9 @@ def nuevo():
                         'factor_conversion': prod['factor_conversion'],
                         'cantidad': cantidad,
                         'stock_actual': prod['stock_actual'],
+                        'orden_compra': doc.get('orden_compra', ''),
+                        'no_factura': doc.get('no_factura', ''),
+                        'no_remision': doc.get('no_remision', ''),
                     })
                     session[CART_KEY] = cart
                     session.modified = True
@@ -372,6 +375,12 @@ def nuevo():
                          p.unidad_medida, p.unidad_compra, p.factor_conversion, p.stock_actual
                 ORDER BY p.codigo
             """, (documento_valor,)).fetchall()
+            documento_item = conn.execute(f"""
+                SELECT MAX(NULLIF(TRIM(e.orden_compra), '')) AS orden_compra,
+                       MAX(NULLIF(TRIM(e.no_factura), '')) AS no_factura,
+                       MAX(NULLIF(TRIM(e.no_remision), '')) AS no_remision
+                FROM entradas e WHERE TRIM(UPPER({columna}))=TRIM(UPPER(?))
+            """, (documento_valor,)).fetchone()
             if not filas:
                 flash(f'No se encontraron productos activos para {documento_tipo.upper()} {documento_valor}.', 'warning')
             else:
@@ -397,6 +406,9 @@ def nuevo():
                         'unidad_medida': prod['unidad_medida'], 'unidad_compra': prod['unidad_compra'],
                         'factor_conversion': prod['factor_conversion'], 'cantidad': cantidad_seleccionada,
                         'stock_actual': prod['stock_actual'],
+                        'orden_compra': documento_item['orden_compra'] if documento_item else None,
+                        'no_factura': documento_item['no_factura'] if documento_item else None,
+                        'no_remision': documento_item['no_remision'] if documento_item else None,
                     })
                     existentes.add(prod['producto_id'])
                     agregados += 1
@@ -463,7 +475,9 @@ def nuevo():
                         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (folio, item['producto_id'], item['cantidad'], doc.get('responsable'), area,
                           doc.get('no_vale'), doc.get('tipo_vale') or 'normal', doc.get('maquina') or None,
-                          doc.get('orden_compra') or None, doc.get('no_factura') or None, doc.get('no_remision') or None,
+                          item.get('orden_compra') or doc.get('orden_compra') or None,
+                          item.get('no_factura') or doc.get('no_factura') or None,
+                          item.get('no_remision') or doc.get('no_remision') or None,
                           tipo_mov, session['user_id'], doc.get('observaciones'), fecha_sql, fecha_vale))
                     conn.execute(
                         "UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
