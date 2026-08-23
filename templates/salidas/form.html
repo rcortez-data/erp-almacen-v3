@@ -21,7 +21,7 @@
       <div class="card-header py-3"><h2 class="panel-title"><i class="bi bi-receipt"></i> Datos del vale</h2></div>
       <div class="card-body">
         <div class="row g-3 mb-3">
-          <div class="col-md-6">
+          <div class="col-md-3">
             <label class="form-label fw-semibold">Recibió <span class="text-danger">*</span></label>
             <input type="text" name="responsable" id="responsable" class="form-control" tabindex="1"
                    value="{{ doc.get('responsable','') }}" placeholder="Nombre completo de quien recibe"
@@ -83,6 +83,10 @@
             <label class="form-label fw-semibold">Fecha del vale</label>
             <input type="date" name="fecha_vale" class="form-control" value="{{ doc.get('fecha_vale') or ahora[:10] }}">
             <div class="form-text">Esta fecha si se puede cambiar.</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Orden de compra</label>
+            <input type="text" name="orden_compra" class="form-control" value="{{ doc.get('orden_compra','') }}" placeholder="Opcional">
           </div>
           <div class="col-md-3">
             <label class="form-label fw-semibold">Factura</label>

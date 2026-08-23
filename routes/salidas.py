@@ -316,6 +316,7 @@ def nuevo():
             'es_mantenimiento': es_mantenimiento,
             'es_maquinados': es_maquinados,
             'maquina': request.form.get('maquina', ''),
+            'orden_compra': request.form.get('orden_compra', ''),
             'no_factura': request.form.get('no_factura', ''),
             'no_remision': request.form.get('no_remision', ''),
             'tipo_movimiento': request.form.get('tipo_movimiento', 'normal'),
@@ -450,11 +451,11 @@ def nuevo():
                     conn.execute("""
                         INSERT INTO salidas
                         (folio, producto_id, cantidad, responsable, area, no_vale, tipo_vale, maquina,
-                         no_factura, no_remision, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                         orden_compra, no_factura, no_remision, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (folio, item['producto_id'], item['cantidad'], doc.get('responsable'), area,
                           doc.get('no_vale'), doc.get('tipo_vale') or 'normal', doc.get('maquina') or None,
-                          doc.get('no_factura') or None, doc.get('no_remision') or None,
+                          doc.get('orden_compra') or None, doc.get('no_factura') or None, doc.get('no_remision') or None,
                           tipo_mov, session['user_id'], doc.get('observaciones'), fecha_sql, fecha_vale))
                     conn.execute(
                         "UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
@@ -480,6 +481,7 @@ def nuevo():
                     'maquina': doc.get('maquina') if doc.get('tipo_vale') == 'maquinados' else '',
                     'no_factura': '',
                     'no_remision': '',
+                    'orden_compra': '',
                     'fecha_vale': fecha_para_siguiente,
                 }
                 flash(f"{len(folios_generados)} salida(s) registradas correctamente (vale {doc.get('no_vale')}).", 'success')

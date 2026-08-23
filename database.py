@@ -432,7 +432,7 @@ def migrar_esquema():
                     ('area', 'TEXT'), ('folio_excel', 'TEXT'),
                     ('es_servicio', 'INTEGER DEFAULT 0'), ('concepto_servicio', 'TEXT'),
                     ('tipo_vale', 'TEXT'), ('maquina', 'TEXT'),
-                    ('no_factura', 'TEXT'), ('no_remision', 'TEXT'),
+                    ('orden_compra', 'TEXT'), ('no_factura', 'TEXT'), ('no_remision', 'TEXT'),
                     ('fecha_vale', 'TEXT')],
         'proveedores': [('nombre_comercial', 'TEXT')],
         'vales_montacargas': [('area_id', 'INTEGER REFERENCES areas(id)'),
