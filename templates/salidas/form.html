@@ -487,7 +487,12 @@
   tipoDocumento.addEventListener('change', () => valorDocumento.dispatchEvent(new Event('input')));
   function seleccionarDocumento(valor) {
     valorDocumento.value = valor; sugerenciasDocumento.style.display='none';
-    fetch(`{{ url_for('salidas.api_documento_productos') }}?tipo=${tipoDocumento.value}&valor=${encodeURIComponent(valor)}`).then(r=>r.json()).then(data=>{
+    fetch(`{{ url_for('salidas.api_documento_productos') }}?tipo=${tipoDocumento.value}&valor=${encodeURIComponent(valor)}`).then(r=>r.json()).then(respuesta=>{
+      const data = respuesta.productos || [];
+      const documentos = respuesta.documentos || {};
+      if (documentos.no_factura) document.querySelector('input[name="no_factura"]').value = documentos.no_factura;
+      if (documentos.no_remision) document.querySelector('input[name="no_remision"]').value = documentos.no_remision;
+      listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
       listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
       data.forEach(p=>{ const row=document.createElement('label'); row.className='d-block border-bottom py-1'; row.innerHTML=`<input type="checkbox" class="producto-documento me-2" value="${p.id}"> <span class="font-monospace">${p.codigo}</span> — ${p.descripcion} <small class="text-muted">(${p.cantidad} ${p.unidad_medida})</small>`; listaProductosDocumento.appendChild(row); });
       productosDocumento.style.display=data.length?'block':'none';

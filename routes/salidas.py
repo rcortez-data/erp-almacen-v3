@@ -620,8 +620,15 @@ def api_documento_productos():
         GROUP BY p.id, p.codigo, p.descripcion, p.unidad_medida, p.stock_actual
         ORDER BY p.codigo
     """, (valor,)).fetchall()
+    documentos = conn.execute(f"""
+        SELECT MAX(NULLIF(TRIM(e.orden_compra), '')) AS orden_compra,
+               MAX(NULLIF(TRIM(e.no_factura), '')) AS no_factura,
+               MAX(NULLIF(TRIM(e.no_remision), '')) AS no_remision
+        FROM entradas e
+        WHERE TRIM(UPPER({columna}))=TRIM(UPPER(?))
+    """, (valor,)).fetchone()
     conn.close()
-    return jsonify([dict(fila) for fila in filas])
+    return jsonify({'productos': [dict(fila) for fila in filas], 'documentos': dict(documentos or {})})
 
 
 @salidas_bp.route('/detalle/<int:sid>')
