@@ -108,9 +108,10 @@
           <div class="p-3 pt-0">
           <div class="row g-2">
             <div class="col-md-4"><select name="documento_tipo" class="form-select"><option value="oc">Orden de compra</option><option value="factura">Factura</option><option value="remision">Remisión</option></select></div>
-            <div class="col-md-5"><input name="documento_valor" class="form-control" placeholder="Ej. OC0000061304 o 12345"></div>
+            <div class="col-md-5 position-relative"><input name="documento_valor" id="documento_valor" class="form-control" autocomplete="off" placeholder="Ej. OC0000061304 o 12345"><div id="documentos-sugeridos" class="list-group position-absolute w-100 shadow-sm" style="z-index:30;display:none"></div></div>
             <div class="col-md-3"><button type="submit" name="accion" value="agregar_documento" class="btn btn-outline-primary w-100" formnovalidate><i class="bi bi-plus-square"></i> Agregar todo</button></div>
           </div>
+          <div id="productos-documento" class="mt-3" style="display:none"><div class="d-flex justify-content-between align-items-center mb-2"><strong>Productos encontrados</strong><label class="form-check-label"><input type="checkbox" id="marcar-todos-documento" class="form-check-input me-1"> Seleccionar todos</label></div><div id="lista-productos-documento" class="border rounded bg-white p-2"></div><div class="form-text">Marca uno o varios productos, o selecciona todos.</div></div>
             <div class="form-text">Busca la OC o factura y agrega todos sus productos al vale actual en una sola operación.</div>
           </div>
         </details>
@@ -463,6 +464,40 @@
     if (faltantes.length) {
       e.preventDefault();
       alert('Falta capturar: ' + faltantes.join(', ') + '.');
+    }
+  });
+
+  const tipoDocumento = document.querySelector('select[name="documento_tipo"]');
+  const valorDocumento = document.getElementById('documento_valor');
+  const sugerenciasDocumento = document.getElementById('documentos-sugeridos');
+  const productosDocumento = document.getElementById('productos-documento');
+  const listaProductosDocumento = document.getElementById('lista-productos-documento');
+  const marcarTodosDocumento = document.getElementById('marcar-todos-documento');
+  let temporizadorDocumento;
+  valorDocumento.addEventListener('input', () => {
+    clearTimeout(temporizadorDocumento); productosDocumento.style.display = 'none';
+    const q = valorDocumento.value.trim();
+    if (q.length < 2) { sugerenciasDocumento.style.display = 'none'; return; }
+    temporizadorDocumento = setTimeout(() => fetch(`{{ url_for('salidas.api_documentos_entrada') }}?tipo=${tipoDocumento.value}&q=${encodeURIComponent(q)}`).then(r => r.json()).then(data => {
+      sugerenciasDocumento.innerHTML = '';
+      data.forEach(d => { const b=document.createElement('button'); b.type='button'; b.className='list-group-item list-group-item-action'; b.innerHTML=`<strong>${d.valor}</strong> <small class="text-muted">${d.productos} producto(s)</small>`; b.onclick=()=>seleccionarDocumento(d.valor); sugerenciasDocumento.appendChild(b); });
+      sugerenciasDocumento.style.display = data.length ? 'block' : 'none';
+    }), 250);
+  });
+  tipoDocumento.addEventListener('change', () => valorDocumento.dispatchEvent(new Event('input')));
+  function seleccionarDocumento(valor) {
+    valorDocumento.value = valor; sugerenciasDocumento.style.display='none';
+    fetch(`{{ url_for('salidas.api_documento_productos') }}?tipo=${tipoDocumento.value}&valor=${encodeURIComponent(valor)}`).then(r=>r.json()).then(data=>{
+      listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
+      data.forEach(p=>{ const row=document.createElement('label'); row.className='d-block border-bottom py-1'; row.innerHTML=`<input type="checkbox" class="producto-documento me-2" value="${p.id}"> <span class="font-monospace">${p.codigo}</span> — ${p.descripcion} <small class="text-muted">(${p.cantidad} ${p.unidad_medida})</small>`; listaProductosDocumento.appendChild(row); });
+      productosDocumento.style.display=data.length?'block':'none';
+    });
+  }
+  marcarTodosDocumento.addEventListener('change',()=>document.querySelectorAll('.producto-documento').forEach(x=>x.checked=marcarTodosDocumento.checked));
+  document.getElementById('form-salida').addEventListener('submit', e=>{
+    if (e.submitter && e.submitter.value === 'agregar_documento') {
+      document.querySelectorAll('input[name="producto_ids"]').forEach(x=>x.remove());
+      document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const h=document.createElement('input'); h.type='hidden'; h.name='producto_ids'; h.value=x.value; e.currentTarget.appendChild(h); });
     }
   });
 </script>

@@ -582,6 +582,48 @@ def cancelar_captura():
     return redirect(url_for('salidas.index'))
 
 
+@salidas_bp.route('/api/documentos-entrada')
+@login_required
+def api_documentos_entrada():
+    tipo = request.args.get('tipo', 'oc')
+    q = (request.args.get('q') or '').strip()
+    columnas = {'oc': 'orden_compra', 'factura': 'no_factura', 'remision': 'no_remision'}
+    columna = columnas.get(tipo)
+    if not columna or len(q) < 2:
+        return jsonify([])
+    conn = get_db()
+    filas = conn.execute(f"""
+        SELECT TRIM(e.{columna}) AS valor, COUNT(DISTINCT e.producto_id) AS productos
+        FROM entradas e
+        WHERE TRIM(e.{columna}) <> '' AND UPPER(e.{columna}) LIKE UPPER(?)
+        GROUP BY TRIM(e.{columna}) ORDER BY MAX(e.id) DESC LIMIT 12
+    """, (f'%{q}%',)).fetchall()
+    conn.close()
+    return jsonify([dict(fila) for fila in filas])
+
+
+@salidas_bp.route('/api/documento-productos')
+@login_required
+def api_documento_productos():
+    tipo = request.args.get('tipo', 'oc')
+    valor = (request.args.get('valor') or '').strip()
+    columnas = {'oc': 'e.orden_compra', 'factura': 'e.no_factura', 'remision': 'e.no_remision'}
+    columna = columnas.get(tipo)
+    if not columna or not valor:
+        return jsonify([])
+    conn = get_db()
+    filas = conn.execute(f"""
+        SELECT p.id, p.codigo, p.descripcion, p.unidad_medida,
+               SUM(e.cantidad) AS cantidad, p.stock_actual
+        FROM entradas e JOIN productos p ON p.id=e.producto_id
+        WHERE p.activo=1 AND TRIM(UPPER({columna}))=TRIM(UPPER(?))
+        GROUP BY p.id, p.codigo, p.descripcion, p.unidad_medida, p.stock_actual
+        ORDER BY p.codigo
+    """, (valor,)).fetchall()
+    conn.close()
+    return jsonify([dict(fila) for fila in filas])
+
+
 @salidas_bp.route('/detalle/<int:sid>')
 @login_required
 def detalle(sid):
