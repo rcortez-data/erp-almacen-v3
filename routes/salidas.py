@@ -383,11 +383,19 @@ def nuevo():
                     if prod['producto_id'] in existentes:
                         omitidos += 1
                         continue
+                    cantidad_seleccionada = request.form.get(f"producto_cantidad_{prod['producto_id']}")
+                    try:
+                        cantidad_seleccionada = float(cantidad_seleccionada) if cantidad_seleccionada else float(prod['cantidad'])
+                    except (TypeError, ValueError):
+                        cantidad_seleccionada = 0
+                    if cantidad_seleccionada <= 0 or cantidad_seleccionada > float(prod['cantidad']):
+                        omitidos += 1
+                        continue
                     cart.append({
                         'producto_id': prod['producto_id'], 'codigo': prod['codigo'],
                         'codigo_barras': prod['codigo_barras'], 'descripcion': prod['descripcion'],
                         'unidad_medida': prod['unidad_medida'], 'unidad_compra': prod['unidad_compra'],
-                        'factor_conversion': prod['factor_conversion'], 'cantidad': prod['cantidad'],
+                        'factor_conversion': prod['factor_conversion'], 'cantidad': cantidad_seleccionada,
                         'stock_actual': prod['stock_actual'],
                     })
                     existentes.add(prod['producto_id'])
