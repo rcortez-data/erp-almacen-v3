@@ -199,7 +199,15 @@ body {
 }
 
 #main {
-  padding: 1.4rem 1.7rem 2.25rem;
+  padding: 1.4rem 1.7rem 7rem;
+}
+
+/* Espacio y desplazamiento para que los autocompletados no queden cortados al final de la pantalla. */
+.position-relative > .list-group.position-absolute {
+  max-height: min(420px, 58vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 3000 !important;
 }
 
 .app-shell-header {
