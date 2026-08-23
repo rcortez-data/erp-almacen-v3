@@ -352,6 +352,54 @@ def nuevo():
             conn.close()
             return redirect(url_for('salidas.nuevo'))
 
+        elif accion == 'agregar_documento':
+            documento_tipo = request.form.get('documento_tipo')
+            documento_valor = (request.form.get('documento_valor') or '').strip()
+            columnas = {'oc': 'e.orden_compra', 'factura': 'e.no_factura'}
+            columna = columnas.get(documento_tipo)
+            if not columna or not documento_valor:
+                flash('Selecciona OC o factura y captura el número del documento.', 'danger')
+                conn.close()
+                return redirect(url_for('salidas.nuevo'))
+            filas = conn.execute(f"""
+                SELECT e.producto_id, SUM(e.cantidad) AS cantidad,
+                       p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
+                       p.unidad_compra, p.factor_conversion, p.stock_actual
+                FROM entradas e JOIN productos p ON p.id=e.producto_id
+                WHERE p.activo=1 AND TRIM(UPPER({columna}))=TRIM(UPPER(?))
+                GROUP BY e.producto_id, p.codigo, p.codigo_barras, p.descripcion,
+                         p.unidad_medida, p.unidad_compra, p.factor_conversion, p.stock_actual
+                ORDER BY p.codigo
+            """, (documento_valor,)).fetchall()
+            if not filas:
+                flash(f'No se encontraron productos activos para {documento_tipo.upper()} {documento_valor}.', 'warning')
+            else:
+                cart = session.get(CART_KEY, [])
+                existentes = {item['producto_id'] for item in cart}
+                agregados = 0
+                omitidos = 0
+                for prod in filas:
+                    if prod['producto_id'] in existentes:
+                        omitidos += 1
+                        continue
+                    cart.append({
+                        'producto_id': prod['producto_id'], 'codigo': prod['codigo'],
+                        'codigo_barras': prod['codigo_barras'], 'descripcion': prod['descripcion'],
+                        'unidad_medida': prod['unidad_medida'], 'unidad_compra': prod['unidad_compra'],
+                        'factor_conversion': prod['factor_conversion'], 'cantidad': prod['cantidad'],
+                        'stock_actual': prod['stock_actual'],
+                    })
+                    existentes.add(prod['producto_id'])
+                    agregados += 1
+                session[CART_KEY] = cart
+                session.modified = True
+                texto = f'Se agregaron {agregados} producto(s) de {documento_tipo.upper()} {documento_valor}.'
+                if omitidos:
+                    texto += f' {omitidos} ya estaban en la salida y se omitieron.'
+                flash(texto, 'success')
+            conn.close()
+            return redirect(url_for('salidas.nuevo'))
+
         elif accion == 'quitar_item':
             idx = int(request.form.get('idx', -1))
             cart = session.get(CART_KEY, [])

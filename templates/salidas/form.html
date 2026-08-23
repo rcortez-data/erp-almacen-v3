@@ -103,6 +103,15 @@
     <div class="card capture-card">
       <div class="card-header py-3"><h2 class="panel-title"><i class="bi bi-box-seam"></i> Agregar producto</h2></div>
       <div class="card-body">
+        <div class="border rounded p-3 mb-3 bg-light">
+          <label class="form-label fw-semibold"><i class="bi bi-collection"></i> Agregar productos por documento</label>
+          <div class="row g-2">
+            <div class="col-md-4"><select name="documento_tipo" class="form-select"><option value="oc">Orden de compra</option><option value="factura">Factura</option></select></div>
+            <div class="col-md-5"><input name="documento_valor" class="form-control" placeholder="Ej. OC0000061304 o 12345"></div>
+            <div class="col-md-3"><button type="submit" name="accion" value="agregar_documento" class="btn btn-outline-primary w-100" formnovalidate><i class="bi bi-plus-square"></i> Agregar todo</button></div>
+          </div>
+          <div class="form-text">Busca la OC o factura y agrega todos sus productos al vale actual en una sola operación.</div>
+        </div>
         <div class="mb-3 position-relative">
           <label class="form-label fw-semibold">Producto</label>
           <input type="text" id="buscador-producto" class="form-control" autocomplete="off" tabindex="4"
