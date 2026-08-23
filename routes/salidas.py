@@ -355,7 +355,7 @@ def nuevo():
         elif accion == 'agregar_documento':
             documento_tipo = request.form.get('documento_tipo')
             documento_valor = (request.form.get('documento_valor') or '').strip()
-            columnas = {'oc': 'e.orden_compra', 'factura': 'e.no_factura'}
+            columnas = {'oc': 'e.orden_compra', 'factura': 'e.no_factura', 'remision': 'e.no_remision'}
             columna = columnas.get(documento_tipo)
             if not columna or not documento_valor:
                 flash('Selecciona OC o factura y captura el número del documento.', 'danger')
