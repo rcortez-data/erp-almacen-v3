@@ -1,0 +1,20 @@
+{% load static %}<!doctype html>
+<html lang="es-MX"><head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Web Price Shoes{% endblock %}</title><meta name="description" content="{% block description %}Catálogo de calzado de un distribuidor independiente.{% endblock %}">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous"><link rel="stylesheet" href="{% static 'css/site.css' %}">
+  {% block extra_head %}{% endblock %}
+</head><body>
+<a class="skip-link" href="#main">Saltar al contenido</a>
+<div class="announcement text-center py-2">Distribuidor independiente · Existencias sujetas a confirmación</div>
+<nav class="navbar navbar-expand-lg bg-white sticky-top border-bottom" aria-label="Navegación principal"><div class="container">
+ <a class="navbar-brand fw-black" href="{% url 'core:home' %}"><span>WPS</span> Calzado</a><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
+ <div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="{% url 'catalog:list' %}">Catálogo</a></li><li class="nav-item"><a class="nav-link" href="{% url 'core:legal' 'envios' %}">Envíos</a></li><li class="nav-item"><a class="nav-link" href="{% url 'core:legal' 'contacto' %}">Contacto</a></li></ul>
+ <form class="d-flex me-3" action="{% url 'catalog:list' %}"><label class="visually-hidden" for="nav-search">Buscar</label><input id="nav-search" class="form-control" name="q" placeholder="Buscar calzado"><button class="btn btn-dark ms-1">Buscar</button></form>
+ <a class="btn btn-outline-dark me-2" href="{% url 'cart:detail' %}">Carrito <span class="badge text-bg-danger">{{ cart|length }}</span></a>{% if user.is_authenticated %}<a class="btn btn-link" href="{% url 'accounts:profile' %}">Mi cuenta</a>{% else %}<a class="btn btn-link" href="{% url 'login' %}">Ingresar</a>{% endif %}</div>
+</div></nav>
+{% if messages %}<div class="container mt-3" aria-live="polite">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">{{ message }}<button class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button></div>{% endfor %}</div>{% endif %}
+<main id="main">{% block content %}{% endblock %}</main>
+<footer class="footer mt-5 py-5"><div class="container"><div class="row g-4"><div class="col-md-5"><h2 class="h5">WPS Calzado</h2><p>Catálogo operado por un distribuidor independiente. Este sitio no afirma ser la tienda oficial de ninguna marca.</p></div><div class="col"><a href="{% url 'core:legal' 'privacidad' %}">Privacidad</a><br><a href="{% url 'core:legal' 'terminos' %}">Términos</a></div><div class="col"><a href="{% url 'core:legal' 'envios' %}">Envíos</a><br><a href="{% url 'core:legal' 'devoluciones' %}">Devoluciones</a></div></div></div></footer>
+<a class="whatsapp" href="https://wa.me/{{ WHATSAPP_NUMBER }}" target="_blank" rel="noopener" aria-label="Contactar por WhatsApp">WhatsApp</a>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script><script src="{% static 'js/site.js' %}"></script>{% block scripts %}{% endblock %}</body></html>

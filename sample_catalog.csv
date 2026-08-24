@@ -1,0 +1,3 @@
+product_sku,name,category,price,variant_sku,size,color,stock,brand,model,gender,description
+CSV-001,Tenis de muestra,Tenis,799.00,CSV-001-24-BL,24,Blanco,5,Demo,Muestra 1,unisex,Producto de ejemplo con contenido autorizado.
+CSV-001,Tenis de muestra,Tenis,799.00,CSV-001-25-NE,25,Negro,4,Demo,Muestra 1,unisex,Producto de ejemplo con contenido autorizado.
