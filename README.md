@@ -20,6 +20,18 @@ python manage.py runserver
 
 Visita `http://127.0.0.1:8000/` y el panel en `/admin/`. En este equipo se validó además con Python 3.13 por ser el intérprete disponible.
 
+### Inicio y detención rápida
+
+Haz doble clic en `sistema.bat` para usar el menú. También puedes ejecutarlo desde PowerShell:
+
+```powershell
+.\sistema.bat iniciar
+.\sistema.bat estado
+.\sistema.bat detener
+```
+
+El servidor se ejecuta oculto y escribe sus registros en `logs`. La tienda queda disponible en `http://127.0.0.1:8000/`.
+
 ## Comandos útiles
 
 ```powershell
