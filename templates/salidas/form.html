@@ -22,7 +22,7 @@
       <div class="card-header py-3"><h2 class="panel-title"><i class="bi bi-receipt"></i> Datos del vale</h2></div>
       <div class="card-body">
         <div class="row g-3 mb-3">
-          <div class="col-md-3">
+          <div class="col-md-6">
             <label class="form-label fw-semibold">Recibió <span class="text-danger">*</span></label>
             <input type="text" name="responsable" id="responsable" class="form-control" tabindex="1"
                    value="{{ doc.get('responsable','') }}" placeholder="Nombre completo de quien recibe"
@@ -68,7 +68,7 @@
             </select>
           </div>
         </div>
-        <div class="row g-3 mb-3" id="fila_maquinados" style="display:none">
+        <div class="row g-3 mb-3" id="fila_maquinados">
           <div class="col-md-6">
             <label class="form-label fw-semibold">Máquina</label>
             <select name="maquina" id="maquina" class="form-select" tabindex="4">
@@ -306,8 +306,7 @@
   function aplicarTipoVale(tipo, enfocar = true) {
     if (tipo === 'mantenimiento') {
       maquinadosCheck.checked = false;
-      filaMaquinados.style.display = 'none';
-      maquinaInput.value = '';
+      filaMaquinados.style.display = '';
       fijarAreaPorNombre('Mantenimiento');
       valeInput.value = `M-${limpiarNumeroVale(valeInput.value, 'M-')}`;
     } else if (tipo === 'maquinados') {
@@ -316,8 +315,7 @@
       fijarAreaPorNombre('Maquinados');
       valeInput.value = `M-${limpiarNumeroVale(valeInput.value, 'M-')}`;
     } else {
-      filaMaquinados.style.display = 'none';
-      maquinaInput.value = '';
+      filaMaquinados.style.display = '';
       limpiarPrefijoSiSolo('M-');
     }
     if (enfocar && tipo !== 'normal') {
