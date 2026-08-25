@@ -367,7 +367,9 @@ def nuevo():
                 conn.close()
                 return redirect(url_for('salidas.nuevo'))
             filas = conn.execute(f"""
-                SELECT e.producto_id, SUM(e.cantidad) AS cantidad,
+                SELECT e.producto_id,
+                       SUM(CASE WHEN p.factor_conversion IS NOT NULL AND p.factor_conversion > 0
+                                THEN e.cantidad / p.factor_conversion ELSE e.cantidad END) AS cantidad,
                        p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
                        p.unidad_compra, p.factor_conversion, p.stock_actual
                 FROM entradas e JOIN productos p ON p.id=e.producto_id
@@ -639,7 +641,9 @@ def api_documento_productos():
     conn = get_db()
     filas = conn.execute(f"""
         SELECT p.id, p.codigo, p.descripcion, p.unidad_medida,
-               SUM(e.cantidad) AS cantidad, p.stock_actual
+               SUM(CASE WHEN p.factor_conversion IS NOT NULL AND p.factor_conversion > 0
+                        THEN e.cantidad / p.factor_conversion ELSE e.cantidad END) AS cantidad,
+               p.stock_actual
         FROM entradas e JOIN productos p ON p.id=e.producto_id
         WHERE p.activo=1 AND TRIM(UPPER({columna}))=TRIM(UPPER(?))
         GROUP BY p.id, p.codigo, p.descripcion, p.unidad_medida, p.stock_actual
