@@ -324,6 +324,7 @@ def nuevo():
             'fecha_vale': request.form.get('fecha_vale') or session.get(DOC_KEY, {}).get('fecha_vale', datetime.now().date().isoformat()),
         }
         session.modified = True
+        doc = session.get(DOC_KEY, {})
 
         if accion == 'agregar_item':
             pid = request.form.get('producto_id')
