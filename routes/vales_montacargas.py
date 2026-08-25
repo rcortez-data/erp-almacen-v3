@@ -214,9 +214,9 @@ def nuevo():
             # Se limpia el formulario para el siguiente vale, igual que en Salidas,
             # pero se conserva la fecha si el usuario la cambió a mano.
             session[DOC_KEY] = {
-                'responsable': responsable,
-                'area_id': area_id,
-                'montacargas_id': montacargas_id,
+                'responsable': '',
+                'area_id': '',
+                'montacargas_id': '',
                 'no_vale': '',
                 'cantidad': '',
                 'observaciones': '',
