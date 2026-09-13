@@ -162,21 +162,43 @@
           </div>
 
           <div class="row g-3 mb-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Tipo de conversión</label>
+              {% set tipo_conv = producto.tipo_conversion if producto and producto.tipo_conversion else 'uso_a_compra' %}
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="border rounded p-2 d-block h-100">
+                    <input class="form-check-input me-1" type="radio" name="tipo_conversion" value="uso_a_compra"
+                           {{ 'checked' if tipo_conv != 'compra_a_uso' }}>
+                    <strong>1 unidad de uso = X unidades de compra</strong>
+                    <div class="text-muted" style="font-size:.82rem">Ej: 1 PIEZA = 2.5 KILOS. Si entran 10 kilos, stock sube 4 piezas.</div>
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <label class="border rounded p-2 d-block h-100">
+                    <input class="form-check-input me-1" type="radio" name="tipo_conversion" value="compra_a_uso"
+                           {{ 'checked' if tipo_conv == 'compra_a_uso' }}>
+                    <strong>1 unidad de compra = X unidades de uso</strong>
+                    <div class="text-muted" style="font-size:.82rem">Ej: 1 CAJA = 12 PIEZAS. Si entran 5 cajas, stock sube 60 piezas.</div>
+                  </label>
+                </div>
+              </div>
+            </div>
             <div class="col-md-6">
               <label class="form-label fw-semibold">
                 Factor de conversión
               </label>
               <div class="input-group input-group-lg">
                 <span class="input-group-text">1</span>
-                <span class="input-group-text" id="factor_unidad_uso">PIEZA</span>
+                <span class="input-group-text" id="factor_unidad_base">PIEZA</span>
                 <span class="input-group-text">=</span>
                 <input type="number" id="factor_conversion" name="factor_conversion" class="form-control" 
                        min="0.0001" step="0.0001" pattern="[0-9.]+"
                        value="{{ producto.factor_conversion if producto and producto.factor_conversion else '' }}"
                        placeholder="Ej: 4">
-                <span class="input-group-text" id="factor_unidad_compra">KILOGRAMO</span>
+                <span class="input-group-text" id="factor_unidad_resultado">KILOGRAMO</span>
               </div>
-              <div class="form-text mt-1">¿Cuántas unidades de compra = 1 unidad de uso?</div>
+              <div class="form-text mt-1" id="factor-ayuda">Define la equivalencia según el tipo seleccionado.</div>
             </div>
 
             <div class="col-md-6">
@@ -208,7 +230,7 @@
       <div class="row g-3 mb-3">
         <div class="col-md-6">
           <label class="form-label fw-semibold">Stock mínimo</label>
-          <input type="number" name="stock_minimo" class="form-control" min="0" step="0.01"
+          <input type="number" name="stock_minimo" class="form-control" min="0" step="0.001"
                  value="{{ producto.stock_minimo if producto else '0' }}">
           <div class="form-text">Para alertas de stock bajo.</div>
         </div>
@@ -267,6 +289,7 @@
   const unidadMedida = document.querySelector('select[name="unidad_medida"]');
   const unidadCompra = document.getElementById('unidad_compra');
   const factorConversion = document.getElementById('factor_conversion');
+  const tipoConversionRadios = document.querySelectorAll('input[name="tipo_conversion"]');
 
   // Mostrar/ocultar sección de conversión
   function actualizarConversion() {
@@ -279,17 +302,23 @@
     const unidadUso = unidadMedida.value || 'PIEZA';
     const unidadCom = unidadCompra.value || 'KILOGRAMO';
     const factor = parseFloat(factorConversion.value) || 0;
+    const tipo = document.querySelector('input[name="tipo_conversion"]:checked')?.value || 'uso_a_compra';
 
     // Actualizar etiquetas
     document.getElementById('unidad_uso_label').textContent = unidadUso;
-    document.getElementById('factor_unidad_uso').textContent = unidadUso;
-    document.getElementById('factor_unidad_compra').textContent = unidadCom;
+    document.getElementById('factor_unidad_base').textContent = tipo === 'compra_a_uso' ? unidadCom : unidadUso;
+    document.getElementById('factor_unidad_resultado').textContent = tipo === 'compra_a_uso' ? unidadUso : unidadCom;
     document.getElementById('prev_unidad_compra').textContent = unidadCom;
     document.getElementById('prev_unidad_uso').textContent = unidadUso;
+    document.getElementById('factor-ayuda').textContent = tipo === 'compra_a_uso'
+      ? `¿Cuántas ${unidadUso} trae 1 ${unidadCom}?`
+      : `¿Cuántas ${unidadCom} equivalen a 1 ${unidadUso}?`;
 
     // Calcular ejemplo
     const cantidadEjemplo = 100;
-    const stockResultado = factor > 0 ? (cantidadEjemplo / factor).toFixed(2) : '?';
+    const stockResultado = factor > 0
+      ? (tipo === 'compra_a_uso' ? cantidadEjemplo * factor : cantidadEjemplo / factor).toFixed(2)
+      : '?';
     
     document.getElementById('prev_cantidad').textContent = cantidadEjemplo;
     document.getElementById('prev_stock').textContent = stockResultado;
@@ -310,6 +339,7 @@
   unidadMedida.addEventListener('change', actualizarVista);
   unidadCompra.addEventListener('change', actualizarVista);
   factorConversion.addEventListener('input', actualizarVista);
+  tipoConversionRadios.forEach(radio => radio.addEventListener('change', actualizarVista));
   
   actualizarConversion();
 

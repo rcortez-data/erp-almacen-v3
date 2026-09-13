@@ -21,6 +21,9 @@ from routes.balance import balance_bp
 from routes.requisiciones import requisiciones_bp
 from routes.montacargas import montacargas_bp
 from routes.vales_montacargas import vales_montacargas_bp
+from routes.material_por_pedir import material_por_pedir_bp
+from routes.prestamos_mantenimiento import prestamos_mantenimiento_bp
+from routes.etiquetas_produccion import etiquetas_produccion_bp
 from routes.areas import areas_bp
 from routes.listados import listados_bp
 
@@ -137,6 +140,9 @@ _ROLES_POR_MODULO = {
     'entradas': {'admin', 'almacen'},
     'salidas': {'admin', 'almacen'},
     'vales_montacargas': {'admin', 'almacen'},
+    'material_por_pedir': {'admin', 'almacen', 'compras'},
+    'prestamos_mantenimiento': {'admin', 'almacen', 'mantenimiento'},
+    'etiquetas_produccion': {'admin', 'almacen', 'produccion'},
     'montacargas': {'admin', 'almacen'},
     'areas': {'admin', 'almacen'},
     'proveedores': {'admin', 'almacen', 'compras'},
@@ -200,7 +206,8 @@ def cantidad_unidad(cantidad, unidad):
         palabra = palabra.upper()
     elif texto[:1].isupper():
         palabra = palabra.capitalize()
-    return f"{cantidad} {palabra}".strip()
+    numero_formateado = f"{numero:,.4f}".rstrip('0').rstrip('.')
+    return f"{numero_formateado} {palabra}".strip()
 
 
 @app.template_filter('fecha_vale')
@@ -221,7 +228,7 @@ blueprints = [
     auth_bp, inventario_bp, entradas_bp, salidas_bp,
     reportes_bp, usuarios_bp, dashboard_bp, proveedores_bp,
     balance_bp, requisiciones_bp, montacargas_bp, vales_montacargas_bp, areas_bp,
-    listados_bp
+    material_por_pedir_bp, prestamos_mantenimiento_bp, etiquetas_produccion_bp, listados_bp
 ]
 
 for blueprint in blueprints:

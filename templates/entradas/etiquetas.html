@@ -98,9 +98,9 @@
     .qty { left: 5mm; top: 24mm; width: 34mm; }
     .rem { left: 5mm; top: 39mm; width: 42mm; }
     .prov { left: 5mm; top: 62mm; width: 42mm; }
-    .prod { left: 52mm; top: 6mm; width: 44mm; }
-    .loc { left: 52mm; top: 43mm; width: 44mm; }
-    .maq { left: 52mm; top: 57mm; width: 44mm; }
+    .prod { left: 47mm; top: 6mm; width: 49mm; }
+    .loc { left: 47mm; top: 43mm; width: 49mm; }
+    .maq { left: 47mm; top: 57mm; width: 49mm; }
 
     .code .value {
       font-size: 15px;
@@ -187,6 +187,7 @@
     <div>
       <a href="{{ url_for('entradas.index') }}">Regresar</a>
       <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         {% for key, value in request.args.items() %}
         <input type="hidden" name="{{ key }}" value="{{ value }}">
         {% endfor %}
@@ -194,9 +195,13 @@
         <input type="hidden" name="ids" value="{{ value }}">
         {% endfor %}
         <input type="hidden" name="volver" value="{{ request.full_path }}">
+        <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px">
+          Copias
+          <input type="number" name="copias" value="1" min="1" max="100" step="1"
+                 style="width:70px;padding:7px 8px;border:1px solid #d1d5db;border-radius:8px">
+        </label>
         <button type="submit" class="primary">Imprimir {{ printer_name }}</button>
       </form>
-      <button type="button" onclick="window.print()">Vista navegador</button>
     </div>
   </div>
 

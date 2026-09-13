@@ -11,7 +11,7 @@
   </a>
 </div>
 
-<div class="card" style="max-width:900px">
+<div class="card w-100">
   <div class="card-body">
     <form method="POST" id="form-requisicion" autocomplete="off">
       <div class="row g-3 mb-3">
@@ -49,28 +49,30 @@
       <div class="form-text mb-2">
         Si el artículo ya está en tu catálogo, ligalo con el buscador de la columna "Producto del catálogo
         (opcional)" — así, cuando registres la entrada, el sistema calculará solo cuánto ha llegado, sin que
-        tengas que capturar la recepción a mano. Si no lo ligas, al guardar se creará un producto nuevo con
-        stock 0 usando esa descripción.
+        tengas que capturar la recepción a mano. Si escribes una descripción sin cantidad ni producto, se guardará
+        como renglón informativo, útil para remisiones o notas, y no afectará pendientes ni inventario.
       </div>
       <div class="table-responsive mb-3">
-        <table class="table table-sm align-middle">
+        <table class="table table-sm align-middle" style="min-width:1480px">
           <thead>
             <tr>
               <th style="width:110px">Cantidad</th>
               <th style="width:150px">Unidad</th>
+              <th style="width:115px">Actualizar catálogo</th>
               <th>Descripción</th>
-              <th style="width:260px">Producto del catálogo (opcional)</th>
+              <th style="width:430px">Producto del catálogo (opcional)</th>
+              <th style="width:210px">Último proveedor</th>
             </tr>
           </thead>
           <tbody>
             {% for i in range(1, max_items + 1) %}
             {% set it = items[i-1] if items and i <= items|length else None %}
             <tr>
-              <td><input type="number" step="0.01" min="0" name="cantidad_{{ i }}" class="form-control form-control-sm"
+              <td><input type="number" step="0.001" min="0" name="cantidad_{{ i }}" class="form-control form-control-sm"
                          value="{{ it.cantidad if it else '' }}"></td>
               <td>
                 <select name="unidad_{{ i }}" class="form-select form-select-sm select-unidad" data-fila="{{ i }}">
-                  <option value="">Elegir...</option>
+                  <option value="">Sin unidad</option>
                   {% set unidad_actual = unidad_singular(it.unidad) if it and it.unidad else '' %}
                   {% for u in unidades %}
                   <option value="{{ u }}" data-singular="{{ u }}" {{ 'selected' if unidad_actual == u }}>{{ u }}</option>
@@ -80,16 +82,31 @@
                   {% endif %}
                 </select>
               </td>
+              <td class="text-center">
+                <input type="checkbox" class="form-check-input actualizar-unidad-catalogo"
+                       name="actualizar_unidad_catalogo_{{ i }}" value="1"
+                       title="Marcar sólo si esta unidad debe corregir el producto del catálogo">
+                <div class="form-text" style="font-size:.68rem; line-height:1.05">Sólo si corriges inventario</div>
+              </td>
               <td><input type="text" name="descripcion_{{ i }}" class="form-control form-control-sm"
-                         value="{{ it.descripcion if it else '' }}" placeholder="Descripción del artículo"></td>
+                         value="{{ it.descripcion if it else '' }}" placeholder="Producto o remisión / nota informativa"></td>
               <td class="position-relative">
                 <input type="text" class="form-control form-control-sm buscador-cat" data-fila="{{ i }}"
                        autocomplete="off" placeholder="Buscar código o descripción..."
                        value="{{ (it.codigo ~ ' — ' ~ it.producto_descripcion) if it and it.producto_id else '' }}">
                 <input type="hidden" name="producto_id_{{ i }}" class="producto-id" data-fila="{{ i }}"
                        value="{{ it.producto_id if it and it.producto_id else '' }}">
+                <input type="hidden" name="material_pedir_id_{{ i }}"
+                       value="{{ it.material_pedir_id if it and it.material_pedir_id else '' }}">
                 <div class="list-group position-absolute w-100 shadow-sm autocomplete-menu resultados-cat" data-fila="{{ i }}"
                      style="z-index:30; max-height:220px; overflow-y:auto; display:none;"></div>
+                <div class="form-text text-success pendiente-material-msg" data-fila="{{ i }}"></div>
+              </td>
+              <td>
+                <div class="ultimo-proveedor-cat small text-muted border rounded px-2 py-1 bg-light"
+                     data-fila="{{ i }}" style="min-height:34px">
+                  {{ 'Cargando...' if it and it.producto_id else 'Sin producto seleccionado' }}
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -177,6 +194,17 @@
     return unidadSingularJs[texto.toUpperCase()] || texto.charAt(0).toUpperCase() + texto.slice(1).toLowerCase();
   }
 
+  function textoUltimoProveedor(producto) {
+    if (!producto || !producto.ultimo_proveedor) return 'Sin entradas previas';
+    const fecha = producto.ultima_entrada_fecha ? ` (${String(producto.ultima_entrada_fecha).slice(0, 10)})` : '';
+    return `${producto.ultimo_proveedor}${fecha}`;
+  }
+
+  function fijarUltimoProveedor(fila, producto) {
+    const destino = document.querySelector(`.ultimo-proveedor-cat[data-fila="${fila}"]`);
+    if (destino) destino.textContent = textoUltimoProveedor(producto);
+  }
+
   document.querySelectorAll('.buscador-cat').forEach(function(input) {
     const fila = input.dataset.fila;
     const resultados = document.querySelector(`.resultados-cat[data-fila="${fila}"]`);
@@ -200,8 +228,47 @@
       actualizarTextoUnidad(select.dataset.fila);
     }
 
+    function unidadPreferidaRequisicion(producto) {
+      if (!producto) return '';
+      const tieneConversion = producto.factor_conversion && parseFloat(producto.factor_conversion) > 0;
+      return tieneConversion && producto.unidad_compra ? producto.unidad_compra : producto.unidad_medida;
+    }
+
+    function aplicarMaterialPendiente(productoIdSeleccionado) {
+      if (!productoIdSeleccionado) return;
+      const filaCantidad = document.querySelector(`input[name="cantidad_${fila}"]`);
+      const mensaje = document.querySelector(`.pendiente-material-msg[data-fila="${fila}"]`);
+      fetch(`{{ url_for('requisiciones.api_material_pendiente', producto_id=0) }}`.replace('/0', `/${productoIdSeleccionado}`))
+        .then(r => r.json())
+        .then(data => {
+          if (!data.encontrado) {
+            if (mensaje) mensaje.textContent = '';
+            return;
+          }
+
+          const cantidadActual = parseFloat(filaCantidad?.value || '0');
+          if (filaCantidad && (!filaCantidad.value || cantidadActual === 0)) {
+            filaCantidad.value = Number(data.cantidad || 0).toFixed(2).replace(/\.00$/, '');
+          }
+          if (data.unidad) fijarUnidad(filaUnidad, data.unidad);
+          if (mensaje) {
+            const extra = data.unidades_distintas > 1
+              ? ' Hay pendientes con unidades distintas; revisa antes de guardar.'
+              : '';
+            mensaje.textContent = `Pendiente por pedir: ${data.cantidad} ${data.unidad || ''}.${extra}`;
+          }
+          guardarBorradorRequisicion();
+        })
+        .catch(() => {
+          if (mensaje) mensaje.textContent = '';
+        });
+    }
+
     input.addEventListener('input', function() {
       hiddenId.value = '';
+      fijarUltimoProveedor(fila, null);
+      const mensaje = document.querySelector(`.pendiente-material-msg[data-fila="${fila}"]`);
+      if (mensaje) mensaje.textContent = '';
       const q = this.value.trim();
       clearTimeout(debounceTimer);
       if (q.length < 2) { resultados.style.display = 'none'; return; }
@@ -218,13 +285,16 @@
                 item.type = 'button';
                 item.className = 'list-group-item list-group-item-action py-1';
                 item.style.fontSize = '.8rem';
-                item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}`;
+                item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}
+                  <div class="text-primary" style="font-size:.76rem">Último proveedor: ${textoUltimoProveedor(p)}</div>`;
                 item.addEventListener('click', () => {
                   input.value = `${p.codigo} — ${p.descripcion}`;
                   hiddenId.value = p.id;
                   if (!filaDescripcion.value) filaDescripcion.value = p.descripcion;
-                  if (!filaUnidad.value) fijarUnidad(filaUnidad, p.unidad_medida);
+                  if (!filaUnidad.value) fijarUnidad(filaUnidad, unidadPreferidaRequisicion(p));
+                  fijarUltimoProveedor(fila, p);
                   resultados.style.display = 'none';
+                  aplicarMaterialPendiente(p.id);
                   guardarBorradorRequisicion();
                 });
                 resultados.appendChild(item);
@@ -245,6 +315,26 @@
       }
     });
   });
+
+  function actualizarUltimosProveedoresSeleccionados() {
+    document.querySelectorAll('.producto-id').forEach((hidden) => {
+      const fila = hidden.dataset.fila;
+      if (!hidden.value) {
+        const destino = document.querySelector(`.ultimo-proveedor-cat[data-fila="${fila}"]`);
+        if (destino) destino.textContent = 'Sin producto seleccionado';
+        return;
+      }
+      fetch(`{{ url_for('inventario.api_producto', pid=0) }}`.replace('/0', `/${hidden.value}`))
+        .then(r => r.json())
+        .then(data => fijarUltimoProveedor(fila, data))
+        .catch(() => {
+          const destino = document.querySelector(`.ultimo-proveedor-cat[data-fila="${fila}"]`);
+          if (destino) destino.textContent = 'No se pudo consultar';
+        });
+    });
+  }
+
+  actualizarUltimosProveedoresSeleccionados();
 
   function camposNavegables() {
     return Array.from(document.querySelectorAll('form input:not([type="hidden"]), form select, form textarea, form button[type="submit"]'))
@@ -318,7 +408,9 @@
   const borradorKey = 'erp_requisicion_nueva_borrador_v1';
   const formRequisicion = document.getElementById('form-requisicion');
   const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
-  const formularioLimpio = new URLSearchParams(window.location.search).get('limpio') === '1';
+  const paramsRequisicion = new URLSearchParams(window.location.search);
+  const formularioLimpio = paramsRequisicion.get('limpio') === '1';
+  const desdeMaterialPorPedir = paramsRequisicion.get('desde_material') === '1';
   let borradorTimer = null;
   let borradorActivo = true;
 
@@ -341,6 +433,19 @@
 
   function aplicarDatosBorrador(datos) {
     if (!datos) return;
+    if (datos._origen === 'material_por_pedir') {
+      for (let i = 1; i <= {{ max_items }}; i++) {
+        ['cantidad_', 'unidad_', 'descripcion_', 'producto_id_', 'material_pedir_id_', 'actualizar_unidad_catalogo_'].forEach(prefijo => {
+          const el = document.querySelector(selectorPorName(`${prefijo}${i}`));
+          if (el) {
+            if (el.type === 'checkbox') el.checked = false;
+            else el.value = '';
+          }
+        });
+        const buscador = document.querySelector(`.buscador-cat[data-fila="${i}"]`);
+        if (buscador) buscador.value = '';
+      }
+    }
     Object.entries(datos).forEach(([key, valor]) => {
       if (key === '_guardado') return;
       let el = document.querySelector(selectorPorName(key));
@@ -355,8 +460,13 @@
         opt.textContent = `${valor} (borrador)`;
         el.appendChild(opt);
       }
-      el.value = valor;
+      if (el.type === 'checkbox') {
+        el.checked = ['1', 'on', 'true', 'si'].includes(String(valor).toLowerCase());
+      } else {
+        el.value = valor;
+      }
     });
+    actualizarUltimosProveedoresSeleccionados();
   }
 
   function guardarBorradorServidor(datos, inmediato = false) {
@@ -413,6 +523,9 @@
       localStorage.removeItem(borradorKey);
       return;
     }
+    if (desdeMaterialPorPedir) {
+      localStorage.removeItem(borradorKey);
+    }
     const crudo = localStorage.getItem(borradorKey);
     if (crudo) {
       try {
@@ -437,7 +550,7 @@
     for (let i = 1; i <= {{ max_items }}; i++) {
       const cantidad = document.querySelector(selectorPorName(`cantidad_${i}`))?.value;
       const descripcion = document.querySelector(selectorPorName(`descripcion_${i}`))?.value?.trim();
-      if (cantidad && descripcion) return true;
+      if (descripcion) return true;
     }
     return false;
   }

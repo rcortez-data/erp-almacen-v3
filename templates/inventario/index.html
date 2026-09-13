@@ -217,8 +217,14 @@
               <span class="stock-actual-label">{{ p.stock_actual }}</span>
               {% if p.unidad_compra and p.factor_conversion %}
               <br><span class="text-muted fw-normal stock-conversion-label" style="font-size:.72rem"
-                        data-factor="{{ p.factor_conversion }}" data-unidad-compra="{{ p.unidad_compra|e }}">
+                        data-factor="{{ p.factor_conversion }}"
+                        data-tipo-conversion="{{ p.tipo_conversion or 'uso_a_compra' }}"
+                        data-unidad-compra="{{ p.unidad_compra|e }}">
+                {% if p.tipo_conversion == 'compra_a_uso' %}
+                = {{ (p.stock_actual / p.factor_conversion)|moneda }} {{ p.unidad_compra }}
+                {% else %}
                 = {{ (p.stock_actual * p.factor_conversion)|moneda }} {{ p.unidad_compra }}
+                {% endif %}
               </span>
               {% endif %}
             </td>
@@ -279,7 +285,7 @@
                 <label class="form-label mb-0 fw-semibold" for="stock-real-inline-{{ p.id }}">Cantidad</label>
                 <input type="number" id="stock-real-inline-{{ p.id }}"
                        class="form-control form-control-sm stock-real-inline-input"
-                       min="0" step="0.01" value="{{ p.stock_actual }}"
+                       min="0" step="0.001" value="{{ p.stock_actual }}"
                        aria-label="Stock real contado">
                 <span class="text-muted" style="font-size:.85rem">{{ p.unidad_medida }}</span>
                 <button type="button" class="btn btn-sm btn-success btn-stock-real-guardar"
@@ -367,7 +373,7 @@
           <div class="mb-3">
             <label class="form-label fw-semibold">Stock real contado <span class="text-danger">*</span></label>
             <div class="input-group">
-              <input type="number" name="stock_real" id="stock-real-input" class="form-control" min="0" step="0.01" required>
+              <input type="number" name="stock_real" id="stock-real-input" class="form-control" min="0" step="0.001" required>
               <span class="input-group-text" id="stock-real-unidad"></span>
             </div>
             <div class="form-text">Esto fija el stock actual como punto de partida y marca el producto como contado.</div>
@@ -523,8 +529,12 @@
       if (stockLabel) stockLabel.textContent = data.stock_label;
       if (conversion) {
         const factor = Number(conversion.dataset.factor || 0);
+        const tipoConversion = conversion.dataset.tipoConversion || 'uso_a_compra';
         const unidadCompra = conversion.dataset.unidadCompra || '';
-        conversion.textContent = `= ${(Number(data.stock || 0) * factor).toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${unidadCompra}`;
+        const convertido = tipoConversion === 'compra_a_uso'
+          ? Number(data.stock || 0) / factor
+          : Number(data.stock || 0) * factor;
+        conversion.textContent = `= ${convertido.toLocaleString('es-MX', {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${unidadCompra}`;
       }
       if (btnAbrir) btnAbrir.dataset.stock = data.stock_label;
       if (fila) {

@@ -1,16 +1,36 @@
 {% extends 'base.html' %}
 {% block title %}Stock mensual completo{% endblock %}
 {% block content %}
+<style>
+  #tabla-balance-completo tbody tr.producto-balance td {
+    border-top: 1px solid #cbd5e1;
+    border-bottom: 1px solid #cbd5e1;
+    background-color: #ffffff;
+    padding-top: .7rem;
+    padding-bottom: .7rem;
+  }
+  #tabla-balance-completo tbody tr.producto-balance:hover td {
+    background-color: #f1f5f9;
+    border-top-color: #94a3b8;
+    border-bottom-color: #94a3b8;
+  }
+  #tabla-balance-completo tbody tr.producto-balance td:first-child {
+    border-left: 3px solid #94a3b8;
+  }
+  #tabla-balance-completo tbody tr.producto-balance td:last-child {
+    border-right: 3px solid #94a3b8;
+  }
+</style>
 <div class="module-hero">
   <div>
     <span class="module-kicker"><i class="bi bi-boxes"></i> Balance mensual</span>
     <h1 class="page-title mb-1">Stock de todos los productos</h1>
-    <div class="text-muted">{{ total }} productos activos · consulta y auditoría en páginas de 100.</div>
+    <div class="text-muted">{{ resumen_periodo.total }} insumos de producción y caldera · consulta y auditoría en páginas de 100.</div>
   </div>
   <div class="quick-actions">
     <a href="{{ url_for('balance.index', anio=anio, mes=mes) }}" class="btn btn-sm btn-outline-secondary">Vista por selección</a>
-    <a href="{{ url_for('balance.exportar_todos_csv', anio=anio, mes=mes) }}" class="btn btn-sm btn-outline-success">
-      <i class="bi bi-file-earmark-spreadsheet"></i> Exportar CSV completo
+    <a href="{{ url_for('balance.exportar_todos_excel', anio=anio, mes=mes, q=q) }}" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-file-earmark-spreadsheet"></i> Guardar Excel reporte
     </a>
   </div>
 </div>
@@ -19,13 +39,13 @@
   <div class="card-body row g-2 align-items-end">
     <div class="col-md-2">
       <label class="form-label">Mes</label>
-      <select name="mes" class="form-select">
+      <select name="mes" class="form-select" onchange="this.form.submit()">
         {% for i in range(1,13) %}<option value="{{ i }}" {{ 'selected' if i == mes }}>{{ meses[i] }}</option>{% endfor %}
       </select>
     </div>
     <div class="col-md-2">
       <label class="form-label">Año</label>
-      <select name="anio" class="form-select">
+      <select name="anio" class="form-select" onchange="this.form.submit()">
         {% for a in range(anio_actual-5, anio_actual+1) %}<option value="{{ a }}" {{ 'selected' if a == anio }}>{{ a }}</option>{% endfor %}
       </select>
     </div>
@@ -37,12 +57,16 @@
   </div>
 </form>
 
-<div class="alert alert-info py-2">
-  La existencia final proviene de Productos. Las diferencias se corrigen mediante movimientos de ajuste auditados.
+  <div class="alert alert-info py-2">
+  La operación se realiza siempre en la unidad de inventario indicada en cada fila. Las equivalencias en piezas o unidad de compra se muestran debajo solo como referencia. Las salidas se calculan automáticamente y la diferencia contra el ERP es informativa.
+  {% if hay_caldera_auto %}
+  <br><strong>Caldera:</strong> al guardar desde agosto 2026 en adelante, el consumo calculado se generará o actualizará también como salida automática del mes.
+  {% endif %}
+  {% if not total %}<br><strong>Primero carga “Insumos Producción” o “Insumos Caldera” desde Balance.</strong>{% endif %}
 </div>
 
 <div class="row g-2 mb-3">
-  <div class="col-md-3"><div class="card card-body py-2"><small>Productos activos</small><strong>{{ resumen_periodo.total }}</strong></div></div>
+  <div class="col-md-3"><div class="card card-body py-2"><small>Insumos prod. y caldera</small><strong>{{ resumen_periodo.total }}</strong></div></div>
   <div class="col-md-3"><div class="card card-body py-2"><small>Cerrados</small><strong class="text-success">{{ resumen_periodo.cerrados }}</strong></div></div>
   <div class="col-md-3"><div class="card card-body py-2"><small>Pendientes</small><strong class="text-warning">{{ resumen_periodo.pendientes }}</strong></div></div>
   <div class="col-md-3"><div class="card card-body py-2"><small>Estado del mes</small><strong class="{{ 'text-danger' if periodo and periodo.estado == 'cerrado' else 'text-success' }}">{{ 'CERRADO' if periodo and periodo.estado == 'cerrado' else 'ABIERTO' }}</strong></div></div>
@@ -69,56 +93,103 @@
   <input type="hidden" name="q" value="{{ q }}">
   <div class="card">
     <div class="table-responsive">
-      <table class="table table-sm mb-0 align-middle">
+      <table id="tabla-balance-completo" class="table table-sm mb-0 align-middle">
         <thead><tr>
-          <th>Código</th><th>Descripción</th><th>Inicio del mes</th>
-          <th>Entradas</th><th>Salidas registradas</th><th>Existencia en Productos</th><th>Auditoría</th>
+          <th>Código</th><th>Descripción</th><th>Cierre anterior</th>
+          <th>Entradas</th><th>Salidas calculadas</th><th>Existencia final física</th><th>Existencia en Productos</th><th>Diferencia</th><th>Auditoría</th>
         </tr></thead>
         <tbody>
+        {% set bloque_anterior = namespace(nombre='') %}
         {% for f in filas %}
-          <tr>
+          {% if f.bloque_nombre != bloque_anterior.nombre %}
+          <tr class="table-secondary">
+            <td colspan="9" class="fw-bold py-2"><i class="bi bi-layer-forward"></i> {{ f.bloque_nombre }}</td>
+          </tr>
+          {% set bloque_anterior.nombre = f.bloque_nombre %}
+          {% endif %}
+          <tr class="producto-balance">
             <td class="font-monospace">{{ f.codigo }}<input type="hidden" name="producto_ids" value="{{ f.producto_id }}"></td>
             <td>{{ f.descripcion }}<br><small class="text-muted">{{ f.unidad_medida }}</small></td>
             <td>
-              <input type="number" step="0.01" min="0" class="form-control form-control-sm inicio-total"
+              <input type="number" step="0.001" min="0" class="form-control form-control-sm inicio-total"
                      data-producto="{{ f.producto_id }}" data-unidad-stock="{{ f.unidad_medida }}" name="inicio_{{ f.producto_id }}" value="{{ f.existencia_inicio }}">
               <small class="text-muted">{{ f.unidad_medida }}</small>
-              {% if f.unidad_compra and f.factor_conversion %}
+              {% if f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
               <div class="input-group input-group-sm mt-1">
-                <input type="number" step="0.01" min="0" class="form-control balance-compra-total"
+                <input type="number" step="0.001" min="0" class="form-control balance-compra-total"
                        name="inicio_compra_{{ f.producto_id }}"
-                       data-target="inicio"
-                       data-producto="{{ f.producto_id }}"
-                       data-factor="{{ f.factor_conversion }}"
-                       value="{{ f.existencia_inicio_compra if f.existencia_inicio_compra is not none else '' }}">
+                        data-target="inicio"
+                        data-producto="{{ f.producto_id }}"
+                        data-factor="{{ f.factor_conversion }}"
+                        data-tipo-conversion="{{ f.tipo_conversion or 'uso_a_compra' }}"
+                        value="{{ f.existencia_inicio_compra if f.existencia_inicio_compra is not none else '' }}">
                 <span class="input-group-text">{{ f.unidad_compra }}</span>
               </div>
               {% endif %}
             </td>
-            <td class="text-success">+{{ f.entradas_mes }}
-              {% if f.unidad_compra and f.entradas_mes_compra is not none %}
-              <br><small class="text-muted">= {{ f.entradas_mes_compra }} {{ f.unidad_compra }}</small>
+            <td class="text-success">
+              {% if anio == 2026 and mes <= 7 %}
+              <input type="number" step="0.001" min="0" class="form-control form-control-sm entrada-total"
+                     data-producto="{{ f.producto_id }}" data-unidad-stock="{{ f.unidad_medida }}"
+                     name="entradas_{{ f.producto_id }}" value="{{ f.entradas_mes }}">
+              <small class="text-muted">{{ f.unidad_medida }}</small>
+              {% if f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+              <div class="input-group input-group-sm mt-1">
+                <input type="number" step="0.001" min="0" class="form-control balance-compra-total"
+                       name="entradas_compra_{{ f.producto_id }}"
+                        data-target="entradas"
+                        data-producto="{{ f.producto_id }}"
+                        data-factor="{{ f.factor_conversion }}"
+                        data-tipo-conversion="{{ f.tipo_conversion or 'uso_a_compra' }}"
+                        value="{{ f.entradas_mes_compra if f.entradas_mes_compra is not none else '' }}">
+                <span class="input-group-text">{{ f.unidad_compra }}</span>
+              </div>
+              {% endif %}
+              {% else %}
+              +{{ f.entradas_mes|cantidad_unidad(f.unidad_medida) }}
+              {% if f.unidad_compra and f.entradas_mes_compra is not none and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+              <br><small class="text-muted">= {{ f.entradas_mes_compra|cantidad_unidad(f.unidad_compra) }}</small>
+              {% endif %}
               {% endif %}
             </td>
-            <td><input type="number" step="0.01" min="0" class="form-control form-control-sm salida-total"
+            <td class="text-danger">
+              {{ f.salidas_manual|cantidad_unidad(f.unidad_medida) if f.salidas_manual is not none else '—' }}
+              {% if f.salidas_manual_compra is not none and f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+              <br><small class="text-muted">= {{ f.salidas_manual_compra|cantidad_unidad(f.unidad_compra) }}</small>
+              {% endif %}
+            </td>
+            <td><input type="number" step="0.001" min="0" class="form-control form-control-sm final-total-input"
                        data-producto="{{ f.producto_id }}" data-entradas="{{ f.entradas_mes }}"
                        data-unidad-stock="{{ f.unidad_medida }}"
-                       name="salidas_{{ f.producto_id }}" value="{{ f.salidas_manual if f.salidas_manual is not none else '' }}"
-                       placeholder="0">
-              {% if f.unidad_compra and f.factor_conversion %}
+                       name="final_{{ f.producto_id }}" value="{{ f.existencia_fisica if f.existencia_fisica is defined and f.existencia_fisica is not none else '' }}"
+                       placeholder="Conteo físico">
+              {% if f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
               <div class="input-group input-group-sm mt-1">
-                <input type="number" step="0.01" min="0" class="form-control balance-compra-total"
-                       name="salidas_compra_{{ f.producto_id }}"
-                       data-target="salidas"
-                       data-producto="{{ f.producto_id }}"
-                       data-factor="{{ f.factor_conversion }}"
-                       value="{{ f.salidas_manual_compra if f.salidas_manual_compra is not none else '' }}"
+                <input type="number" step="0.001" min="0" class="form-control balance-compra-total"
+                       name="final_compra_{{ f.producto_id }}"
+                        data-target="final"
+                        data-producto="{{ f.producto_id }}"
+                        data-factor="{{ f.factor_conversion }}"
+                        data-tipo-conversion="{{ f.tipo_conversion or 'uso_a_compra' }}"
+                        value="{{ f.existencia_final_compra if f.existencia_final_compra is not none else '' }}"
                        placeholder="{{ f.unidad_compra }}">
                 <span class="input-group-text">{{ f.unidad_compra }}</span>
               </div>
               {% endif %}
             </td>
-            <td class="fw-bold text-primary" id="final-total-{{ f.producto_id }}">{{ f.existencia_final if f.existencia_final is not none else '—' }}</td>
+            <td class="fw-bold text-primary" id="final-total-{{ f.producto_id }}">
+              {{ f.existencia_fisica|cantidad_unidad(f.unidad_medida) if f.existencia_fisica is not none else (f.existencia_final|cantidad_unidad(f.unidad_medida) if f.existencia_final is not none else '—') }}
+              {% if f.existencia_final_compra is not none and f.existencia_fisica is not none and f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+              <br><small class="text-muted">= {{ f.existencia_final_compra|cantidad_unidad(f.unidad_compra) }}</small>
+              {% endif %}
+            </td>
+            <td>
+              {% if f.salidas_manual is not none and f.diferencia_salidas is not none %}
+                <span class="{{ 'text-danger' if f.diferencia_salidas != 0 else 'text-success' }}">
+                  {{ f.diferencia_salidas|cantidad_unidad(f.unidad_medida) }}
+                </span>
+              {% else %}—{% endif %}
+            </td>
             <td>{% if f.salidas_manual is not none %}<span class="badge bg-success">Cerrado</span>{% else %}<span class="badge bg-warning text-dark">Pendiente</span>{% endif %}</td>
           </tr>
         {% endfor %}
@@ -127,7 +198,12 @@
     </div>
     <div class="card-footer d-flex justify-content-between align-items-center">
       <span>Página {{ pagina }} de {{ total_paginas }}</span>
-      {% if not periodo or periodo.estado != 'cerrado' %}<button class="btn btn-success"><i class="bi bi-check-lg"></i> Guardar esta página</button>{% endif %}
+      {% if not periodo or periodo.estado != 'cerrado' %}
+      <button class="btn btn-success">
+        <i class="bi bi-check-lg"></i>
+        {% if hay_caldera_auto %}Guardar y generar salidas Caldera{% else %}Guardar datos de esta página{% endif %}
+      </button>
+      {% endif %}
     </div>
   </div>
 </form>
@@ -141,39 +217,59 @@
 <script>
 function actualizarTotal(pid) {
   const inicio = document.querySelector(`.inicio-total[data-producto="${pid}"]`);
-  const salida = document.querySelector(`.salida-total[data-producto="${pid}"]`);
+  const salida = document.querySelector(`.final-total-input[data-producto="${pid}"]`);
   const final = document.getElementById(`final-total-${pid}`);
   if (!inicio || !salida || !final || salida.value === '') return;
-  const resultado = Number(inicio.value) + Number(salida.dataset.entradas) - Number(salida.value);
-  const compraInput = document.querySelector(`.balance-compra-total[data-producto="${pid}"]`);
+  const resultado = Number(salida.value);
+  const compraInput = document.querySelector(`.balance-compra-total[data-producto="${pid}"][data-target="final"]`);
   const factor = compraInput ? Number(compraInput.dataset.factor || 0) : 0;
+  const tipoConversion = compraInput?.dataset.tipoConversion || 'uso_a_compra';
   const unidadCompra = compraInput?.parentElement?.querySelector('.input-group-text')?.textContent || '';
   const unidadStock = salida.dataset.unidadStock || '';
   const resultadoStock = resultado.toFixed(2);
-  const resultadoCompra = (resultado * factor).toFixed(2);
+  const resultadoCompra = convertirStockACompra(resultado, factor, tipoConversion).toFixed(2);
   if (factor && unidadCompra) {
-    final.innerHTML = `${resultadoCompra} ${unidadCompra}<br><span class="fw-normal" style="font-size:.72rem">= ${resultadoStock} ${unidadStock}</span>`;
+    final.innerHTML = `${resultadoStock} ${unidadStock}<br><span class="fw-normal" style="font-size:.72rem">= ${resultadoCompra} ${unidadCompra}</span>`;
   } else {
     final.textContent = `${resultadoStock} ${unidadStock}`;
   }
   final.classList.toggle('text-danger', resultado < 0);
   final.classList.toggle('text-primary', resultado >= 0);
 }
-document.querySelectorAll('.inicio-total, .salida-total').forEach(el => {
-  el.addEventListener('input', () => actualizarTotal(el.dataset.producto));
+function sincronizarCompraDesdeStock(input) {
+  const compra = document.querySelector(`.balance-compra-total[data-producto="${input.dataset.producto}"][data-target="${input.dataset.target}"]`);
+  if (!compra || input.value === '') return;
+  const factor = Number(compra.dataset.factor || 0);
+  if (!factor) return;
+  compra.value = convertirStockACompra(Number(input.value), factor, compra.dataset.tipoConversion || 'uso_a_compra').toFixed(2);
+}
+document.querySelectorAll('.inicio-total, .entrada-total, .final-total-input').forEach(el => {
+  el.dataset.target = el.classList.contains('inicio-total') ? 'inicio' : (el.classList.contains('entrada-total') ? 'entradas' : 'final');
+  el.addEventListener('input', () => {
+    sincronizarCompraDesdeStock(el);
+    actualizarTotal(el.dataset.producto);
+  });
 });
 document.querySelectorAll('.balance-compra-total').forEach(input => {
   input.addEventListener('input', () => {
     const factor = Number(input.dataset.factor || 0);
     if (!factor || input.value === '') return;
-    const targetClass = input.dataset.target === 'inicio' ? 'inicio-total' : 'salida-total';
+    let targetClass = 'final-total-input';
+    if (input.dataset.target === 'inicio') targetClass = 'inicio-total';
+    if (input.dataset.target === 'entradas') targetClass = 'entrada-total';
     const destino = document.querySelector(`.${targetClass}[data-producto="${input.dataset.producto}"]`);
     if (!destino) return;
-    const convertido = Number(input.value) / factor;
+    const convertido = convertirCompraAStock(Number(input.value), factor, input.dataset.tipoConversion || 'uso_a_compra');
     const unidadStock = destino.dataset.unidadStock || '';
     destino.value = unidadStock.toUpperCase().includes('PIEZA') ? String(Math.round(convertido)) : convertido.toFixed(4);
     actualizarTotal(input.dataset.producto);
   });
 });
+function convertirCompraAStock(cantidadCompra, factor, tipoConversion) {
+  return tipoConversion === 'compra_a_uso' ? cantidadCompra * factor : cantidadCompra / factor;
+}
+function convertirStockACompra(cantidadStock, factor, tipoConversion) {
+  return tipoConversion === 'compra_a_uso' ? cantidadStock / factor : cantidadStock * factor;
+}
 </script>
 {% endblock %}

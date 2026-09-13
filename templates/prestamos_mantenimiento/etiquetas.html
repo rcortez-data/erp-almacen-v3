@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Etiquetas préstamos mantenimiento</title>
+  <style>
+    @page {
+      size: 101mm 76mm;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #e5e7eb;
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #fff;
+      border-bottom: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+
+    .toolbar button,
+    .toolbar a {
+      border: 1px solid #9ca3af;
+      background: #fff;
+      color: #111827;
+      border-radius: 6px;
+      padding: 7px 11px;
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .toolbar button.primary {
+      border-color: #111827;
+      background: #111827;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .sheet {
+      width: 101mm;
+      height: 76mm;
+      margin: 12px auto;
+      background: #fff;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      page-break-after: always;
+      overflow: hidden;
+      border: 1px solid #d1d5db;
+    }
+
+    .label-card {
+      position: relative;
+      padding: 3.2mm 3.5mm 2.8mm;
+      border-right: .28mm dashed #9ca3af;
+      border-bottom: .28mm dashed #9ca3af;
+      overflow: hidden;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .label-card:nth-child(2n) {
+      border-right: 0;
+    }
+
+    .label-card:nth-child(n+3) {
+      border-bottom: 0;
+    }
+
+    .brand {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 6.5mm;
+      margin-bottom: 1.4mm;
+    }
+
+    .brand img {
+      max-width: 27mm;
+      max-height: 6.5mm;
+      object-fit: contain;
+    }
+
+    .tipo {
+      font-size: 6.8px;
+      font-weight: 900;
+      letter-spacing: .45px;
+      color: #374151;
+      line-height: 1;
+      margin-bottom: 1.2mm;
+    }
+
+    .nombre {
+      height: 9.5mm;
+      overflow: hidden;
+      font-size: var(--nombre-size, 11.5px);
+      line-height: 1.05;
+      font-weight: 900;
+      color: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow-wrap: anywhere;
+    }
+
+    .meta {
+      height: 4.5mm;
+      overflow: hidden;
+      font-size: 7.2px;
+      line-height: 1.05;
+      color: #374151;
+      font-weight: 700;
+      margin: .7mm 0 .8mm;
+    }
+
+    .barcode {
+      height: 12mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .barcode img {
+      max-width: 43mm;
+      height: 11.5mm;
+    }
+
+    .codigo {
+      font-family: Consolas, Monaco, monospace;
+      font-size: 8px;
+      font-weight: 900;
+      color: #111827;
+      line-height: 1;
+      margin-top: .7mm;
+    }
+
+    .empty {
+      width: 101mm;
+      margin: 20px auto;
+      background: #fff;
+      padding: 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .toolbar,
+      .empty {
+        display: none;
+      }
+
+      .sheet {
+        margin: 0;
+        border: 0;
+        page-break-after: always;
+      }
+
+      .sheet:last-child {
+        page-break-after: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div>
+      <strong>{{ registros|length }}</strong> etiqueta(s) ·
+      {{ 'Personal mantenimiento' if tipo == 'personal' else 'Material a préstamo' }}
+    </div>
+    <div>
+      <a href="{{ url_for('prestamos_mantenimiento.personal' if tipo == 'personal' else 'prestamos_mantenimiento.material') }}">Regresar</a>
+      <button type="button" onclick="window.print()">Vista navegador</button>
+      <form method="POST" action="{{ url_for('prestamos_mantenimiento.etiquetas_tsc') }}" style="display:inline">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="tipo" value="{{ tipo }}">
+        <input type="hidden" name="volver" value="{{ request.full_path }}">
+        {% for r in registros %}
+        <input type="hidden" name="ids" value="{{ r.id }}">
+        {% endfor %}
+        <button type="submit" class="primary">Imprimir {{ printer_name }}</button>
+      </form>
+    </div>
+  </div>
+
+  {% if registros %}
+    {% for bloque in registros|batch(4, none) %}
+    <section class="sheet">
+      {% for r in bloque %}
+      {% if r %}
+      <div class="label-card">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='img/grupo-tensa-logo.png') }}" alt="Grupo Tensa">
+        </div>
+        <div class="tipo">{{ 'Personal mantenimiento' if tipo == 'personal' else 'Material a préstamo' }}</div>
+        <div class="nombre js-fit-name">{{ r.nombre }}</div>
+        <div class="meta">
+          {% if tipo == 'personal' %}
+            Nómina: {{ r.codigo }}{% if r.area %} · {{ r.area }}{% endif %}
+          {% else %}
+            {{ r.categoria or 'Herramienta' }}{% if r.ubicacion %} · {{ r.ubicacion }}{% endif %}
+          {% endif %}
+        </div>
+        <div class="barcode">
+          {% if tipo == 'personal' %}
+          <img src="{{ url_for('prestamos_mantenimiento.personal_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}">
+          {% else %}
+          <img src="{{ url_for('prestamos_mantenimiento.material_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}">
+          {% endif %}
+        </div>
+        <div class="codigo">{{ r.codigo_barras }}</div>
+      </div>
+      {% else %}
+      <div class="label-card"></div>
+      {% endif %}
+      {% endfor %}
+    </section>
+    {% endfor %}
+  {% else %}
+  <div class="empty">Selecciona al menos un registro para imprimir etiquetas.</div>
+  {% endif %}
+
+  <script>
+    function fitNames() {
+      document.querySelectorAll('.js-fit-name').forEach(el => {
+        let size = 11.5;
+        el.style.setProperty('--nombre-size', `${size}px`);
+        while ((el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) && size > 7) {
+          size -= 0.4;
+          el.style.setProperty('--nombre-size', `${size}px`);
+        }
+      });
+    }
+    window.addEventListener('load', fitNames);
+    window.addEventListener('beforeprint', fitNames);
+  </script>
+</body>
+</html>

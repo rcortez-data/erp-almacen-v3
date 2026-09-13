@@ -4,16 +4,16 @@
 <div class="topbar">
   <h1 class="page-title"><i class="bi bi-arrow-up-circle text-warning"></i> Detalle de salida</h1>
   <div class="d-flex gap-2">
-    <a href="{{ url_for('salidas.editar', sid=salida.id) }}" class="btn btn-sm btn-outline-primary">
+    <a href="{{ url_for('salidas.editar', sid=salida.id, return_to=return_to) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil-square"></i> Editar
     </a>
-    <form method="POST" action="{{ url_for('salidas.eliminar', sid=salida.id) }}" class="d-inline"
+    <form method="POST" action="{{ url_for('salidas.eliminar', sid=salida.id, return_to=return_to) }}" class="d-inline"
           onsubmit="return confirm('¿Eliminar esta salida? Se revertirá el stock que descontó. Esta acción no se puede deshacer.');">
       <button type="submit" class="btn btn-sm btn-outline-danger">
         <i class="bi bi-trash"></i> Eliminar
       </button>
     </form>
-    <a href="{{ url_for('salidas.index') }}" class="btn btn-sm btn-outline-secondary">
+    <a href="{{ return_to }}" class="btn btn-sm btn-outline-secondary">
       <i class="bi bi-arrow-left"></i> Regresar
     </a>
   </div>
@@ -29,10 +29,10 @@
       <dd class="col-sm-8">{{ salida.codigo }} — {{ salida.descripcion }}</dd>
       <dt class="col-sm-4">Cantidad</dt>
       <dd class="col-sm-8 fw-bold text-danger">
-        -{{ salida.cantidad|cantidad_unidad(salida.unidad_medida) }}
+        -{{ ((salida.cantidad * salida.factor_conversion) if salida.unidad_compra and salida.factor_conversion and salida.tipo_conversion == 'compra_a_uso' else ((salida.cantidad / salida.factor_conversion) if salida.unidad_compra and salida.factor_conversion else salida.cantidad))|cantidad_unidad(salida.unidad_medida) }}
         {% if salida.unidad_compra and salida.factor_conversion %}
         <br><span class="text-muted fw-normal" style="font-size:.85rem">
-          = {{ (salida.cantidad * salida.factor_conversion)|moneda }} {{ salida.unidad_compra }}
+          = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra) }}
         </span>
         {% endif %}
       </dd>

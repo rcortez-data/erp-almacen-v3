@@ -130,6 +130,7 @@
         <i class="bi bi-tags"></i> Vista etiquetas
       </a>
       <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}" class="d-inline">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         {% for key, value in request.args.items() %}
         <input type="hidden" name="{{ key }}" value="{{ value }}">
         {% endfor %}
@@ -180,6 +181,9 @@
           <td class="col-wrap">
             <div class="fw-semibold">{{ e.descripcion }}</div>
             {% if e.es_dolar %}<span class="badge bg-info text-dark">USD</span>{% endif %}
+            {% if e.recuperacion_almacen %}
+            <span class="badge bg-success"><i class="bi bi-arrow-counterclockwise"></i> Recuperación almacén</span>
+            {% endif %}
           </td>
           <td class="col-wrap" style="max-width:160px">{{ e.ubicacion or '-' }}</td>
           <td class="text-end fw-semibold">
@@ -233,6 +237,7 @@
                 <i class="bi bi-tags"></i>
               </a>
               <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}" class="d-inline">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="ids" value="{{ e.id }}">
                 <input type="hidden" name="volver" value="{{ request.full_path }}">
                 <button type="submit" class="btn btn-dark" title="Imprimir directo en TSC TE200">

@@ -18,14 +18,25 @@
   <div class="card-body">
     <form method="POST">
       <input type="hidden" name="volver" value="{{ volver }}">
-      {% if entrada.es_servicio %}
+
       <div class="mb-3">
+        <label class="form-label fw-semibold">Tipo de registro</label>
+        <select name="tipo_registro" id="tipo_registro" class="form-select" style="max-width:280px">
+          <option value="producto" {{ 'selected' if not entrada.es_servicio }}>Producto de inventario</option>
+          <option value="servicio" {{ 'selected' if entrada.es_servicio }}>Servicio / cargo</option>
+        </select>
+        <div class="form-text">
+          Si cambias de servicio a producto se creará un producto nuevo y se sumará al stock. Si cambias de producto a servicio se revierte del stock y queda solo como servicio.
+        </div>
+      </div>
+
+      <div id="bloque-servicio" class="mb-3" style="{{ '' if entrada.es_servicio else 'display:none' }}">
         <label class="form-label fw-semibold">Descripción del servicio/cargo</label>
         <input type="text" name="concepto_servicio" class="form-control" value="{{ entrada.descripcion }}">
         <div class="form-text"><span class="badge bg-warning text-dark">Servicio</span> Esta entrada no está ligada a un producto de inventario y no afecta stock.</div>
       </div>
-      {% else %}
-      <div class="mb-3 position-relative">
+
+      <div id="bloque-producto-existente" class="mb-3 position-relative" style="{{ 'display:none' if entrada.es_servicio else '' }}">
         <label class="form-label fw-semibold">Producto</label>
         <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
                placeholder="Busca por código o descripción"
@@ -35,13 +46,32 @@
              style="z-index:20; max-height:280px; overflow-y:auto; display:none;"></div>
         <div id="info-stock" class="form-text"></div>
       </div>
-      {% endif %}
+
+      <div id="bloque-producto-nuevo" class="mb-3" style="{{ '' if entrada.es_servicio else 'display:none' }}">
+        <label class="form-label fw-semibold">Datos del producto nuevo</label>
+        <input type="text" name="descripcion_producto" class="form-control mb-2"
+               value="{{ entrada.descripcion }}" placeholder="Descripción del producto">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Unidad de inventario</label>
+            <select name="unidad_medida_producto" class="form-select">
+              <option value="">Selecciona unidad</option>
+              {% for unidad in unidades %}
+              <option value="{{ unidad }}" {{ 'selected' if unidad|upper == 'PIEZA' }}> {{ unidad }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-text">
+          Se generará un código automático. Si la orden de compra es H, el producto se creará como material OC H independiente.
+        </div>
+      </div>
 
       <div class="row g-3 mb-3">
         <div class="col-md-4">
           <label class="form-label fw-semibold">Cantidad</label>
           <div class="input-group">
-            <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.01" step="0.01"
+            <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.001" step="0.001"
                    value="{{ entrada.cantidad }}">
             <span class="input-group-text" id="lbl-unidad">{{ entrada.unidad_medida }}</span>
           </div>
@@ -171,8 +201,29 @@
   const monedaInput = document.getElementById('moneda');
   const aplicaIvaInput = document.getElementById('aplica_iva');
   const infoConversion = document.getElementById('info-conversion');
+  const tipoRegistro = document.getElementById('tipo_registro');
+  const bloqueServicio = document.getElementById('bloque-servicio');
+  const bloqueProductoExistente = document.getElementById('bloque-producto-existente');
+  const bloqueProductoNuevo = document.getElementById('bloque-producto-nuevo');
   let productoActual = null;
   let debounceTimer = null;
+
+  function actualizarTipoRegistro() {
+    const esServicio = tipoRegistro.value === 'servicio';
+    bloqueServicio.style.display = esServicio ? '' : 'none';
+    if ({{ 'true' if entrada.es_servicio else 'false' }}) {
+      bloqueProductoNuevo.style.display = esServicio ? 'none' : '';
+      bloqueProductoExistente.style.display = 'none';
+    } else {
+      bloqueProductoExistente.style.display = esServicio ? 'none' : '';
+      bloqueProductoNuevo.style.display = 'none';
+    }
+    if (esServicio) {
+      infoConversion.style.display = 'none';
+    }
+  }
+  tipoRegistro.addEventListener('change', actualizarTipoRegistro);
+  actualizarTipoRegistro();
 
   buscador?.addEventListener('input', function() {
     productoIdInput.value = '';
@@ -222,9 +273,16 @@
   function actualizarConversion() {
     if (productoActual && productoActual.unidad_compra && productoActual.factor_conversion) {
       const cant = parseFloat(cantidadInput.value) || 0;
-      const piezas = (cant / productoActual.factor_conversion).toFixed(2);
+      const factor = Number(productoActual.factor_conversion || 0);
+      const tipo = productoActual.tipo_conversion || 'uso_a_compra';
+      const piezas = tipo === 'compra_a_uso'
+        ? (cant * factor).toFixed(2)
+        : (cant / factor).toFixed(2);
+      const regla = tipo === 'compra_a_uso'
+        ? `1 ${productoActual.unidad_compra.toLowerCase()} = ${factor} ${productoActual.unidad_medida.toLowerCase()}`
+        : `1 ${productoActual.unidad_medida.toLowerCase()} = ${factor} ${productoActual.unidad_compra.toLowerCase()}`;
       infoConversion.style.display = 'block';
-      infoConversion.textContent = `= ${piezas} ${productoActual.unidad_medida} (1 ${productoActual.unidad_medida.toLowerCase()} = ${productoActual.factor_conversion} ${productoActual.unidad_compra.toLowerCase()})`;
+      infoConversion.textContent = `= ${piezas} ${productoActual.unidad_medida} (${regla})`;
     } else {
       infoConversion.style.display = 'none';
     }

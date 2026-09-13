@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if etiqueta else 'Nueva' }} Etiqueta Producción{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title">
+    <i class="bi bi-tags"></i> {{ 'Editar' if etiqueta else 'Nueva' }} etiqueta producción
+  </h1>
+  <a href="{{ url_for('etiquetas_produccion.index') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-7">
+    <div class="card">
+      <div class="card-header">Datos de la etiqueta</div>
+      <div class="card-body">
+        <form method="post">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label">Producto</label>
+            <input type="text" name="producto" value="{{ etiqueta.producto if etiqueta else '' }}" class="form-control text-uppercase" required maxlength="80" placeholder="Ej. TRESYPLUS FRIO">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Uso</label>
+            <input type="text" name="uso" value="{{ etiqueta.uso if etiqueta else '' }}" class="form-control text-uppercase" required maxlength="100" placeholder="Ej. DESENGRASANTE GENERAL">
+          </div>
+          {% set seleccionados = lista_pictogramas(etiqueta.pictograma) if etiqueta else ['advertencia'] %}
+          <div class="mb-3">
+            <label class="form-label">Pictogramas</label>
+            <div class="text-muted small mb-2">Puedes seleccionar hasta 4. Si no marcas ninguno, la etiqueta saldrá sin pictograma.</div>
+            <div class="row g-2">
+              {% for valor, texto in pictogramas.items() %}
+              <div class="col-md-6">
+                <label class="border rounded p-2 w-100 d-flex align-items-center gap-2">
+                  <input type="checkbox" name="pictogramas" value="{{ valor }}" class="form-check-input pictograma-check" {{ 'checked' if valor in seleccionados }}>
+                  <span class="pictograma-mini pictograma-{{ valor }}"><span>{{ '!' if valor == 'ghs07' else valor[3:] }}</span></span>
+                  <span>{{ texto }}</span>
+                </label>
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% if etiqueta %}
+          <div class="mb-3">
+            <label class="form-label">Estado</label>
+            <select name="activo" class="form-select">
+              <option value="1" {{ 'selected' if etiqueta.activo }}>Activa</option>
+              <option value="0" {{ 'selected' if not etiqueta.activo }}>Inactiva</option>
+            </select>
+          </div>
+          {% endif %}
+          <div class="mb-3">
+            <label class="form-label">Observaciones internas</label>
+            <textarea name="observaciones" class="form-control" rows="3">{{ etiqueta.observaciones if etiqueta else '' }}</textarea>
+          </div>
+          <div class="d-flex gap-2">
+            <button class="btn btn-primary"><i class="bi bi-save"></i> Guardar</button>
+            <a href="{{ url_for('etiquetas_produccion.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+            {% if etiqueta %}
+              <a href="{{ url_for('etiquetas_produccion.vista', ids=etiqueta.id) }}" target="_blank" class="btn btn-outline-success">
+                <i class="bi bi-eye"></i> Vista etiqueta
+              </a>
+            {% endif %}
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-header">Formato esperado</div>
+      <div class="card-body text-muted">
+        <p>Esta etiqueta está pensada para químicos de producción. El texto se acomoda para dejar espacio a los pictogramas seleccionados.</p>
+        <ul class="mb-0">
+          <li><strong>Producto:</strong> nombre grande.</li>
+          <li><strong>Uso:</strong> aplicación del material.</li>
+          <li><strong>Pictogramas:</strong> hasta 4, acomodados automáticamente.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+<style>
+.pictograma-mini {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: rotate(45deg);
+  border: 2px solid #111;
+  font-weight: 900;
+  color: #111;
+}
+.pictograma-mini { line-height: 1; }
+.pictograma-mini span { transform: rotate(-45deg); }
+.pictograma-ghs01,
+.pictograma-ghs02,
+.pictograma-ghs03,
+.pictograma-ghs04,
+.pictograma-ghs05,
+.pictograma-ghs06,
+.pictograma-ghs07,
+.pictograma-ghs08,
+.pictograma-ghs09 { background: #fff; border-color: #dc2626; color: #111; }
+</style>
+<script>
+document.querySelectorAll('.pictograma-check').forEach(chk => {
+  chk.addEventListener('change', () => {
+    const seleccionados = document.querySelectorAll('.pictograma-check:checked');
+    if (seleccionados.length > 4) {
+      chk.checked = false;
+      alert('Máximo 4 pictogramas por etiqueta.');
+    }
+  });
+});
+</script>
+{% endblock %}

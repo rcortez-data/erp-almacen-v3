@@ -87,7 +87,7 @@
     <div class="card">
       <div class="card-header bg-light">
         <strong>📋 Partidas — Marca lo que ya llegó</strong>
-        <small class="text-muted d-block" style="font-size:.75rem">Captura lo recibido en entradas y aquí refleja automáticamente</small>
+        <small class="text-muted d-block" style="font-size:.75rem">Lo ligado a productos se calcula por entradas; si no se vinculó bien, puedes capturar un total manual.</small>
       </div>
       <div class="card-body p-0">
         <form method="POST">
@@ -104,10 +104,12 @@
               </thead>
               <tbody>
                 {% for it in items %}
-                <tr class="{{ 'table-success' if it.recibido_calc >= it.cantidad else ('table-warning' if it.recibido_calc > 0 else '') }}">
+                <tr class="{{ '' if it.informativo else ('table-success' if it.recibido_calc >= it.cantidad else ('table-warning' if it.recibido_calc > 0 else '')) }}">
                   <td>
                     <strong>{{ it.descripcion }}</strong>
+                    {% if it.informativo %}<span class="badge bg-secondary ms-1">Informativo</span>{% endif %}
                     {% if it.auto %}<span class="badge bg-info text-dark ms-1" title="Se calcula automático desde entradas vinculadas"><i class="bi bi-link-45deg"></i></span>{% endif %}
+                    {% if it.manual %}<span class="badge bg-primary ms-1" title="Recibido capturado manualmente">Manual</span>{% endif %}
                     {% if recepciones_por_item.get(it.id) %}
                     <div class="mt-1 text-muted" style="font-size:.72rem">
                       {% for r in recepciones_por_item.get(it.id) %}
@@ -117,23 +119,50 @@
                     {% endif %}
                   </td>
                   <td style="text-align: center">
+                    {% if it.informativo %}
+                    <span class="text-muted">—</span>
+                    {% else %}
                     <span class="fw-semibold">{{ "%g"|format(it.cantidad) }}</span> {{ unidad_para_cantidad(it.unidad, it.cantidad) }}
+                    {% endif %}
                   </td>
                   <td>
-                    {% if it.auto %}
+                    {% if it.informativo %}
+                    <div class="text-center text-muted">No requiere recepción</div>
+                    {% elif it.auto %}
                     <span class="fw-semibold d-block text-center">{{ "%g"|format(it.recibido_calc) }}</span>
                     <div class="form-text mb-0 text-center" style="font-size:.68rem">automático</div>
-                    {% else %}
+                    {% elif not it.producto_id %}
                     <div class="text-center fw-semibold mb-1" style="font-size:.8rem">
                       Recibido: {{ "%g"|format(it.recibido_calc) }} / {{ "%g"|format(it.cantidad) }}
                     </div>
-                    <input type="number" step="0.01" min="0" name="recibido_{{ it.id }}"
+                    <input type="number" step="0.001" min="0" name="recibido_{{ it.id }}"
                            class="form-control form-control-sm input-sin-flechas"
                            placeholder="Cantidad que llega ahora">
+                    {% else %}
+                    <span class="fw-semibold d-block text-center">{{ "%g"|format(it.recibido_calc) }}</span>
+                    <div class="form-text mb-0 text-center" style="font-size:.68rem">manual</div>
+                    {% endif %}
+                    {% if not it.informativo %}
+                    <div class="mt-2">
+                      <input type="number" step="0.001" min="0" name="recibido_manual_{{ it.id }}"
+                             class="form-control form-control-sm input-sin-flechas"
+                             value="{{ '%g'|format(it.cantidad_recibida) if it.manual else '' }}"
+                             placeholder="Total manual recibido">
+                      {% if it.manual %}
+                      <label class="form-check form-check-sm mt-1" style="font-size:.72rem">
+                        <input type="checkbox" class="form-check-input" name="quitar_manual_{{ it.id }}" value="1">
+                        Quitar manual y volver al automático
+                      </label>
+                      {% endif %}
+                    </div>
                     {% endif %}
                   </td>
                   <td style="text-align: center">
-                    {% if it.recibido_calc >= it.cantidad %}
+                    {% if it.informativo %}
+                      <span class="badge bg-secondary" title="Renglón informativo">
+                        <i class="bi bi-info-circle"></i>
+                      </span>
+                    {% elif it.recibido_calc >= it.cantidad %}
                       <span class="badge bg-success" title="Completo">
                         <i class="bi bi-check-circle-fill"></i>
                       </span>
@@ -155,7 +184,7 @@
             </table>
           </div>
           <div class="p-3 d-flex gap-2 flex-wrap">
-            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Registrar entrega</button>
+            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Guardar recibido</button>
           </div>
         </form>
         <form method="POST" class="px-3 pb-3" onsubmit="return confirm('¿Marcar como recibidas al 100% las partidas de texto libre?');">

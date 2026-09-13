@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Etiquetas Producción</title>
+  <style>
+    @page { size: 101mm 76mm; margin: 0; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #f3f4f6;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+    .toolbar {
+      padding: 12px;
+      background: #111827;
+      color: white;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .toolbar button, .toolbar a, .toolbar input {
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      padding: 7px 10px;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .toolbar button { background: #16a34a; color: white; border-color: #16a34a; cursor: pointer; }
+    .toolbar a { background: white; color: #111827; }
+    .etiqueta {
+      width: 101mm;
+      height: 76mm;
+      margin: 12px auto;
+      background: white;
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      border: 1px dashed #d1d5db;
+    }
+    .contenido {
+      position: absolute;
+      left: 10mm;
+      right: 6mm;
+      top: 9mm;
+      height: 39mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+    }
+    .campo {
+      display: block;
+      margin-bottom: 5mm;
+      min-width: 0;
+    }
+    .label {
+      font-size: 9.5pt;
+      font-weight: 800;
+      line-height: 1;
+      margin-bottom: 1.5mm;
+    }
+    .valor-producto {
+      font-size: 30pt;
+      font-weight: 900;
+      line-height: .98;
+      overflow-wrap: normal;
+      word-break: normal;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .valor-uso {
+      font-size: 18pt;
+      font-weight: 800;
+      line-height: 1.05;
+      overflow-wrap: normal;
+      word-break: normal;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .texto-largo .valor-producto { font-size: 24pt; }
+    .texto-muy-largo .valor-producto { font-size: 19pt; }
+    .uso-largo .valor-uso { font-size: 14.5pt; }
+    .uso-muy-largo .valor-uso { font-size: 12pt; }
+    .pictogramas {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 3mm;
+      height: 25mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 3mm;
+    }
+    .picto-item {
+      width: 16mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: .8mm;
+    }
+    .pictograma {
+      width: 10.5mm;
+      height: 10.5mm;
+      border: .7mm solid #111;
+      transform: rotate(45deg);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pictograma span {
+      transform: rotate(-45deg);
+      display: block;
+      font-size: 12pt;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .pictograma-ghs01,
+    .pictograma-ghs02,
+    .pictograma-ghs03,
+    .pictograma-ghs04,
+    .pictograma-ghs05,
+    .pictograma-ghs06,
+    .pictograma-ghs07,
+    .pictograma-ghs08,
+    .pictograma-ghs09 {
+      background: #fff;
+      border-color: #dc2626;
+      color: #111;
+    }
+    .picto-texto {
+      font-size: 4.8pt;
+      line-height: .95;
+      font-weight: 700;
+      text-align: center;
+      color: #111;
+      min-height: 9mm;
+    }
+    @media print {
+      body { background: white; }
+      .toolbar { display: none; }
+      .etiqueta { margin: 0; border: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <strong>Vista etiquetas producción</strong>
+    <span>{{ etiquetas|length }} etiqueta(s)</span>
+    <form method="post" action="{{ url_for('etiquetas_produccion.imprimir_tsc') }}" style="display:flex; gap:8px; align-items:center; margin:0;">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="ids" value="{{ ids }}">
+      <label>Copias <input type="number" name="copias" value="1" min="1" max="50" style="width:70px;"></label>
+      <button type="submit">Imprimir TSC</button>
+    </form>
+    <button type="button" onclick="window.print()">Imprimir navegador</button>
+    <a href="{{ url_for('etiquetas_produccion.index') }}">Regresar</a>
+    <span>Impresora TSC: {{ printer_name }}</span>
+  </div>
+
+  {% for e in etiquetas %}
+  {% set pictos = lista_pictogramas(e.pictograma) %}
+  {% set producto_len = e.producto|length %}
+  {% set uso_len = e.uso|length %}
+  <section class="etiqueta pictos-{{ pictos|length }} {{ 'texto-muy-largo' if producto_len > 34 else ('texto-largo' if producto_len > 18 else '') }} {{ 'uso-muy-largo' if uso_len > 34 else ('uso-largo' if uso_len > 18 else '') }}">
+    <div class="contenido">
+      <div class="campo">
+        <div class="label">PRODUCTO:</div>
+        <div class="valor-producto">{{ e.producto }}</div>
+      </div>
+      <div class="campo">
+        <div class="label">USO:</div>
+        <div class="valor-uso">{{ e.uso }}</div>
+      </div>
+    </div>
+    {% if pictos %}
+      <div class="pictogramas count-{{ pictos|length }}">
+        {% for picto in pictos %}
+          {% set texto_picto = pictograma_texto_corto.get(picto, (picto|upper, '')) %}
+          <div class="picto-item">
+            <div class="pictograma pictograma-{{ picto }} pic-{{ loop.index }}">
+              <span>{{ pictograma_siglas.get(picto, '!') }}</span>
+            </div>
+            <div class="picto-texto">
+              {% for linea in texto_picto[:3] %}
+                {{ linea }}{% if not loop.last %}<br>{% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </section>
+  {% else %}
+    <p style="text-align:center; color:#6b7280; padding:30px;">No hay etiquetas para mostrar.</p>
+  {% endfor %}
+</body>
+</html>

@@ -30,6 +30,135 @@ def normalizar_vale(no_vale, tipo_vale):
     return f'{prefijo}{numero}' if numero else prefijo
 
 
+def _factor_conversion(producto):
+    try:
+        factor = float(producto['factor_conversion'] or 0)
+    except (TypeError, ValueError):
+        return None
+    return factor if producto['unidad_compra'] and factor > 0 else None
+
+
+def _tipo_conversion(producto):
+    return producto['tipo_conversion'] if 'tipo_conversion' in producto.keys() and producto['tipo_conversion'] else 'uso_a_compra'
+
+
+def _stock_a_compra(cantidad_stock, producto):
+    factor = _factor_conversion(producto)
+    if not factor:
+        return float(cantidad_stock or 0)
+    if _tipo_conversion(producto) == 'compra_a_uso':
+        return float(cantidad_stock or 0) / factor
+    return float(cantidad_stock or 0) * factor
+
+
+def _compra_a_stock(cantidad_compra, producto):
+    factor = _factor_conversion(producto)
+    if not factor:
+        return float(cantidad_compra or 0)
+    if _tipo_conversion(producto) == 'compra_a_uso':
+        return float(cantidad_compra or 0) * factor
+    return float(cantidad_compra or 0) / factor
+
+
+def _cantidad_salida_stock(cantidad, producto):
+    """Convierte la cantidad capturada de salida a la unidad que mueve stock."""
+    return _compra_a_stock(cantidad, producto) if _factor_conversion(producto) else float(cantidad or 0)
+
+
+def _cantidad_salida_compra_desde_form(form, producto):
+    """Lee la salida aceptando unidad de compra o unidad de stock."""
+    cantidad_raw = (form.get('cantidad') or '').strip()
+    compra_raw = (form.get('cantidad_compra') or '').strip()
+    factor = _factor_conversion(producto)
+    if not cantidad_raw:
+        if factor and compra_raw:
+            return float(compra_raw)
+        return None
+    if factor:
+        return _stock_a_compra(cantidad_raw, producto)
+    return float(cantidad_raw)
+
+
+def _cantidad_salida_db_desde_stock(cantidad_stock, producto):
+    """Convierte una cantidad en unidad de inventario al valor que usa salidas.cantidad."""
+    return _stock_a_compra(cantidad_stock, producto) if _factor_conversion(producto) else float(cantidad_stock or 0)
+
+
+def _sumar_entradas_stock(conn, producto, fecha_ini, fecha_fin_excl):
+    """Suma entradas en la unidad de inventario, igual que Balance Mensual."""
+    factor = _factor_conversion(producto)
+    if factor:
+        cantidad_compra = conn.execute("""
+            SELECT COALESCE(SUM(cantidad),0)
+            FROM entradas
+            WHERE producto_id=?
+              AND DATE(COALESCE(fecha_vale, fecha)) >= ?
+              AND DATE(COALESCE(fecha_vale, fecha)) < ?
+        """, (producto['id'], fecha_ini, fecha_fin_excl)).fetchone()[0] or 0
+        return _compra_a_stock(cantidad_compra, producto)
+    return float(conn.execute("""
+        SELECT COALESCE(SUM(COALESCE(cantidad_piezas, cantidad)),0)
+        FROM entradas
+        WHERE producto_id=?
+          AND DATE(COALESCE(fecha_vale, fecha)) >= ?
+          AND DATE(COALESCE(fecha_vale, fecha)) < ?
+    """, (producto['id'], fecha_ini, fecha_fin_excl)).fetchone()[0] or 0)
+
+
+def _sumar_salidas_stock(conn, producto, fecha_ini, fecha_fin_excl):
+    """Suma salidas en la unidad de inventario, igual que Balance Mensual."""
+    cantidad_db = conn.execute("""
+        SELECT COALESCE(SUM(cantidad),0)
+        FROM salidas
+        WHERE producto_id=?
+          AND DATE(COALESCE(fecha_vale, fecha)) >= ?
+          AND DATE(COALESCE(fecha_vale, fecha)) < ?
+    """, (producto['id'], fecha_ini, fecha_fin_excl)).fetchone()[0] or 0
+    return _cantidad_salida_stock(cantidad_db, producto)
+
+
+def _inicio_mes_balance(conn, producto, anio, mes):
+    """Calcula el inicio de mes tomando como punto de partida el último cierre físico."""
+    inicio_mes = date(anio, mes, 1)
+    cierre_anterior = conn.execute("""
+        SELECT anio, mes, existencia_fisica
+        FROM conteos_fisicos
+        WHERE producto_id=?
+          AND (anio < ? OR (anio=? AND mes < ?))
+          AND existencia_fisica IS NOT NULL
+        ORDER BY anio DESC, mes DESC
+        LIMIT 1
+    """, (producto['id'], anio, anio, mes)).fetchone()
+    if cierre_anterior:
+        base_anio = int(cierre_anterior['anio'])
+        base_mes = int(cierre_anterior['mes'])
+        if base_mes == 12:
+            fecha_base = date(base_anio + 1, 1, 1)
+        else:
+            fecha_base = date(base_anio, base_mes + 1, 1)
+        inicio = float(cierre_anterior['existencia_fisica'] or 0)
+    else:
+        inicio_anio = conn.execute("""
+            SELECT cantidad
+            FROM dashboard_consumo_inicio
+            WHERE producto_id=? AND grupo='caldera' AND anio=?
+        """, (producto['id'], anio)).fetchone()
+        fecha_base = date(anio, 1, 1)
+        inicio = float(inicio_anio['cantidad'] if inicio_anio else 0)
+
+    if fecha_base.isoformat() < inicio_mes.isoformat():
+        inicio += _sumar_entradas_stock(conn, producto, fecha_base.isoformat(), inicio_mes.isoformat())
+        inicio -= _sumar_salidas_stock(conn, producto, fecha_base.isoformat(), inicio_mes.isoformat())
+    return inicio
+
+
+def _salidas_return_url():
+    return_to = request.values.get('return_to') or ''
+    if return_to.startswith('/salidas'):
+        return return_to
+    return url_for('salidas.index')
+
+
 @salidas_bp.route('/eliminar/<int:sid>', methods=['POST'])
 @login_required
 def eliminar(sid):
@@ -40,10 +169,12 @@ def eliminar(sid):
     if not salida:
         flash('Registro no encontrado.', 'danger')
         conn.close()
-        return redirect(url_for('salidas.index'))
+        return redirect(_salidas_return_url())
     try:
+        producto = conn.execute("SELECT * FROM productos WHERE id=?", (salida['producto_id'],)).fetchone()
+        cantidad_stock = _cantidad_salida_stock(salida['cantidad'], producto) if producto else salida['cantidad']
         conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
-                    (salida['cantidad'], salida['producto_id']))
+                    (cantidad_stock, salida['producto_id']))
         conn.execute("DELETE FROM salidas WHERE id=?", (sid,))
         conn.commit()
         log_actividad(
@@ -55,7 +186,7 @@ def eliminar(sid):
         conn.rollback()
         flash(f'Error al eliminar: {str(e)}', 'danger')
     conn.close()
-    return redirect(url_for('salidas.index'))
+    return redirect(_salidas_return_url())
 
 
 @salidas_bp.route('/')
@@ -67,13 +198,16 @@ def index():
     q_resp = request.args.get('q_resp', '').strip()
     q_area = request.args.get('q_area', '').strip()
     q_vale = request.args.get('q_vale', '').strip()
+    solo_h = request.args.get('solo_h') in ('1', 'true', 'on', 'si')
     pagina = request.args.get('pagina', 1, type=int)
     registros_por_pagina = 50
     
     conn = get_db()
     select_sql = """
         SELECT s.*, p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
-               p.unidad_compra, p.factor_conversion,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion,
+               COALESCE(p.stock_origen, 'ALMACEN') AS stock_origen,
+               p.producto_origen_id,
                u.nombre as usuario_nombre
     """
     from_sql = """
@@ -108,6 +242,8 @@ def index():
         if cond:
             where_sql += f" AND {cond}"
             params += cond_params
+    if solo_h:
+        where_sql += " AND COALESCE(p.stock_origen, 'ALMACEN') = 'H'"
 
     total_registros = conn.execute(
         f"SELECT COUNT(*) as total {from_sql} {where_sql}",
@@ -135,12 +271,12 @@ def index():
     total_cantidad = round(totales['total_cantidad'] or 0, 2)
     total_ajustes = totales['total_ajustes'] or 0
     total_vales = totales['total_vales'] or 0
-    filtro_activo = bool(fecha_ini or fecha_fin or q or q_resp or q_area or q_vale)
+    filtro_activo = bool(fecha_ini or fecha_fin or q or q_resp or q_area or q_vale or solo_h)
     
     conn.close()
     return render_template('salidas/index.html', salidas=salidas,
                            fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp,
-                           q_area=q_area, q_vale=q_vale,
+                           q_area=q_area, q_vale=q_vale, solo_h=solo_h,
                            total_cantidad=total_cantidad,
                            total_ajustes=total_ajustes,
                            total_vales=total_vales,
@@ -167,7 +303,7 @@ def consumo_mensual():
     if ids:
         marks = ','.join('?' for _ in ids)
         productos = conn.execute(
-            f"SELECT id, codigo, descripcion, unidad_medida, stock_actual FROM productos WHERE activo=1 AND id IN ({marks}) ORDER BY codigo",
+            f"SELECT id, codigo, descripcion, unidad_medida, unidad_compra, factor_conversion, tipo_conversion, stock_actual FROM productos WHERE activo=1 AND id IN ({marks}) ORDER BY codigo",
             ids
         ).fetchall()
         orden_balance = {pid: posicion for posicion, pid in enumerate(ids)}
@@ -176,33 +312,35 @@ def consumo_mensual():
     periodo = request.values.get('periodo') or hoy.strftime('%Y-%m')
     try:
         anio, mes = (int(x) for x in periodo.split('-', 1))
+        primer_dia = date(anio, mes, 1).isoformat()
         ultimo_dia = date(anio, mes, calendar.monthrange(anio, mes)[1]).isoformat()
+        if mes == 12:
+            siguiente_mes = date(anio + 1, 1, 1).isoformat()
+        else:
+            siguiente_mes = date(anio, mes + 1, 1).isoformat()
     except (ValueError, TypeError):
         periodo = hoy.strftime('%Y-%m')
+        anio, mes = hoy.year, hoy.month
+        primer_dia = date(anio, mes, 1).isoformat()
         ultimo_dia = hoy.isoformat()
+        siguiente_mes = (date(anio + 1, 1, 1) if mes == 12 else date(anio, mes + 1, 1)).isoformat()
 
     existencias = {}
     inicios_mes = {}
     entradas_periodo = {}
+    consumo_registrado = {}
+    consumo_registrado_compra = {}
     for producto in productos:
-        inicio = conn.execute(
-            "SELECT cantidad FROM dashboard_consumo_inicio WHERE producto_id=? AND grupo='caldera' AND anio=?",
-            (producto['id'], anio)
-        ).fetchone()
-        movimientos = conn.execute("""
-            SELECT
-              COALESCE((SELECT SUM(cantidad) FROM entradas WHERE producto_id=? AND strftime('%Y', COALESCE(fecha_vale,fecha))=? AND COALESCE(fecha_vale,fecha) <= ?),0) AS entradas,
-              COALESCE((SELECT SUM(cantidad) FROM salidas WHERE producto_id=? AND strftime('%Y', COALESCE(fecha_vale,fecha))=? AND DATE(COALESCE(fecha_vale,fecha)) BETWEEN ? AND ?),0) AS salidas
-        """, (producto['id'], str(anio), ultimo_dia, producto['id'], str(anio), f'{anio}-{mes:02d}-01', ultimo_dia)).fetchone()
-        base_anio = float(inicio['cantidad'] if inicio else 0)
-        entradas_antes = conn.execute("SELECT COALESCE(SUM(COALESCE(cantidad_piezas,cantidad)),0) FROM entradas WHERE producto_id=? AND strftime('%Y',COALESCE(fecha_vale,fecha))=? AND DATE(COALESCE(fecha_vale,fecha)) < ?", (producto['id'], str(anio), f'{anio}-{mes:02d}-01')).fetchone()[0] or 0
-        salidas_antes = conn.execute("SELECT COALESCE(SUM(cantidad),0) FROM salidas WHERE producto_id=? AND strftime('%Y',COALESCE(fecha_vale,fecha))=? AND DATE(COALESCE(fecha_vale,fecha)) < ?", (producto['id'], str(anio), f'{anio}-{mes:02d}-01')).fetchone()[0] or 0
-        inicios_mes[producto['id']] = base_anio + float(entradas_antes) - float(salidas_antes)
-        entradas_periodo[producto['id']] = float(conn.execute(
-            "SELECT COALESCE(SUM(COALESCE(cantidad_piezas, cantidad)),0) FROM entradas WHERE producto_id=? AND DATE(COALESCE(fecha_vale,fecha)) BETWEEN ? AND ?",
-            (producto['id'], f'{anio}-{mes:02d}-01', ultimo_dia)
-        ).fetchone()[0] or 0)
-        existencias[producto['id']] = inicios_mes[producto['id']] + entradas_periodo[producto['id']] - float(movimientos['salidas'] or 0)
+        inicio_mes = _inicio_mes_balance(conn, producto, anio, mes)
+        entradas_mes = _sumar_entradas_stock(conn, producto, primer_dia, siguiente_mes)
+        salidas_mes = _sumar_salidas_stock(conn, producto, primer_dia, siguiente_mes)
+        inicios_mes[producto['id']] = inicio_mes
+        entradas_periodo[producto['id']] = entradas_mes
+        consumo_registrado[producto['id']] = salidas_mes
+        factor = _factor_conversion(producto)
+        if factor:
+            consumo_registrado_compra[producto['id']] = _stock_a_compra(salidas_mes, producto)
+        existencias[producto['id']] = inicio_mes + entradas_mes - salidas_mes
 
     if request.method == 'POST':
         if not productos:
@@ -232,11 +370,27 @@ def consumo_mensual():
                 if cantidad < 0:
                     raise ValueError(f'La cantidad de {producto["codigo"]} no puede ser negativa.')
                 existe = conn.execute("""
-                    SELECT id FROM salidas
+                    SELECT id, cantidad FROM salidas
                     WHERE producto_id=? AND tipo_movimiento='consumo_fisico'
                       AND area='CALDERA' AND fecha_vale=?
                 """, (producto['id'], ultimo_dia)).fetchone()
+                cantidad_db = _cantidad_salida_db_desde_stock(cantidad, producto)
                 if existe:
+                    cantidad_stock_anterior = _cantidad_salida_stock(existe['cantidad'], producto)
+                    diferencia_stock = cantidad - cantidad_stock_anterior
+                    conn.execute("""
+                        UPDATE salidas
+                        SET cantidad=?, usuario_id=?, observaciones=?, fecha=?
+                        WHERE id=?
+                    """, (
+                        cantidad_db, session['user_id'],
+                        'Consumo fisico mensual actualizado desde Balance Mensual',
+                        datetime.now().strftime('%Y-%m-%d %H:%M:%S'), existe['id']
+                    ))
+                    conn.execute(
+                        "UPDATE productos SET stock_actual=stock_actual-? WHERE id=?",
+                        (diferencia_stock, producto['id']))
+                    creadas += 1
                     continue
                 conn.execute("UPDATE folios SET ultimo=ultimo+1 WHERE tipo='salida'")
                 numero = conn.execute("SELECT ultimo FROM folios WHERE tipo='salida'").fetchone()[0]
@@ -246,7 +400,7 @@ def consumo_mensual():
                     (folio, producto_id, cantidad, responsable, area, no_vale, tipo_vale,
                      tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (folio, producto['id'], cantidad, 'CONSUMO FISICO', 'CALDERA', no_vale,
+                """, (folio, producto['id'], cantidad_db, 'CONSUMO FISICO', 'CALDERA', no_vale,
                       'caldera', 'consumo_fisico', session['user_id'],
                       'Consumo fisico mensual capturado desde Balance Mensual',
                       datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ultimo_dia))
@@ -266,8 +420,15 @@ def consumo_mensual():
     if productos:
         marks = ','.join('?' for _ in productos)
         existentes = {
-            r['producto_id']: r['cantidad'] for r in conn.execute(
-                f"SELECT producto_id, cantidad FROM salidas WHERE producto_id IN ({marks}) AND tipo_movimiento='consumo_fisico' AND area='CALDERA' AND fecha_vale=?",
+            r['producto_id']: _cantidad_salida_stock(r['cantidad'], r) for r in conn.execute(
+                f"""
+                SELECT s.producto_id, s.cantidad, p.unidad_compra, p.factor_conversion, p.tipo_conversion
+                FROM salidas s JOIN productos p ON p.id=s.producto_id
+                WHERE s.producto_id IN ({marks})
+                  AND s.tipo_movimiento='consumo_fisico'
+                  AND s.area='CALDERA'
+                  AND s.fecha_vale=?
+                """,
                 [r['id'] for r in productos] + [ultimo_dia]
             ).fetchall()
         }
@@ -281,7 +442,9 @@ def consumo_mensual():
     return render_template('salidas/consumo_mensual.html', productos=productos,
                            periodo=periodo, ultimo_dia=ultimo_dia, existentes=existentes,
                            inicios=inicios, inicios_mes=inicios_mes, existencias=existencias,
-                           entradas_periodo=entradas_periodo)
+                           entradas_periodo=entradas_periodo,
+                           consumo_registrado=consumo_registrado,
+                           consumo_registrado_compra=consumo_registrado_compra)
 
 
 @salidas_bp.route('/nuevo', methods=['GET', 'POST'])
@@ -316,6 +479,8 @@ def nuevo():
             'es_mantenimiento': es_mantenimiento,
             'es_maquinados': es_maquinados,
             'maquina': request.form.get('maquina', ''),
+            'maquina_otro': request.form.get('maquina_otro', ''),
+            'proveedor': request.form.get('proveedor', ''),
             'orden_compra': request.form.get('orden_compra', ''),
             'no_factura': request.form.get('no_factura', ''),
             'no_remision': request.form.get('no_remision', ''),
@@ -328,15 +493,18 @@ def nuevo():
 
         if accion == 'agregar_item':
             pid = request.form.get('producto_id')
-            cantidad = request.form.get('cantidad')
-            if not pid or not cantidad:
+            if not pid:
                 flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
             else:
                 prod = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
                 if not prod:
                     flash('El producto seleccionado no existe.', 'danger')
                 else:
-                    cantidad = float(cantidad)
+                    cantidad = _cantidad_salida_compra_desde_form(request.form, prod)
+                    if cantidad is None or cantidad <= 0:
+                        flash('Captura una cantidad mayor a 0.', 'danger')
+                        conn.close()
+                        return redirect(url_for('salidas.nuevo'))
                     cart = session.get(CART_KEY, [])
                     cart.append({
                         'producto_id': prod['id'], 'codigo': prod['codigo'],
@@ -345,8 +513,10 @@ def nuevo():
                         'unidad_medida': prod['unidad_medida'],
                         'unidad_compra': prod['unidad_compra'],
                         'factor_conversion': prod['factor_conversion'],
+                        'tipo_conversion': prod['tipo_conversion'] or 'uso_a_compra',
                         'cantidad': cantidad,
                         'stock_actual': prod['stock_actual'],
+                        'stock_origen': prod['stock_origen'],
                         'orden_compra': doc.get('orden_compra', ''),
                         'no_factura': doc.get('no_factura', ''),
                         'no_remision': doc.get('no_remision', ''),
@@ -368,14 +538,14 @@ def nuevo():
                 return redirect(url_for('salidas.nuevo'))
             filas = conn.execute(f"""
                 SELECT e.producto_id,
-                       SUM(CASE WHEN p.factor_conversion IS NOT NULL AND p.factor_conversion > 0
-                                THEN e.cantidad / p.factor_conversion ELSE e.cantidad END) AS cantidad,
+                       SUM(e.cantidad) AS cantidad,
                        p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
-                       p.unidad_compra, p.factor_conversion, p.stock_actual
+                       p.unidad_compra, p.factor_conversion, p.tipo_conversion, p.stock_actual,
+                       COALESCE(p.stock_origen, 'ALMACEN') AS stock_origen
                 FROM entradas e JOIN productos p ON p.id=e.producto_id
                 WHERE p.activo=1 AND TRIM(UPPER({columna}))=TRIM(UPPER(?))
                 GROUP BY e.producto_id, p.codigo, p.codigo_barras, p.descripcion,
-                         p.unidad_medida, p.unidad_compra, p.factor_conversion, p.stock_actual
+                         p.unidad_medida, p.unidad_compra, p.factor_conversion, p.tipo_conversion, p.stock_actual, p.stock_origen
                 ORDER BY p.codigo
             """, (documento_valor,)).fetchall()
             documento_item = conn.execute(f"""
@@ -389,15 +559,27 @@ def nuevo():
             else:
                 cart = session.get(CART_KEY, [])
                 existentes = {item['producto_id'] for item in cart}
+                productos_seleccionados = None
+                if accion == 'agregar_documento_seleccionados':
+                    productos_seleccionados = {
+                        int(pid) for pid in request.form.getlist('producto_ids')
+                        if pid.isdigit()
+                    }
                 agregados = 0
                 omitidos = 0
                 for prod in filas:
+                    if productos_seleccionados is not None and prod['producto_id'] not in productos_seleccionados:
+                        continue
                     if prod['producto_id'] in existentes:
                         omitidos += 1
                         continue
                     cantidad_seleccionada = request.form.get(f"producto_cantidad_{prod['producto_id']}")
+                    cantidad_stock = request.form.get(f"producto_cantidad_stock_{prod['producto_id']}")
                     try:
-                        cantidad_seleccionada = float(cantidad_seleccionada) if cantidad_seleccionada else float(prod['cantidad'])
+                        if prod['unidad_compra'] and prod['factor_conversion'] and cantidad_stock and not cantidad_seleccionada:
+                            cantidad_seleccionada = _cantidad_salida_db_desde_stock(float(cantidad_stock), prod)
+                        else:
+                            cantidad_seleccionada = float(cantidad_seleccionada) if cantidad_seleccionada else float(prod['cantidad'])
                     except (TypeError, ValueError):
                         cantidad_seleccionada = 0
                     if cantidad_seleccionada <= 0 or cantidad_seleccionada > float(prod['cantidad']):
@@ -407,8 +589,10 @@ def nuevo():
                         'producto_id': prod['producto_id'], 'codigo': prod['codigo'],
                         'codigo_barras': prod['codigo_barras'], 'descripcion': prod['descripcion'],
                         'unidad_medida': prod['unidad_medida'], 'unidad_compra': prod['unidad_compra'],
-                        'factor_conversion': prod['factor_conversion'], 'cantidad': cantidad_seleccionada,
+                        'factor_conversion': prod['factor_conversion'], 'tipo_conversion': prod['tipo_conversion'] or 'uso_a_compra',
+                        'cantidad': cantidad_seleccionada,
                         'stock_actual': prod['stock_actual'],
+                        'stock_origen': prod['stock_origen'],
                         'orden_compra': documento_item['orden_compra'] if documento_item else None,
                         'no_factura': documento_item['no_factura'] if documento_item else None,
                         'no_remision': documento_item['no_remision'] if documento_item else None,
@@ -461,6 +645,10 @@ def nuevo():
                 flash('Selecciona la máquina para el vale de maquinados.', 'danger')
                 conn.close()
                 return redirect(url_for('salidas.nuevo'))
+            if doc.get('tipo_vale') == 'maquinados' and doc.get('maquina') == 'Otros' and not (doc.get('maquina_otro') or '').strip():
+                flash('Especifica cuál es la máquina en el campo "Otros".', 'danger')
+                conn.close()
+                return redirect(url_for('salidas.nuevo'))
             try:
                 tipo_mov = doc.get('tipo_movimiento') or 'normal'
                 area = (doc.get('area') or '').strip() or None
@@ -474,17 +662,19 @@ def nuevo():
                     conn.execute("""
                         INSERT INTO salidas
                         (folio, producto_id, cantidad, responsable, area, no_vale, tipo_vale, maquina,
+                         maquina_otro, proveedor,
                          orden_compra, no_factura, no_remision, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (folio, item['producto_id'], item['cantidad'], doc.get('responsable'), area,
                           doc.get('no_vale'), doc.get('tipo_vale') or 'normal', doc.get('maquina') or None,
+                          doc.get('maquina_otro') if doc.get('maquina') == 'Otros' else None, doc.get('proveedor') or None,
                           item.get('orden_compra') or doc.get('orden_compra') or None,
                           item.get('no_factura') or doc.get('no_factura') or None,
                           item.get('no_remision') or doc.get('no_remision') or None,
                           tipo_mov, session['user_id'], doc.get('observaciones'), fecha_sql, fecha_vale))
                     conn.execute(
                         "UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
-                        (item['cantidad'], item['producto_id']))
+                        (_cantidad_salida_stock(item['cantidad'], item), item['producto_id']))
                     folios_generados.append(folio)
                 conn.commit()
                 log_actividad(session['user_id'], 'SALIDA',
@@ -581,7 +771,8 @@ def api_movil_registrar():
               (data.get('no_remision') or '').strip() or None,
               tipo_mov, session['user_id'], (data.get('observaciones') or '').strip() or None,
               fecha_sql, fecha_vale))
-        conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?", (cantidad, pid))
+        cantidad_stock = _cantidad_salida_stock(cantidad, prod)
+        conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?", (cantidad_stock, pid))
         stock_nuevo = conn.execute("SELECT stock_actual FROM productos WHERE id=?", (pid,)).fetchone()['stock_actual']
         conn.commit()
         log_actividad(session['user_id'], 'SALIDA_MOVIL',
@@ -622,7 +813,11 @@ def api_documentos_entrada():
     filas = conn.execute(f"""
         SELECT TRIM(e.{columna}) AS valor, COUNT(DISTINCT e.producto_id) AS productos
         FROM entradas e
-        WHERE TRIM(e.{columna}) <> '' AND UPPER(e.{columna}) LIKE UPPER(?)
+        JOIN productos p ON p.id=e.producto_id
+        WHERE p.activo=1
+          AND COALESCE(e.es_servicio, 0)=0
+          AND TRIM(e.{columna}) <> ''
+          AND UPPER(e.{columna}) LIKE UPPER(?)
         GROUP BY TRIM(e.{columna}) ORDER BY MAX(e.id) DESC LIMIT 12
     """, (f'%{q}%',)).fetchall()
     conn.close()
@@ -641,12 +836,12 @@ def api_documento_productos():
     conn = get_db()
     filas = conn.execute(f"""
         SELECT p.id, p.codigo, p.descripcion, p.unidad_medida,
-               SUM(CASE WHEN p.factor_conversion IS NOT NULL AND p.factor_conversion > 0
-                        THEN e.cantidad / p.factor_conversion ELSE e.cantidad END) AS cantidad,
-               p.stock_actual
+               SUM(e.cantidad) AS cantidad,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion, p.stock_actual,
+               COALESCE(p.stock_origen, 'ALMACEN') AS stock_origen
         FROM entradas e JOIN productos p ON p.id=e.producto_id
         WHERE p.activo=1 AND TRIM(UPPER({columna}))=TRIM(UPPER(?))
-        GROUP BY p.id, p.codigo, p.descripcion, p.unidad_medida, p.stock_actual
+        GROUP BY p.id, p.codigo, p.descripcion, p.unidad_medida, p.unidad_compra, p.factor_conversion, p.tipo_conversion, p.stock_actual, p.stock_origen
         ORDER BY p.codigo
     """, (valor,)).fetchall()
     documentos = conn.execute(f"""
@@ -663,10 +858,11 @@ def api_documento_productos():
 @salidas_bp.route('/detalle/<int:sid>')
 @login_required
 def detalle(sid):
+    return_to = _salidas_return_url()
     conn = get_db()
     salida = conn.execute("""
         SELECT s.*, p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
-               p.unidad_compra, p.factor_conversion,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion,
                u.nombre as usuario_nombre
         FROM salidas s
         JOIN productos p ON s.producto_id=p.id
@@ -676,8 +872,8 @@ def detalle(sid):
     conn.close()
     if not salida:
         flash('Registro no encontrado.', 'danger')
-        return redirect(url_for('salidas.index'))
-    return render_template('salidas/detalle.html', salida=salida)
+        return redirect(return_to)
+    return render_template('salidas/detalle.html', salida=salida, return_to=return_to)
 
 
 @salidas_bp.route('/editar/<int:sid>', methods=['GET', 'POST'])
@@ -687,10 +883,11 @@ def editar(sid):
     responsable, folio de vale, tipo de movimiento, observaciones y fecha. Al cambiar
     producto o cantidad, el stock se ajusta automáticamente (se revierte el efecto
     anterior sobre el producto original y se aplica el nuevo)."""
+    return_to = _salidas_return_url()
     conn = get_db()
     salida = conn.execute("""
         SELECT s.*, p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
-               p.unidad_compra, p.factor_conversion
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion
         FROM salidas s
         JOIN productos p ON s.producto_id=p.id
         WHERE s.id=?
@@ -699,73 +896,80 @@ def editar(sid):
     if not salida:
         flash('Registro no encontrado.', 'danger')
         conn.close()
-        return redirect(url_for('salidas.index'))
+        return redirect(return_to)
 
     if request.method == 'POST':
         f = request.form
         try:
             pid = f.get('producto_id')
-            cantidad_raw = f.get('cantidad')
             responsable = (f.get('responsable') or '').strip()
             tipo_vale = f.get('tipo_vale') or salida['tipo_vale'] or 'normal'
             no_vale = normalizar_vale(f.get('no_vale') or '', tipo_vale)
-            if not pid or not cantidad_raw:
+            if not pid:
                 flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
                 conn.close()
-                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS)
+                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
             if not responsable:
                 flash('El nombre de quien recibió es obligatorio.', 'danger')
                 conn.close()
-                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS)
+                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
             if not no_vale:
                 flash('El folio de vale es obligatorio.', 'danger')
                 conn.close()
-                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS)
+                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
 
             pid = int(pid)
-            cantidad = float(cantidad_raw)
 
             prod_nuevo = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
             if not prod_nuevo:
                 flash('El producto seleccionado no existe.', 'danger')
                 conn.close()
-                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS)
+                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
+            cantidad = _cantidad_salida_compra_desde_form(f, prod_nuevo)
+            if cantidad is None or cantidad <= 0:
+                flash('Captura una cantidad mayor a 0.', 'danger')
+                conn.close()
+                return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
 
             # Revertir el efecto en stock de la salida ORIGINAL (regresar la cantidad al producto original)
             conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
-                        (salida['cantidad'], salida['producto_id']))
+                        (_cantidad_salida_stock(salida['cantidad'], salida), salida['producto_id']))
 
             # Antes esto bloqueaba la edición si no había suficiente stock. Ya no bloquea:
             # solo avisa (el stock puede quedar en negativo si ya venía así de antes, por
             # ejemplo por datos importados o conteos pendientes de ajustar).
             stock_disponible = conn.execute(
                 "SELECT stock_actual FROM productos WHERE id=?", (pid,)).fetchone()['stock_actual']
-            if cantidad > stock_disponible:
-                flash(f'Aviso: el stock de {prod_nuevo["codigo"]} queda en {round(stock_disponible - cantidad, 4)} '
+            cantidad_stock = _cantidad_salida_stock(cantidad, prod_nuevo)
+            if cantidad_stock > stock_disponible:
+                flash(f'Aviso: el stock de {prod_nuevo["codigo"]} queda en {round(stock_disponible - cantidad_stock, 4)} '
                       f'{prod_nuevo["unidad_medida"]} (negativo). Se guardó de todas formas.', 'warning')
 
             conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
-                        (cantidad, pid))
+                        (cantidad_stock, pid))
 
             fecha_vale = f.get('fecha_vale') or salida['fecha_vale'] or salida['fecha'][:10]
             tipo_mov = f.get('tipo_movimiento') or 'normal'
             area = (f.get('area') or '').strip() or None
+            maquina = (f.get('maquina') or '').strip()
+            maquina_otro = (f.get('maquina_otro') or '').strip() if maquina == 'Otros' else None
+            proveedor = (f.get('proveedor') or '').strip() or None
             conn.execute("""
                 UPDATE salidas SET
-                    producto_id=?, cantidad=?, responsable=?, area=?, no_vale=?, tipo_vale=?, maquina=?,
+                    producto_id=?, cantidad=?, responsable=?, area=?, no_vale=?, tipo_vale=?, maquina=?, maquina_otro=?, proveedor=?,
                     no_factura=?, no_remision=?, tipo_movimiento=?, observaciones=?, fecha_vale=?
                 WHERE id=?
-            """, (pid, cantidad, responsable, area, no_vale, tipo_vale, f.get('maquina') or None,
+            """, (pid, cantidad, responsable, area, no_vale, tipo_vale, maquina, maquina_otro, proveedor,
                   f.get('no_factura') or None, f.get('no_remision') or None, tipo_mov,
                   f.get('observaciones') or None, fecha_vale, sid))
             conn.commit()
             log_actividad(session['user_id'], 'EDITAR_SALIDA', f"ID: {sid} | Folio: {salida['folio']}")
             flash('Salida actualizada correctamente.', 'success')
             conn.close()
-            return redirect(url_for('salidas.detalle', sid=sid))
+            return redirect(url_for('salidas.detalle', sid=sid, return_to=return_to))
         except Exception as e:
             conn.rollback()
             flash(f'Error: {str(e)}', 'danger')
 
     conn.close()
-    return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS)
+    return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)

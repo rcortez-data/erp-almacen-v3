@@ -62,10 +62,16 @@
       <dt class="col-sm-4">Nº Requisición</dt>
       <dd class="col-sm-8">
         {{ entrada.no_requisicion or '—' }}
-        {% if requisicion_vinculada %}
-        <a href="{{ url_for('requisiciones.detalle', rid=requisicion_vinculada.id) }}" class="badge bg-primary text-decoration-none ms-1">
-          Ver requisición AL-{{ requisicion_vinculada.folio }}
-        </a>
+        {% if requisiciones_vinculadas %}
+          {% for req in requisiciones_vinculadas %}
+          <a href="{{ url_for('requisiciones.detalle', rid=req.id) }}" class="badge bg-primary text-decoration-none ms-1">
+            Ver requisición AL-{{ req.folio }}
+          </a>
+          {% endfor %}
+        {% elif requisicion_vinculada %}
+          <a href="{{ url_for('requisiciones.detalle', rid=requisicion_vinculada.id) }}" class="badge bg-primary text-decoration-none ms-1">
+            Ver requisición AL-{{ requisicion_vinculada.folio }}
+          </a>
         {% endif %}
       </dd>
       <dt class="col-sm-4">Nº Factura</dt>
@@ -80,6 +86,9 @@
         </a>
         {% else %}
         {{ entrada.orden_compra or '—' }}
+        {% endif %}
+        {% if entrada.recuperacion_almacen %}
+        <span class="badge bg-success ms-1"><i class="bi bi-arrow-counterclockwise"></i> Recuperación almacén</span>
         {% endif %}
       </dd>
       <dt class="col-sm-4">Ubicación</dt>

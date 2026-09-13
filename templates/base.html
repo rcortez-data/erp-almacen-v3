@@ -236,6 +236,15 @@
   <a href="{{ url_for('vales_montacargas.index') }}" class="nav-link {{ 'active' if request.blueprint == 'vales_montacargas' }}">
     <i class="bi bi-clipboard-check"></i> Vales de Montacargas
   </a>
+  <a href="{{ url_for('material_por_pedir.index') }}" class="nav-link {{ 'active' if request.blueprint == 'material_por_pedir' }}">
+    <i class="bi bi-clipboard2-plus"></i> Material por pedir
+  </a>
+  <a href="{{ url_for('prestamos_mantenimiento.index') }}" class="nav-link {{ 'active' if request.blueprint == 'prestamos_mantenimiento' }}">
+    <i class="bi bi-tools"></i> Préstamos Mantenimiento
+  </a>
+  <a href="{{ url_for('etiquetas_produccion.index') }}" class="nav-link {{ 'active' if request.blueprint == 'etiquetas_produccion' }}">
+    <i class="bi bi-tags"></i> Etiquetas Producción
+  </a>
 
   {% set listados_activo = request.blueprint in ['proveedores', 'montacargas', 'areas', 'listados'] %}
   <div class="nav-section">Listados</div>

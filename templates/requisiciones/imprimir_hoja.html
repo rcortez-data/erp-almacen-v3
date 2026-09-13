@@ -129,17 +129,18 @@
 </div>
 
 <main class="sheet" aria-label="Textos para formato fisico">
-  <div class="print-text almacen" style="left:0.71in; top:1.57in;">ALMACEN GENERAL</div>
-  <div class="print-text date" style="left:4.18in; top:1.57in;">{{ fecha_necesita }}</div>
-  <div class="print-text date" style="left:6.82in; top:1.57in;">{{ fecha_requisicion }}</div>
+  <div class="print-text almacen" style="left:0.43in; top:1.61in;">ALMACEN GENERAL</div>
+  <div class="print-text date" style="left:3.90in; top:1.61in;">{{ fecha_necesita }}</div>
+  <div class="print-text date" style="left:6.54in; top:1.61in;">{{ fecha_requisicion }}</div>
 
   {% for n in range(max_items) %}
     {% set it = items[n] if n < (items|length) else none %}
     {% set ajuste_y = ((n - 1) * 0.039) if n >= 2 else 0 %}
-    {% set y = 2.16 + (n * 0.235) - ajuste_y %}
+    {% set ajuste_extra_y = 0.039 if (1 <= n <= 4 or n >= 5) else 0 %}
+    {% set y = 2.16 + (n * 0.235) - ajuste_y - ajuste_extra_y %}
     {% if it %}
-      <div class="print-text qty" style="left:0.90in; top:{{ y }}in;">{{ "%g"|format(it.cantidad) }}</div>
-      <div class="print-text unit" style="left:1.78in; top:{{ y }}in;">{{ unidad_para_cantidad(it.unidad, it.cantidad) }}</div>
+      <div class="print-text qty" style="left:0.90in; top:{{ y }}in;">{% if it.cantidad and it.cantidad > 0 %}{{ "%g"|format(it.cantidad) }}{% endif %}</div>
+      <div class="print-text unit" style="left:1.78in; top:{{ y }}in;">{% if it.cantidad and it.cantidad > 0 %}{{ unidad_para_cantidad(it.unidad, it.cantidad) }}{% endif %}</div>
       <div class="print-text desc" style="left:2.90in; top:{{ y }}in;">{{ it.descripcion }}</div>
     {% endif %}
   {% endfor %}

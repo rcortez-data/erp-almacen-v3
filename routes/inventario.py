@@ -208,6 +208,7 @@ def duplicados():
 def api_buscar():
     """Búsqueda dinámica de productos para autocompletado (usada en Entradas/Salidas)."""
     q = request.args.get('q', '').strip()
+    solo_h = request.args.get('solo_h') in ('1', 'true', 'on', 'si')
     if len(q) < 2:
         return jsonify([])
     conn = get_db()
@@ -219,10 +220,30 @@ def api_buscar():
                p.unidad_medida,
                p.stock_actual, p.precio_unitario, p.departamento, p.ubicacion,
                p.maquina, p.maquina_otro,
-               p.unidad_compra, p.factor_conversion
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion,
+               COALESCE(p.stock_origen, 'ALMACEN') AS stock_origen,
+               p.producto_origen_id,
+               (
+                 SELECT COALESCE(NULLIF(pr2.nombre_comercial, ''), pr2.nombre, e2.proveedor_nombre_historico)
+                 FROM entradas e2
+                 LEFT JOIN proveedores pr2 ON pr2.id = e2.proveedor_id
+                 WHERE e2.producto_id = p.id
+                   AND COALESCE(e2.es_servicio, 0) = 0
+                 ORDER BY DATE(COALESCE(e2.fecha_vale, e2.fecha)) DESC, e2.id DESC
+                 LIMIT 1
+               ) AS ultimo_proveedor,
+               (
+                 SELECT COALESCE(e3.fecha_vale, e3.fecha)
+                 FROM entradas e3
+                 WHERE e3.producto_id = p.id
+                   AND COALESCE(e3.es_servicio, 0) = 0
+                 ORDER BY DATE(COALESCE(e3.fecha_vale, e3.fecha)) DESC, e3.id DESC
+                 LIMIT 1
+               ) AS ultima_entrada_fecha
         FROM productos p
         LEFT JOIN categorias c ON p.categoria_id=c.id
         WHERE p.activo=1 AND {cond}
+          {"AND COALESCE(p.stock_origen, 'ALMACEN') = 'H'" if solo_h else ''}
         ORDER BY p.codigo
         LIMIT 25
     """
@@ -241,7 +262,24 @@ def api_producto(pid):
                COALESCE(c.nombre, p.categoria_nombre_historico) AS categoria,
                p.unidad_medida, p.stock_actual, p.precio_unitario, p.departamento, p.ubicacion,
                p.maquina, p.maquina_otro,
-               unidad_compra, factor_conversion
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion,
+               (
+                 SELECT COALESCE(NULLIF(pr2.nombre_comercial, ''), pr2.nombre, e2.proveedor_nombre_historico)
+                 FROM entradas e2
+                 LEFT JOIN proveedores pr2 ON pr2.id = e2.proveedor_id
+                 WHERE e2.producto_id = p.id
+                   AND COALESCE(e2.es_servicio, 0) = 0
+                 ORDER BY DATE(COALESCE(e2.fecha_vale, e2.fecha)) DESC, e2.id DESC
+                 LIMIT 1
+               ) AS ultimo_proveedor,
+               (
+                 SELECT COALESCE(e3.fecha_vale, e3.fecha)
+                 FROM entradas e3
+                 WHERE e3.producto_id = p.id
+                   AND COALESCE(e3.es_servicio, 0) = 0
+                 ORDER BY DATE(COALESCE(e3.fecha_vale, e3.fecha)) DESC, e3.id DESC
+                 LIMIT 1
+               ) AS ultima_entrada_fecha
         FROM productos p
         LEFT JOIN categorias c ON p.categoria_id=c.id
         WHERE p.id=?
@@ -383,6 +421,9 @@ def nuevo():
         usa_conversion = f.get('usa_conversion') == 'on'
         unidad_compra = f.get('unidad_compra') if usa_conversion else None
         factor_conversion = float(f['factor_conversion']) if usa_conversion and f.get('factor_conversion') else None
+        tipo_conversion = f.get('tipo_conversion') if usa_conversion else 'uso_a_compra'
+        if tipo_conversion not in ('uso_a_compra', 'compra_a_uso'):
+            tipo_conversion = 'uso_a_compra'
         try:
             codigo = generar_codigo_producto()
             codigo_barras = normalizar_codigo_barras(generar_codigo_barras_producto(codigo))
@@ -407,12 +448,12 @@ def nuevo():
                                        categorias_con_maquina=CATEGORIAS_CON_MAQUINA)
             conn.execute("""
                 INSERT INTO productos (codigo, codigo_barras, descripcion, categoria_id, unidad_medida, ubicacion, departamento,
-                                        maquina, maquina_otro, unidad_compra, factor_conversion, stock_minimo, precio_unitario)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                                        maquina, maquina_otro, unidad_compra, factor_conversion, tipo_conversion, stock_minimo, precio_unitario)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (codigo, codigo_barras, f['descripcion'], f.get('categoria_id') or None,
                   f['unidad_medida'], ubicacion, f.get('departamento') or None,
                   f.get('maquina') or None, f.get('maquina_otro') or None,
-                  unidad_compra, factor_conversion,
+                  unidad_compra, factor_conversion, tipo_conversion,
                   float(f.get('stock_minimo') or 0),
                   float(f.get('precio_unitario') or 0)))
             conn.commit()
@@ -471,15 +512,18 @@ def editar(pid):
         usa_conversion = f.get('usa_conversion') == 'on'
         unidad_compra = f.get('unidad_compra') if usa_conversion else None
         factor_conversion = float(f['factor_conversion']) if usa_conversion and f.get('factor_conversion') else None
+        tipo_conversion = f.get('tipo_conversion') if usa_conversion else 'uso_a_compra'
+        if tipo_conversion not in ('uso_a_compra', 'compra_a_uso'):
+            tipo_conversion = 'uso_a_compra'
         try:
             conn.execute("""
                 UPDATE productos SET descripcion=?, categoria_id=?, unidad_medida=?,
-                ubicacion=?, departamento=?, maquina=?, maquina_otro=?, unidad_compra=?, factor_conversion=?,
+                ubicacion=?, departamento=?, maquina=?, maquina_otro=?, unidad_compra=?, factor_conversion=?, tipo_conversion=?,
                 stock_minimo=?, precio_unitario=? WHERE id=?
             """, (f['descripcion'], f.get('categoria_id') or None, f['unidad_medida'],
                   ubicacion, f.get('departamento') or None,
                   f.get('maquina') or None, f.get('maquina_otro') or None,
-                  unidad_compra, factor_conversion,
+                  unidad_compra, factor_conversion, tipo_conversion,
                   float(f.get('stock_minimo') or 0),
                   float(f.get('precio_unitario') or 0), pid))
             conn.commit()

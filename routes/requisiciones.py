@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, send_file, jsonify
 from routes.auth import login_required
 from routes.inventario import construir_busqueda_dinamica
 from database import get_db, log_actividad, next_folio_requisicion, set_folio_counter, obtener_nombres_unidades
@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 import json
 import os
 import platform
+import re
 import openpyxl
 
 requisiciones_bp = Blueprint('requisiciones', __name__, url_prefix='/requisiciones')
@@ -109,19 +110,47 @@ def _sumar_dias_fecha(valor, dias):
         return ''
 
 
+def _dias_desde_fecha(valor):
+    if not valor:
+        return 0
+    try:
+        fecha = datetime.strptime(str(valor)[:10], '%Y-%m-%d').date()
+        return max(0, (date.today() - fecha).days)
+    except (ValueError, TypeError):
+        return 0
+
+
 def _leer_items_formulario(f):
     items = []
     for i in range(1, MAX_ITEMS + 1):
-        cantidad = f.get(f'cantidad_{i}')
+        cantidad = (f.get(f'cantidad_{i}') or '').strip()
         descripcion = (f.get(f'descripcion_{i}') or '').strip()
         unidad = _unidad_singular(f.get(f'unidad_{i}') or '')
         producto_id = f.get(f'producto_id_{i}') or None
-        if cantidad and descripcion:
+        material_pedir_id = f.get(f'material_pedir_id_{i}') or None
+        actualizar_unidad_catalogo = f.get(f'actualizar_unidad_catalogo_{i}') in ('1', 'on', 'true', 'si')
+        try:
+            material_pedir_id = int(material_pedir_id) if material_pedir_id else None
+        except (TypeError, ValueError):
+            material_pedir_id = None
+        if descripcion and not cantidad and not producto_id:
+            items.append({
+                'cantidad': 0, 'unidad': '', 'descripcion': descripcion,
+                'producto_id': None, 'material_pedir_id': material_pedir_id,
+                'actualizar_unidad_catalogo': False,
+            })
+        elif cantidad and descripcion:
             items.append({
                 'cantidad': float(cantidad), 'unidad': unidad, 'descripcion': descripcion,
                 'producto_id': int(producto_id) if producto_id else None,
+                'material_pedir_id': material_pedir_id,
+                'actualizar_unidad_catalogo': actualizar_unidad_catalogo,
             })
     return items
+
+
+def _normalizar_codigo_producto(texto):
+    return re.sub(r'\s+', '', str(texto or '')).strip().upper()
 
 
 def _unidad_singular(unidad):
@@ -146,6 +175,59 @@ def _unidades_activas():
     return [_unidad_singular(u) for u in obtener_nombres_unidades()]
 
 
+def _material_pendiente_para_producto(conn, producto_id):
+    producto = conn.execute(
+        "SELECT id, codigo, unidad_medida FROM productos WHERE id=? AND activo=1",
+        (producto_id,)
+    ).fetchone()
+    if not producto:
+        return None
+
+    codigo_norm = _normalizar_codigo_producto(producto['codigo'])
+    condiciones = ["m.producto_id=?"]
+    params = [producto_id]
+    if codigo_norm:
+        condiciones.append("UPPER(REPLACE(COALESCE(m.codigo,''),' ',''))=?")
+        params.append(codigo_norm)
+
+    filas = conn.execute(f"""
+        SELECT m.id, m.cantidad, m.unidad, m.prioridad, m.motivo, m.fecha
+        FROM material_por_pedir m
+        WHERE COALESCE(m.solicitado,0)=0
+          AND ({' OR '.join(condiciones)})
+        ORDER BY CASE m.prioridad
+                   WHEN 'urgente' THEN 0
+                   WHEN 'alta' THEN 1
+                   WHEN 'normal' THEN 2
+                   ELSE 3
+                 END,
+                 m.fecha ASC,
+                 m.id ASC
+    """, params).fetchall()
+    if not filas:
+        return None
+
+    grupos = {}
+    for fila in filas:
+        unidad = _unidad_singular(fila['unidad'] or producto['unidad_medida'] or '')
+        grupos.setdefault(unidad, {'cantidad': 0, 'ids': [], 'motivos': []})
+        grupos[unidad]['cantidad'] += float(fila['cantidad'] or 0)
+        grupos[unidad]['ids'].append(fila['id'])
+        if fila['motivo']:
+            grupos[unidad]['motivos'].append(fila['motivo'])
+
+    unidad_elegida, datos = max(grupos.items(), key=lambda par: (len(par[1]['ids']), par[1]['cantidad']))
+    return {
+        'cantidad': datos['cantidad'],
+        'unidad': unidad_elegida,
+        'ids': datos['ids'],
+        'total_pendientes': len(filas),
+        'pendientes_misma_unidad': len(datos['ids']),
+        'unidades_distintas': len(grupos),
+        'motivos': datos['motivos'][:3],
+    }
+
+
 def _areas_activas(conn=None):
     cerrar = conn is None
     if conn is None:
@@ -162,6 +244,19 @@ def _normalizar_folio_requisicion(texto):
     return str(texto).strip().upper().replace("-", "").replace(" ", "")
 
 
+def _folios_desde_texto_requisicion(texto):
+    if not texto:
+        return []
+    folios = []
+    vistos = set()
+    for match in re.finditer(r'(?:AL\s*-?\s*)?(\d+)', str(texto), flags=re.IGNORECASE):
+        folio = int(match.group(1))
+        if folio not in vistos:
+            vistos.add(folio)
+            folios.append(folio)
+    return folios
+
+
 def _generar_codigo_producto_conn(conn):
     conn.execute("INSERT OR IGNORE INTO folios VALUES ('producto', 0)")
     conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo = 'producto'")
@@ -174,6 +269,8 @@ def _crear_productos_para_items_libres(conn, items):
     creados = []
     for item in items:
         if item.get('producto_id'):
+            continue
+        if float(item.get('cantidad') or 0) <= 0:
             continue
 
         descripcion = (item.get('descripcion') or '').strip()
@@ -194,11 +291,20 @@ def _crear_productos_para_items_libres(conn, items):
 
 
 def _sincronizar_productos_desde_items(conn, items):
-    """Actualiza el catálogo cuando una partida ligada cambió unidad o descripción."""
+    """
+    Actualiza el catálogo desde partidas ligadas.
+
+    La unidad capturada en una requisición es la unidad en que se está solicitando
+    el material y puede ser distinta a la unidad base del inventario. Por ejemplo,
+    Playo puede estar en inventario como Pieza, pero pedirse en Kilos. Por eso la
+    unidad sólo se copia al catálogo cuando el usuario marca explícitamente
+    "Actualizar catálogo" en ese renglón.
+    """
     for item in items:
         producto_id = item.get('producto_id')
         unidad = (item.get('unidad') or '').strip()
         descripcion = (item.get('descripcion') or '').strip()
+        actualizar_unidad = bool(item.get('actualizar_unidad_catalogo'))
         if not producto_id:
             continue
 
@@ -209,7 +315,7 @@ def _sincronizar_productos_desde_items(conn, items):
             continue
 
         cambios = {}
-        if unidad and producto['unidad_medida'] != unidad:
+        if actualizar_unidad and unidad and producto['unidad_medida'] != unidad:
             cambios['unidad_medida'] = unidad
         if descripcion and producto['descripcion'] != descripcion:
             cambios['descripcion'] = descripcion
@@ -220,6 +326,109 @@ def _sincronizar_productos_desde_items(conn, items):
                 f"UPDATE productos SET {set_clause} WHERE id=?",
                 (*cambios.values(), producto_id)
             )
+
+
+def _sincronizar_material_por_pedir(conn, requisicion_id, folio, items, usuario_id, orden_compra=None):
+    """
+    Marca como "pedido" el material pendiente cuando una requisición contiene
+    el mismo producto. Se compara primero por producto_id y también por código
+    normalizado para cubrir registros capturados manualmente.
+    """
+    if not items:
+        return 0
+
+    ahora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    folio_txt = f"AL-{folio}"
+    referencia = (orden_compra or '').strip() or folio_txt
+    actualizados = 0
+    vistos = set()
+
+    for item in items:
+        material_pedir_id = item.get('material_pedir_id')
+        if material_pedir_id and material_pedir_id not in vistos:
+            pendiente = conn.execute("""
+                SELECT id, notas_pedido
+                FROM material_por_pedir
+                WHERE id=? AND COALESCE(solicitado,0)=0
+            """, (material_pedir_id,)).fetchone()
+            if pendiente:
+                vistos.add(material_pedir_id)
+                nota_auto = f"Vinculado automáticamente con requisición {folio_txt}"
+                notas_previas = (pendiente['notas_pedido'] or '').strip()
+                notas = nota_auto if not notas_previas else f"{notas_previas} | {nota_auto}"
+                conn.execute("""
+                    UPDATE material_por_pedir
+                    SET solicitado=1,
+                        fecha_solicitado=COALESCE(fecha_solicitado, ?),
+                        orden_compra=COALESCE(NULLIF(orden_compra,''), ?),
+                        notas_pedido=?,
+                        pedido_por_usuario_id=COALESCE(pedido_por_usuario_id, ?),
+                        requisicion_id=?,
+                        requisicion_folio=?,
+                        updated_at=?
+                    WHERE id=?
+                """, (
+                    ahora, referencia, notas, usuario_id, requisicion_id, folio_txt,
+                    ahora, material_pedir_id
+                ))
+                actualizados += 1
+
+        if float(item.get('cantidad') or 0) <= 0:
+            continue
+        producto_id = item.get('producto_id')
+        codigo = ''
+        if producto_id:
+            producto = conn.execute(
+                "SELECT codigo FROM productos WHERE id=?", (producto_id,)
+            ).fetchone()
+            if producto:
+                codigo = _normalizar_codigo_producto(producto['codigo'])
+
+        condiciones = []
+        params = []
+        if producto_id:
+            condiciones.append("m.producto_id=?")
+            params.append(producto_id)
+        if codigo:
+            condiciones.append("UPPER(REPLACE(COALESCE(m.codigo,''),' ',''))=?")
+            params.append(codigo)
+        if not condiciones:
+            continue
+
+        pendientes = conn.execute(f"""
+            SELECT m.id, m.notas_pedido
+            FROM material_por_pedir m
+            WHERE COALESCE(m.solicitado,0)=0
+              AND ({' OR '.join(condiciones)})
+        """, params).fetchall()
+
+        for pendiente in pendientes:
+            pendiente_id = pendiente['id']
+            if pendiente_id in vistos:
+                continue
+            vistos.add(pendiente_id)
+
+            nota_auto = f"Vinculado automáticamente con requisición {folio_txt}"
+            notas_previas = (pendiente['notas_pedido'] or '').strip()
+            notas = nota_auto if not notas_previas else f"{notas_previas} | {nota_auto}"
+            conn.execute("""
+                UPDATE material_por_pedir
+                SET solicitado=1,
+                    fecha_solicitado=COALESCE(fecha_solicitado, ?),
+                    orden_compra=COALESCE(NULLIF(orden_compra,''), ?),
+                    notas_pedido=?,
+                    pedido_por_usuario_id=COALESCE(pedido_por_usuario_id, ?),
+                    requisicion_id=?,
+                    requisicion_folio=?,
+                    updated_at=?
+                WHERE id=?
+            """, (
+                ahora, referencia, notas, usuario_id, requisicion_id, folio_txt,
+                ahora, pendiente_id
+            ))
+            actualizados += 1
+
+    return actualizados
 
 
 def _asegurar_tabla_borradores(conn):
@@ -248,10 +457,7 @@ def _entradas_relacionadas(conn, requisicion):
     incluso las que no tienen producto_id vinculado.
     """
     
-    folio_num = str(requisicion['folio']).strip()
-    
-    folio_normalizado = _normalizar_folio_requisicion(folio_num)
-    folio_al_normalizado = _normalizar_folio_requisicion(f"AL-{folio_num}")
+    folio_num = int(requisicion['folio'])
     
     # Buscar TODAS las entradas con no_requisicion, sin importar producto
     entradas = conn.execute("""
@@ -268,8 +474,7 @@ def _entradas_relacionadas(conn, requisicion):
     # Filtrar en Python normalizando
     resultado = []
     for entrada in entradas:
-        entrada_normalizada = _normalizar_folio_requisicion(entrada['no_requisicion'])
-        if entrada_normalizada in (folio_normalizado, folio_al_normalizado):
+        if folio_num in _folios_desde_texto_requisicion(entrada['no_requisicion']):
             resultado.append(entrada)
     
     return resultado
@@ -302,8 +507,9 @@ def _entradas_por_folio_requisicion(conn):
     """).fetchall()
     resultado = {}
     for entrada in filas:
-        clave = _normalizar_folio_requisicion(entrada['no_requisicion'])
-        resultado.setdefault(clave, []).append(entrada)
+        for folio in _folios_desde_texto_requisicion(entrada['no_requisicion']):
+            clave = _normalizar_folio_requisicion(folio)
+            resultado.setdefault(clave, []).append(entrada)
     return resultado
 
 
@@ -320,22 +526,30 @@ def _enriquecer_items(items, entradas_relacionadas):
     resultado = []
     for it in items:
         d = dict(it)
-        if d.get('producto_id'):
+        d['informativo'] = float(d.get('cantidad') or 0) <= 0
+        if d.get('recepcion_manual'):
+            d['recibido_calc'] = d.get('cantidad_recibida') or 0
+            d['auto'] = False
+            d['manual'] = True
+        elif d.get('producto_id'):
             d['recibido_calc'] = recibido_por_producto.get(d['producto_id'], 0)
             d['auto'] = True
+            d['manual'] = False
         else:
-            d['recibido_calc'] = d['cantidad_recibida'] or 0
+            d['recibido_calc'] = d.get('cantidad_recibida') or 0
             d['auto'] = False
+            d['manual'] = False
         resultado.append(d)
     return resultado
 
 
 def _calcular_estado(items_enriquecidos):
-    if not items_enriquecidos:
+    items_pendientes = [it for it in items_enriquecidos if not it.get('informativo')]
+    if not items_pendientes:
         return 'pendiente'
-    completos = sum(1 for it in items_enriquecidos if it['recibido_calc'] >= it['cantidad'])
-    con_algo = sum(1 for it in items_enriquecidos if it['recibido_calc'] > 0)
-    if completos == len(items_enriquecidos):
+    completos = sum(1 for it in items_pendientes if it['recibido_calc'] >= it['cantidad'])
+    con_algo = sum(1 for it in items_pendientes if it['recibido_calc'] > 0)
+    if completos == len(items_pendientes):
         return 'completa'
     if con_algo > 0:
         return 'parcial'
@@ -460,20 +674,33 @@ def index():
         items_enriquecidos = _enriquecer_items(items, entradas_rel)
         estado = _calcular_estado(items_enriquecidos)
         estado_visible = r['estado'] if r['estado'] in ('revision', 'completa') else estado
-        if estado_f and estado_visible != estado_f:
+        dias_abierta = _dias_desde_fecha(r['fecha_requisicion'] or r['fecha'])
+        atrasada = estado_visible != 'completa' and dias_abierta > 7
+        if estado_f == 'atrasada':
+            if not atrasada:
+                continue
+        elif estado_f and estado_visible != estado_f:
             continue
         partidas_preview = [
-            f"{'%g' % it['cantidad']} {it['unidad'] or ''} - {it['descripcion']}"
+            (
+                it['descripcion']
+                if float(it['cantidad'] or 0) <= 0
+                else f"{'%g' % it['cantidad']} {it['unidad'] or ''} - {it['descripcion']}"
+            )
             for it in items[:10]
         ]
         resultado.append({**dict(r), 'estado_calc': estado, 'estado_visible': estado_visible,
-                          'num_items': len(items), 'partidas_preview': partidas_preview})
+                          'num_items': len(items), 'partidas_preview': partidas_preview,
+                          'dias_abierta': dias_abierta, 'atrasada': atrasada})
 
     resumen_estados = {'pendiente': 0, 'revision': 0, 'parcial': 0, 'completa': 0}
+    requisiciones_atrasadas = 0
     for r in resultado:
         estado_resumen = r['estado_visible']
         if estado_resumen in resumen_estados:
             resumen_estados[estado_resumen] += 1
+        if r.get('atrasada'):
+            requisiciones_atrasadas += 1
     
     total_registros = len(resultado)
     total_paginas = (total_registros + registros_por_pagina - 1) // registros_por_pagina
@@ -494,6 +721,7 @@ def index():
                            q_oc=q_oc, q_factura=q_factura, filtros_activos=filtros_activos,
                            estado_f=estado_f,
                            resumen_estados=resumen_estados,
+                           requisiciones_atrasadas=requisiciones_atrasadas,
                            pagina_actual=pagina, total_paginas=total_paginas,
                            total_registros=total_registros, registros_pagina=len(requisiciones))
 
@@ -545,7 +773,7 @@ def nuevo():
         f = request.form
         items = _leer_items_formulario(f)
         if not items:
-            flash('Agrega al menos una partida (cantidad y descripción).', 'danger')
+            flash('Agrega al menos una partida o un renglón informativo.', 'danger')
             return render_template('requisiciones/form.html', requisicion=None,
                                    departamentos=_areas_activas(), unidades=_unidades_activas(), hoy=date.today().isoformat(),
                                    max_items=MAX_ITEMS, unidad_singular=_unidad_singular)
@@ -578,11 +806,16 @@ def nuevo():
                     VALUES (?,?,?,?,?,?)
                 """, (rid, idx, item['cantidad'], item['unidad'], item['descripcion'], item['producto_id']))
             _sincronizar_productos_desde_items(conn, items)
+            pendientes_vinculados = _sincronizar_material_por_pedir(
+                conn, rid, folio, items, session['user_id']
+            )
             _asegurar_tabla_borradores(conn)
             conn.execute("DELETE FROM requisicion_borradores WHERE usuario_id=?", (session['user_id'],))
             conn.commit()
             log_actividad(session['user_id'], 'NUEVA_REQUISICION', f"Folio: AL-{folio}")
             extra = f" Se crearon {len(productos_creados)} productos nuevos." if productos_creados else ""
+            if pendientes_vinculados:
+                extra += f" Se marcaron {pendientes_vinculados} material(es) pendiente(s) como pedido."
             flash(f'Requisición AL-{folio} registrada correctamente.{extra}', 'success')
             conn.close()
             return redirect(url_for('requisiciones.nuevo', limpio=1))
@@ -623,7 +856,7 @@ def editar(rid):
         f = request.form
         items = _leer_items_formulario(f)
         if not items:
-            flash('Agrega al menos una partida (cantidad y descripción).', 'danger')
+            flash('Agrega al menos una partida o un renglón informativo.', 'danger')
             conn.close()
             return redirect(url_for('requisiciones.editar', rid=rid))
         try:
@@ -647,9 +880,14 @@ def editar(rid):
                     VALUES (?,?,?,?,?,?)
                 """, (rid, idx, item['cantidad'], item['unidad'], item['descripcion'], item['producto_id']))
             _sincronizar_productos_desde_items(conn, items)
+            pendientes_vinculados = _sincronizar_material_por_pedir(
+                conn, rid, requisicion['folio'], items, session['user_id'], requisicion['orden_compra']
+            )
             conn.commit()
             log_actividad(session['user_id'], 'EDITAR_REQUISICION', f"ID: {rid} | Folio: AL-{requisicion['folio']}")
             extra = f" Se crearon {len(productos_creados)} productos nuevos." if productos_creados else ""
+            if pendientes_vinculados:
+                extra += f" Se marcaron {pendientes_vinculados} material(es) pendiente(s) como pedido."
             flash(f'Requisición actualizada.{extra}', 'success')
             conn.close()
             return redirect(url_for('requisiciones.detalle', rid=rid))
@@ -677,10 +915,34 @@ def eliminar(rid):
         conn.close()
         return redirect(url_for('requisiciones.index'))
     try:
+        materiales_ligados = conn.execute(
+            "SELECT COUNT(*) AS total FROM material_por_pedir WHERE requisicion_id=?",
+            (rid,)
+        ).fetchone()['total']
+        conn.execute("""
+            UPDATE material_por_pedir
+            SET solicitado=0,
+                fecha_solicitado=NULL,
+                orden_compra=NULL,
+                notas_pedido=NULL,
+                pedido_por_usuario_id=NULL,
+                requisicion_id=NULL,
+                requisicion_folio=NULL,
+                updated_at=?
+            WHERE requisicion_id=?
+        """, (datetime.now().strftime('%Y-%m-%d %H:%M:%S'), rid))
+        conn.execute("""
+            DELETE FROM requisicion_item_recepciones
+            WHERE requisicion_item_id IN (
+                SELECT id FROM requisicion_items WHERE requisicion_id=?
+            )
+        """, (rid,))
+        conn.execute("DELETE FROM requisicion_items WHERE requisicion_id=?", (rid,))
         conn.execute("DELETE FROM requisiciones WHERE id=?", (rid,))
         conn.commit()
         log_actividad(session['user_id'], 'ELIMINAR_REQUISICION', f"ID: {rid} | Folio: AL-{requisicion['folio']}")
-        flash(f"Requisición AL-{requisicion['folio']} eliminada permanentemente.", 'success')
+        extra = f" {materiales_ligados} material(es) regresaron a pendientes por pedir." if materiales_ligados else ""
+        flash(f"Requisición AL-{requisicion['folio']} eliminada permanentemente.{extra}", 'success')
     except Exception as e:
         conn.rollback()
         flash(f'Error al eliminar: {str(e)}', 'danger')
@@ -749,34 +1011,66 @@ def detalle(rid):
         f = request.form
         accion = f.get('accion')
         if accion == 'actualizar_seguimiento':
+            orden_compra = (f.get('orden_compra') or '').strip() or None
             conn.execute("""
                 UPDATE requisiciones SET orden_compra=?, no_factura=?, no_remision=?
                 WHERE id=?
-            """, (f.get('orden_compra') or None, f.get('no_factura') or None,
-                  f.get('no_remision') or None, rid))
+            """, (orden_compra, f.get('no_factura') or None, f.get('no_remision') or None, rid))
+            if orden_compra:
+                conn.execute("""
+                    UPDATE material_por_pedir
+                    SET orden_compra=?, updated_at=?
+                    WHERE requisicion_id=?
+                      AND COALESCE(solicitado,0)=1
+                      AND (orden_compra IS NULL OR orden_compra='' OR orden_compra=requisicion_folio)
+                """, (orden_compra, datetime.now().strftime('%Y-%m-%d %H:%M:%S'), rid))
             conn.commit()
             log_actividad(session['user_id'], 'SEGUIMIENTO_REQUISICION', f"ID: {rid}")
             flash('Datos de seguimiento actualizados.', 'success')
         elif accion == 'actualizar_recepcion':
-            # Solo aplica a partidas de texto libre (sin producto_id); las ligadas a
-            # catálogo se calculan solas a partir de las entradas vinculadas.
-            # Lo que se captura aquí es "cuánto llegó AHORA" (no el total acumulado):
-            # se suma como una entrega nueva con la fecha/hora del momento, para
-            # poder ir registrando varias entregas parciales de la misma partida.
             items = conn.execute(
-                "SELECT id FROM requisicion_items WHERE requisicion_id=? AND producto_id IS NULL ORDER BY orden",
+                "SELECT id, producto_id FROM requisicion_items WHERE requisicion_id=? ORDER BY orden",
                 (rid,)).fetchall()
             for it in items:
-                val = f.get(f"recibido_{it['id']}")
-                if val is not None and val.strip() != '':
+                item_id = it['id']
+                if f.get(f"quitar_manual_{item_id}"):
+                    conn.execute("""
+                        UPDATE requisicion_items
+                        SET recepcion_manual=0, recepcion_manual_at=NULL,
+                            recepcion_manual_usuario_id=NULL,
+                            cantidad_recibida=CASE WHEN producto_id IS NULL THEN cantidad_recibida ELSE 0 END
+                        WHERE id=?
+                    """, (item_id,))
+                    continue
+
+                manual_val = f.get(f"recibido_manual_{item_id}")
+                if manual_val is not None and manual_val.strip() != '':
                     try:
-                        cantidad = float(val)
+                        cantidad_manual = float(manual_val)
                     except ValueError:
                         continue
-                    _registrar_recepcion(conn, it['id'], cantidad, session['user_id'])
+                    conn.execute("""
+                        UPDATE requisicion_items
+                        SET cantidad_recibida=?, recepcion_manual=1,
+                            recepcion_manual_at=?, recepcion_manual_usuario_id=?
+                        WHERE id=?
+                    """, (
+                        cantidad_manual, datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                        session['user_id'], item_id
+                    ))
+                    continue
+
+                if it['producto_id'] is None:
+                    val = f.get(f"recibido_{item_id}")
+                    if val is not None and val.strip() != '':
+                        try:
+                            cantidad = float(val)
+                        except ValueError:
+                            continue
+                        _registrar_recepcion(conn, item_id, cantidad, session['user_id'])
             conn.commit()
             log_actividad(session['user_id'], 'RECEPCION_REQUISICION', f"ID: {rid}")
-            flash('Recepción registrada.', 'success')
+            flash('Recepción actualizada.', 'success')
             requisicion_actual = conn.execute("SELECT * FROM requisiciones WHERE id=?", (rid,)).fetchone()
             items_actuales = conn.execute(
                 "SELECT * FROM requisicion_items WHERE requisicion_id=? ORDER BY orden", (rid,)).fetchall()
@@ -904,8 +1198,9 @@ def imprimir(rid):
         fila = fila_inicial + i
         if i < len(items):
             it = items[i]
-            ws[f'P{fila}'] = it['cantidad']
-            ws[f'Q{fila}'] = _unidad_para_cantidad(it['unidad'], it['cantidad'])
+            es_informativo = float(it['cantidad'] or 0) <= 0
+            ws[f'P{fila}'] = None if es_informativo else it['cantidad']
+            ws[f'Q{fila}'] = None if es_informativo else _unidad_para_cantidad(it['unidad'], it['cantidad'])
             ws[f'R{fila}'] = it['descripcion']
         else:
             ws[f'P{fila}'] = None
@@ -999,6 +1294,7 @@ def api_por_folio(folio):
 
     resultado = []
     for it in items_enriquecidos:
+        es_informativo = bool(it.get('informativo'))
         pendiente = max(0, it['cantidad'] - it['recibido_calc'])
         resultado.append({
             'producto_id': it['producto_id'],
@@ -1008,8 +1304,9 @@ def api_por_folio(folio):
             'cantidad': it['cantidad'],
             'recibido': it['recibido_calc'],
             'pendiente': pendiente,
-            'completa': it['recibido_calc'] >= it['cantidad'],
+            'completa': (not es_informativo) and it['recibido_calc'] >= it['cantidad'],
             'ligada_catalogo': bool(it['producto_id']),
+            'informativo': es_informativo,
         })
     
     # Resumen de entradas relacionadas
@@ -1032,6 +1329,17 @@ def api_por_folio(folio):
         "items": resultado,
         "entradas_relacionadas": entradas_resumen,
     }
+
+
+@requisiciones_bp.route('/api/material-pendiente/<int:producto_id>')
+@login_required
+def api_material_pendiente(producto_id):
+    conn = get_db()
+    pendiente = _material_pendiente_para_producto(conn, producto_id)
+    conn.close()
+    if not pendiente:
+        return jsonify({'encontrado': False})
+    return jsonify({'encontrado': True, **pendiente})
 
 
 @requisiciones_bp.route('/folio', methods=['POST'])

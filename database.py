@@ -163,6 +163,7 @@ def init_db():
             maquina_otro TEXT,
             unidad_compra TEXT,
             factor_conversion REAL,
+            tipo_conversion TEXT DEFAULT 'uso_a_compra',
             stock_actual REAL DEFAULT 0,
             stock_minimo REAL DEFAULT 0,
             precio_unitario REAL DEFAULT 0,
@@ -194,6 +195,7 @@ def init_db():
             no_factura TEXT,
             orden_compra TEXT,
             no_remision TEXT,
+            recuperacion_almacen INTEGER DEFAULT 0,
             proveedor_id INTEGER REFERENCES proveedores(id),
             proveedor_nombre_historico TEXT,
             departamento TEXT,
@@ -249,6 +251,27 @@ def init_db():
             usuario_id INTEGER REFERENCES usuarios(id),
             fecha TEXT DEFAULT CURRENT_TIMESTAMP,
             fecha_vale TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS material_por_pedir (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id INTEGER REFERENCES productos(id),
+            codigo TEXT,
+            descripcion TEXT NOT NULL,
+            cantidad REAL DEFAULT 0,
+            unidad TEXT,
+            prioridad TEXT DEFAULT 'normal',
+            motivo TEXT,
+            solicitado INTEGER DEFAULT 0,
+            fecha_solicitado TEXT,
+            orden_compra TEXT,
+            requisicion_id INTEGER REFERENCES requisiciones(id),
+            requisicion_folio TEXT,
+            notas_pedido TEXT,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            pedido_por_usuario_id INTEGER REFERENCES usuarios(id),
+            fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS conteos_fisicos (
@@ -312,7 +335,10 @@ def init_db():
             unidad TEXT,
             descripcion TEXT NOT NULL,
             cantidad_recibida REAL DEFAULT 0,
-            producto_id INTEGER REFERENCES productos(id)
+            producto_id INTEGER REFERENCES productos(id),
+            recepcion_manual INTEGER DEFAULT 0,
+            recepcion_manual_at TEXT,
+            recepcion_manual_usuario_id INTEGER REFERENCES usuarios(id)
         );
 
         CREATE TABLE IF NOT EXISTS requisicion_item_recepciones (
@@ -322,6 +348,68 @@ def init_db():
             fecha TEXT DEFAULT CURRENT_TIMESTAMP,
             usuario_id INTEGER REFERENCES usuarios(id)
         );
+
+        CREATE TABLE IF NOT EXISTS personal_mantenimiento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE NOT NULL,
+            codigo_barras TEXT UNIQUE,
+            nombre TEXT NOT NULL,
+            area TEXT,
+            turno TEXT,
+            tipo_responsable TEXT DEFAULT 'mantenimiento',
+            activo INTEGER DEFAULT 1,
+            observaciones TEXT,
+            fecha_alta TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS material_prestamo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE NOT NULL,
+            codigo_barras TEXT UNIQUE,
+            nombre TEXT NOT NULL,
+            descripcion TEXT,
+            categoria TEXT,
+            ubicacion TEXT,
+            foto_ruta TEXT,
+            foto_ubicacion_ruta TEXT,
+            estado TEXT DEFAULT 'disponible'
+                CHECK(estado IN ('disponible', 'prestado', 'danado', 'perdido', 'mantenimiento', 'baja')),
+            activo INTEGER DEFAULT 1,
+            observaciones TEXT,
+            fecha_alta TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS prestamos_mantenimiento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL REFERENCES material_prestamo(id),
+            trabajador_recibe_id INTEGER NOT NULL REFERENCES personal_mantenimiento(id),
+            trabajador_devuelve_id INTEGER REFERENCES personal_mantenimiento(id),
+            fecha_prestamo TEXT DEFAULT CURRENT_TIMESTAMP,
+            fecha_devolucion TEXT,
+            usuario_prestamo_id INTEGER REFERENCES usuarios(id),
+            usuario_devolucion_id INTEGER REFERENCES usuarios(id),
+            estado TEXT DEFAULT 'prestado' CHECK(estado IN ('prestado', 'devuelto', 'perdido')),
+            estado_devolucion TEXT,
+            recibe_codigo_historico TEXT,
+            recibe_nombre_historico TEXT,
+            recibe_area_historico TEXT,
+            devuelve_codigo_historico TEXT,
+            devuelve_nombre_historico TEXT,
+            devuelve_area_historico TEXT,
+            observaciones_prestamo TEXT,
+            observaciones_devolucion TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS etiquetas_produccion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto TEXT NOT NULL,
+            uso TEXT NOT NULL,
+            pictograma TEXT DEFAULT 'advertencia',
+            activo INTEGER DEFAULT 1,
+            observaciones TEXT,
+            fecha_alta TEXT DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TEXT
+        );
     """)
 
     # Insertar folios iniciales
@@ -329,6 +417,8 @@ def init_db():
     c.execute("INSERT OR IGNORE INTO folios VALUES ('salida', 0)")
     c.execute("INSERT OR IGNORE INTO folios VALUES ('producto', 0)")
     c.execute("INSERT OR IGNORE INTO folios VALUES ('vale_montacargas', 0)")
+    c.execute("INSERT OR IGNORE INTO folios VALUES ('personal_mantenimiento', 0)")
+    c.execute("INSERT OR IGNORE INTO folios VALUES ('material_prestamo', 0)")
 
     # Usuario admin por defecto
     from werkzeug.security import generate_password_hash
@@ -416,9 +506,12 @@ def migrar_esquema():
         'productos': [('codigo_barras', 'TEXT'),
                        ('maquina', 'TEXT'), ('maquina_otro', 'TEXT'),
                        ('unidad_compra', 'TEXT'), ('factor_conversion', 'REAL'),
+                       ('tipo_conversion', "TEXT DEFAULT 'uso_a_compra'"),
                        ('estado_fisico', 'TEXT'), ('categoria_nombre_historico', 'TEXT'),
                        ('departamento_nombre_historico', 'TEXT'),
-                       ('proveedor_nombre_historico', 'TEXT')],
+                       ('proveedor_nombre_historico', 'TEXT'),
+                       ('stock_origen', "TEXT DEFAULT 'ALMACEN'"),
+                       ('producto_origen_id', 'INTEGER')],
         'entradas': [('departamento', 'TEXT'), ('tipo_movimiento', 'TEXT'),
                      ('ubicacion', 'TEXT'), ('uso', 'TEXT'),
                      ('cantidad_piezas', 'REAL'), ('folio_excel', 'TEXT'),
@@ -427,11 +520,13 @@ def migrar_esquema():
                      ('moneda', "TEXT DEFAULT 'MXN'"),
                      ('aplica_iva', 'INTEGER'),
                      ('compra_gas', 'INTEGER DEFAULT 0'),
+                     ('recuperacion_almacen', 'INTEGER DEFAULT 0'),
                      ('fecha_vale', 'TEXT')],
         'salidas': [('no_vale', 'TEXT'), ('tipo_movimiento', 'TEXT'),
                     ('area', 'TEXT'), ('folio_excel', 'TEXT'),
                     ('es_servicio', 'INTEGER DEFAULT 0'), ('concepto_servicio', 'TEXT'),
                     ('tipo_vale', 'TEXT'), ('maquina', 'TEXT'),
+                    ('maquina_otro', 'TEXT'), ('proveedor', 'TEXT'),
                     ('orden_compra', 'TEXT'), ('no_factura', 'TEXT'), ('no_remision', 'TEXT'),
                     ('fecha_vale', 'TEXT')],
         'proveedores': [('nombre_comercial', 'TEXT')],
@@ -441,6 +536,11 @@ def migrar_esquema():
         'conteos_fisicos': [('salidas_manual', 'REAL'),
                             ('existencia_inicio', 'REAL'),
                             ('entradas_mes', 'REAL')],
+        'material_por_pedir': [('requisicion_id', 'INTEGER REFERENCES requisiciones(id)'),
+                               ('requisicion_folio', 'TEXT')],
+        'requisicion_items': [('recepcion_manual', 'INTEGER DEFAULT 0'),
+                              ('recepcion_manual_at', 'TEXT'),
+                              ('recepcion_manual_usuario_id', 'INTEGER REFERENCES usuarios(id)')],
     }
     for tabla, columnas in columnas_nuevas.items():
         for columna, tipo in columnas:
@@ -534,6 +634,95 @@ def migrar_esquema():
             UNIQUE(anio, mes)
         )
     """)
+    # ====== PERSONAL Y MATERIAL A PRÉSTAMO PARA MANTENIMIENTO ======
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS personal_mantenimiento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE NOT NULL,
+            codigo_barras TEXT UNIQUE,
+            nombre TEXT NOT NULL,
+            area TEXT,
+            turno TEXT,
+            tipo_responsable TEXT DEFAULT 'mantenimiento',
+            activo INTEGER DEFAULT 1,
+            observaciones TEXT,
+            fecha_alta TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS material_prestamo (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT UNIQUE NOT NULL,
+            codigo_barras TEXT UNIQUE,
+            nombre TEXT NOT NULL,
+            descripcion TEXT,
+            categoria TEXT,
+            ubicacion TEXT,
+            foto_ruta TEXT,
+            foto_ubicacion_ruta TEXT,
+            estado TEXT DEFAULT 'disponible'
+                CHECK(estado IN ('disponible', 'prestado', 'danado', 'perdido', 'mantenimiento', 'baja')),
+            activo INTEGER DEFAULT 1,
+            observaciones TEXT,
+            fecha_alta TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS prestamos_mantenimiento (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_id INTEGER NOT NULL REFERENCES material_prestamo(id),
+            trabajador_recibe_id INTEGER NOT NULL REFERENCES personal_mantenimiento(id),
+            trabajador_devuelve_id INTEGER REFERENCES personal_mantenimiento(id),
+            fecha_prestamo TEXT DEFAULT CURRENT_TIMESTAMP,
+            fecha_devolucion TEXT,
+            usuario_prestamo_id INTEGER REFERENCES usuarios(id),
+            usuario_devolucion_id INTEGER REFERENCES usuarios(id),
+            estado TEXT DEFAULT 'prestado' CHECK(estado IN ('prestado', 'devuelto', 'perdido')),
+            estado_devolucion TEXT,
+            recibe_codigo_historico TEXT,
+            recibe_nombre_historico TEXT,
+            recibe_area_historico TEXT,
+            devuelve_codigo_historico TEXT,
+            devuelve_nombre_historico TEXT,
+            devuelve_area_historico TEXT,
+            observaciones_prestamo TEXT,
+            observaciones_devolucion TEXT
+        )
+    """)
+    for columna, tipo in [
+        ('tipo_responsable', "TEXT DEFAULT 'mantenimiento'"),
+    ]:
+        if not col_existe('personal_mantenimiento', columna):
+            c.execute(f"ALTER TABLE personal_mantenimiento ADD COLUMN {columna} {tipo}")
+    if not col_existe('material_prestamo', 'foto_ubicacion_ruta'):
+        c.execute("ALTER TABLE material_prestamo ADD COLUMN foto_ubicacion_ruta TEXT")
+    for columna, tipo in [
+        ('recibe_codigo_historico', 'TEXT'),
+        ('recibe_nombre_historico', 'TEXT'),
+        ('recibe_area_historico', 'TEXT'),
+        ('devuelve_codigo_historico', 'TEXT'),
+        ('devuelve_nombre_historico', 'TEXT'),
+        ('devuelve_area_historico', 'TEXT'),
+        ('estado_devolucion', 'TEXT'),
+    ]:
+        if not col_existe('prestamos_mantenimiento', columna):
+            c.execute(f"ALTER TABLE prestamos_mantenimiento ADD COLUMN {columna} {tipo}")
+    c.execute("INSERT OR IGNORE INTO folios VALUES ('personal_mantenimiento', 0)")
+    c.execute("INSERT OR IGNORE INTO folios VALUES ('material_prestamo', 0)")
+
+    # ====== ETIQUETAS PRODUCCIÓN ======
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS etiquetas_produccion (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto TEXT NOT NULL,
+            uso TEXT NOT NULL,
+            pictograma TEXT DEFAULT 'advertencia',
+            activo INTEGER DEFAULT 1,
+            observaciones TEXT,
+            fecha_alta TEXT DEFAULT CURRENT_TIMESTAMP,
+            fecha_actualizacion TEXT
+        )
+    """)
     conn.commit()
     
     # ====== OPTIMIZACIÓN: Agregar índices para búsquedas rápidas ======
@@ -593,7 +782,10 @@ def migrar_esquema():
             cantidad REAL NOT NULL,
             unidad TEXT,
             descripcion TEXT NOT NULL,
-            cantidad_recibida REAL DEFAULT 0
+            cantidad_recibida REAL DEFAULT 0,
+            recepcion_manual INTEGER DEFAULT 0,
+            recepcion_manual_at TEXT,
+            recepcion_manual_usuario_id INTEGER REFERENCES usuarios(id)
         )
     """)
     if not col_existe('requisicion_items', 'producto_id'):
@@ -711,6 +903,36 @@ def migrar_esquema():
         c.execute("CREATE INDEX IF NOT EXISTS idx_vales_montacargas_fecha ON vales_montacargas(fecha)")
     if not index_existe("idx_vales_montacargas_montacargas"):
         c.execute("CREATE INDEX IF NOT EXISTS idx_vales_montacargas_montacargas ON vales_montacargas(montacargas_id)")
+
+    # ====== MATERIAL POR PEDIR ======
+    # Lista independiente para registrar material agotado o por agotarse.
+    # No mueve inventario; sirve para seguimiento hasta marcar "ya se pidió".
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS material_por_pedir (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id INTEGER REFERENCES productos(id),
+            codigo TEXT,
+            descripcion TEXT NOT NULL,
+            cantidad REAL DEFAULT 0,
+            unidad TEXT,
+            prioridad TEXT DEFAULT 'normal',
+            motivo TEXT,
+            solicitado INTEGER DEFAULT 0,
+            fecha_solicitado TEXT,
+            orden_compra TEXT,
+            requisicion_id INTEGER REFERENCES requisiciones(id),
+            requisicion_folio TEXT,
+            notas_pedido TEXT,
+            usuario_id INTEGER REFERENCES usuarios(id),
+            pedido_por_usuario_id INTEGER REFERENCES usuarios(id),
+            fecha TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT
+        )
+    """)
+    if not index_existe("idx_material_por_pedir_solicitado"):
+        c.execute("CREATE INDEX IF NOT EXISTS idx_material_por_pedir_solicitado ON material_por_pedir(solicitado, fecha)")
+    if not index_existe("idx_material_por_pedir_producto"):
+        c.execute("CREATE INDEX IF NOT EXISTS idx_material_por_pedir_producto ON material_por_pedir(producto_id)")
 
     # ====== CATÁLOGO DE ÁREAS (mismo patrón que montacargas) ======
     # Alta rápida desde el formulario de Vales de Montacargas, igual que el

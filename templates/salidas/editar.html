@@ -3,7 +3,7 @@
 {% block content %}
 <div class="topbar">
   <h1 class="page-title"><i class="bi bi-pencil-square text-warning"></i> Editar salida</h1>
-  <a href="{{ url_for('salidas.detalle', sid=salida.id) }}" class="btn btn-sm btn-outline-secondary">
+  <a href="{{ return_to }}" class="btn btn-sm btn-outline-secondary">
     <i class="bi bi-arrow-left"></i> Regresar
   </a>
 </div>
@@ -17,6 +17,7 @@
 <div class="card" style="max-width:640px">
   <div class="card-body">
     <form method="POST">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
       <div class="mb-3 position-relative">
         <label class="form-label fw-semibold">Producto <span class="text-danger">*</span></label>
         <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
@@ -31,15 +32,20 @@
       <div class="mb-3">
         <label class="form-label fw-semibold">Cantidad <span class="text-danger">*</span></label>
         <div class="input-group" style="max-width:220px">
-          <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.01" step="0.01"
-                 value="{{ salida.cantidad }}">
+          <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.001" step="0.001"
+                 value="{{ ((salida.cantidad * salida.factor_conversion) if salida.tipo_conversion == 'compra_a_uso' else (salida.cantidad / salida.factor_conversion))|round(2) if salida.unidad_compra and salida.factor_conversion else salida.cantidad }}">
           <span class="input-group-text" id="lbl-unidad">{{ salida.unidad_medida }}</span>
         </div>
-        {% if salida.unidad_compra and salida.factor_conversion %}
-        <div class="form-text fw-semibold text-danger" id="conversion-salida">
-          {{ salida.cantidad }} {{ salida.unidad_medida }} = {{ (salida.cantidad * salida.factor_conversion)|moneda }} {{ salida.unidad_compra }}
+        <div class="input-group input-group-sm mt-2" id="fila-cantidad-stock" style="max-width:220px; {{ '' if salida.unidad_compra and salida.factor_conversion else 'display:none' }}">
+          <input type="number" name="cantidad_compra" id="cantidad-compra" class="form-control" min="0.001" step="0.001"
+                 value="{{ salida.cantidad if salida.unidad_compra and salida.factor_conversion else '' }}">
+          <span class="input-group-text" id="lbl-unidad-stock">{{ salida.unidad_compra or '-' }}</span>
         </div>
-        {% endif %}
+        <div class="form-text fw-semibold text-danger" id="conversion-salida" style="{{ '' if salida.unidad_compra and salida.factor_conversion else 'display:none' }}">
+          {% if salida.unidad_compra and salida.factor_conversion %}
+          {{ ((salida.cantidad * salida.factor_conversion) if salida.tipo_conversion == 'compra_a_uso' else (salida.cantidad / salida.factor_conversion))|cantidad_unidad(salida.unidad_medida) }} = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra) }}
+          {% endif %}
+        </div>
       </div>
 
       <div class="row g-3 mb-3">
@@ -87,11 +93,22 @@
             {% endfor %}
           </select>
         </div>
+        <div class="col-md-6" id="fila_maquina_otro" style="display:none">
+          <label class="form-label fw-semibold">¿Cuál máquina? (Otros)</label>
+          <input type="text" name="maquina_otro" id="maquina_otro" class="form-control"
+                 value="{{ salida.maquina_otro or '' }}" placeholder="Especifica la máquina">
+        </div>
       </div>
 
       <div class="mb-3">
         <label class="form-label fw-semibold">Recibió <span class="text-danger">*</span></label>
         <input type="text" name="responsable" class="form-control" required value="{{ salida.responsable }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Proveedor</label>
+        <input type="text" name="proveedor" class="form-control" value="{{ salida.proveedor or '' }}"
+               placeholder="Escribe el nombre del proveedor">
       </div>
 
       <div class="mb-3">
@@ -117,7 +134,7 @@
 
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar cambios</button>
-        <a href="{{ url_for('salidas.detalle', sid=salida.id) }}" class="btn btn-outline-secondary">Cancelar</a>
+        <a href="{{ return_to }}" class="btn btn-outline-secondary">Cancelar</a>
       </div>
     </form>
   </div>
@@ -130,12 +147,33 @@
   const lblUnidad = document.getElementById('lbl-unidad');
   const infoStock = document.getElementById('info-stock');
   const cantidadInput = document.getElementById('cantidad');
+  const cantidadCompraInput = document.getElementById('cantidad-compra');
+  const filaCantidadStock = document.getElementById('fila-cantidad-stock');
+  const lblUnidadStock = document.getElementById('lbl-unidad-stock');
   const tipoVale = document.getElementById('tipo_vale');
-  const areaInput = document.getElementById('area');
   const maquinaInput = document.getElementById('maquina');
+  const maquinaOtroInput = document.getElementById('maquina_otro');
+  const filaMaquinaOtro = document.getElementById('fila_maquina_otro');
+  const areaInput = document.getElementById('area');
   const filaMaquina = document.getElementById('fila_maquina');
   const valeInput = document.getElementById('no_vale');
+  const conversionSalida = document.getElementById('conversion-salida');
+  let productoSeleccionado = {
+    unidad_medida: {{ salida.unidad_medida|tojson }},
+    unidad_compra: {{ salida.unidad_compra|tojson }},
+    factor_conversion: {{ salida.factor_conversion|tojson }},
+    tipo_conversion: {{ (salida.tipo_conversion or 'uso_a_compra')|tojson }}
+  };
   let debounceTimer = null;
+
+  function actualizarMaquinaOtro() {
+    const visible = tipoVale.value === 'maquinados' && maquinaInput.value === 'Otros';
+    filaMaquinaOtro.style.display = visible ? '' : 'none';
+    if (!visible) maquinaOtroInput.value = '';
+  }
+  tipoVale.addEventListener('change', actualizarMaquinaOtro);
+  maquinaInput.addEventListener('change', actualizarMaquinaOtro);
+  actualizarMaquinaOtro();
 
   function fijarArea(nombre) {
     const buscado = (nombre || '').trim().toUpperCase();
@@ -252,10 +290,53 @@
   function seleccionarProducto(p) {
     buscador.value = `${p.codigo} — ${p.descripcion}`;
     productoIdInput.value = p.id;
+    productoSeleccionado = p;
     lblUnidad.textContent = p.unidad_medida || '—';
-    infoStock.textContent = `Stock actual: ${p.stock_actual} ${p.unidad_medida}`;
+    lblUnidadStock.textContent = (p.unidad_compra && p.factor_conversion) ? p.unidad_compra : '—';
+    filaCantidadStock.style.display = (p.unidad_compra && p.factor_conversion) ? 'flex' : 'none';
+    cantidadInput.value = '';
+    cantidadCompraInput.value = '';
+    const conversion = (p.unidad_compra && p.factor_conversion)
+      ? ` = ${stockACompra(Number(p.stock_actual || 0), p).toFixed(2)} ${p.unidad_compra}`
+      : '';
+    infoStock.textContent = `Stock actual: ${p.stock_actual} ${p.unidad_medida}${conversion}`;
+    actualizarConversionSalida();
     resultados.style.display = 'none';
     cantidadInput.focus();
   }
+
+  function actualizarConversionSalida(origen = 'stock') {
+    if (!productoSeleccionado || !productoSeleccionado.unidad_compra || !productoSeleccionado.factor_conversion) {
+      conversionSalida.style.display = 'none';
+      conversionSalida.textContent = '';
+      return;
+    }
+    const factor = Number(productoSeleccionado.factor_conversion || 0);
+    if (!factor) {
+      conversionSalida.style.display = 'none';
+      return;
+    }
+    if (origen === 'stock') {
+      if (!cantidadInput.value) return;
+      cantidadCompraInput.value = stockACompra(Number(cantidadInput.value), productoSeleccionado).toFixed(2);
+    } else {
+      if (!cantidadCompraInput.value) return;
+      cantidadInput.value = compraAStock(Number(cantidadCompraInput.value), productoSeleccionado).toFixed(2);
+    }
+    conversionSalida.textContent = `${cantidadInput.value} ${productoSeleccionado.unidad_medida} = ${cantidadCompraInput.value} ${productoSeleccionado.unidad_compra}`;
+    conversionSalida.style.display = 'block';
+  }
+  function stockACompra(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad / factor : cantidad * factor;
+  }
+  function compraAStock(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad * factor : cantidad / factor;
+  }
+  cantidadInput.addEventListener('input', () => actualizarConversionSalida('stock'));
+  cantidadCompraInput.addEventListener('input', () => actualizarConversionSalida('compra'));
 </script>
 {% endblock %}

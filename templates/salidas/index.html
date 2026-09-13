@@ -90,6 +90,14 @@
           <i class="bi bi-x-lg"></i>
         </a>
       </div>
+      <div class="col-12">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" name="solo_h" value="1" id="solo_h" {{ 'checked' if solo_h }}>
+          <label class="form-check-label fw-semibold" for="solo_h">
+            Mostrar solo material de OC H / otra planta
+          </label>
+        </div>
+      </div>
     </form>
   </div>
 </div>
@@ -134,6 +142,9 @@
           </td>
           <td class="font-monospace fw-semibold">
             {{ s.codigo }}
+            {% if s.stock_origen == 'H' %}
+            <span class="badge bg-info text-dark ms-1">OC H</span>
+            {% endif %}
             {% if s.codigo_barras %}
             <br><span class="text-success" style="font-size:.72rem">{{ s.codigo_barras }}</span>
             {% endif %}
@@ -142,10 +153,11 @@
             <div class="fw-semibold">{{ s.descripcion }}</div>
           </td>
           <td class="text-end fw-bold text-danger">
-            -{{ s.cantidad|cantidad_unidad(s.unidad_medida) }}
+            {% set salida_stock = ((s.cantidad * s.factor_conversion) if s.unidad_compra and s.factor_conversion and s.tipo_conversion == 'compra_a_uso' else ((s.cantidad / s.factor_conversion) if s.unidad_compra and s.factor_conversion else s.cantidad)) %}
+            -{{ salida_stock|cantidad_unidad(s.unidad_medida) }}
             {% if s.unidad_compra and s.factor_conversion %}
             <br><span class="text-muted fw-normal" style="font-size:.72rem">
-              = {{ (s.cantidad * s.factor_conversion)|moneda }} {{ s.unidad_compra }}
+              = {{ s.cantidad|cantidad_unidad(s.unidad_compra) }}
             </span>
             {% endif %}
           </td>
@@ -162,13 +174,13 @@
           <td>{{ (s.fecha_vale or s.fecha[:10])|fecha_vale }}</td>
           <td class="text-end">
             <div class="btn-group btn-group-sm" role="group" aria-label="Acciones">
-              <a href="{{ url_for('salidas.detalle', sid=s.id) }}" class="btn btn-outline-secondary" title="Detalle">
+              <a href="{{ url_for('salidas.detalle', sid=s.id, return_to=request.full_path) }}" class="btn btn-outline-secondary" title="Detalle">
                 <i class="bi bi-eye"></i>
               </a>
-              <a href="{{ url_for('salidas.editar', sid=s.id) }}" class="btn btn-outline-primary" title="Editar">
+              <a href="{{ url_for('salidas.editar', sid=s.id, return_to=request.full_path) }}" class="btn btn-outline-primary" title="Editar">
                 <i class="bi bi-pencil-square"></i>
               </a>
-              <form method="POST" action="{{ url_for('salidas.eliminar', sid=s.id) }}" class="d-inline"
+              <form method="POST" action="{{ url_for('salidas.eliminar', sid=s.id, return_to=request.full_path) }}" class="d-inline"
                     onsubmit="return confirm('Eliminar esta salida? Se revertira el stock que desconto. Esta accion no se puede deshacer.');">
                 <button type="submit" class="btn btn-outline-danger" title="Eliminar">
                   <i class="bi bi-trash"></i>
@@ -208,8 +220,8 @@
       <nav aria-label="Paginacion">
         <ul class="pagination mb-0 flex-wrap">
           {% if pagina_actual > 1 %}
-          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=1) }}"><i class="bi bi-chevron-double-left"></i></a></li>
-          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=pagina_actual-1) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, solo_h=1 if solo_h else None, pagina=1) }}"><i class="bi bi-chevron-double-left"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, solo_h=1 if solo_h else None, pagina=pagina_actual-1) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
           {% else %}
           <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
           <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
@@ -222,14 +234,14 @@
           {% if p == pagina_actual %}
           <li class="page-item active"><span class="page-link">{{ p }}</span></li>
           {% else %}
-          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=p) }}">{{ p }}</a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, solo_h=1 if solo_h else None, pagina=p) }}">{{ p }}</a></li>
           {% endif %}
           {% endfor %}
           {% if fin < total_paginas %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
 
           {% if pagina_actual < total_paginas %}
-          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=pagina_actual+1) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
-          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, pagina=total_paginas) }}"><i class="bi bi-chevron-double-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, solo_h=1 if solo_h else None, pagina=pagina_actual+1) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, solo_h=1 if solo_h else None, pagina=total_paginas) }}"><i class="bi bi-chevron-double-right"></i></a></li>
           {% else %}
           <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
           <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>

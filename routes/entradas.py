@@ -1,6 +1,9 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, send_file, abort
 from routes.auth import login_required
-from database import get_db, next_folio, log_actividad, get_folio_diario, set_folio_diario
+from database import (
+    get_db, next_folio, log_actividad, get_folio_diario, set_folio_diario,
+    generar_codigo_barras_producto, obtener_nombres_unidades,
+)
 from routes.inventario import construir_busqueda_dinamica
 from constantes import CATEGORIAS_CON_MAQUINA, MAQUINAS
 from datetime import date, datetime
@@ -19,6 +22,103 @@ OC_PDF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 TSC_PRINTER_NAME = os.environ.get('ERP_TSC_PRINTER', 'TSC TE200')
 
 
+def _es_orden_compra_h(orden_compra):
+    """Detecta órdenes de compra H sin depender de mayúsculas o espacios."""
+    valor = (orden_compra or '').strip().upper()
+    return bool(re.match(r'^H\s*-?\s*\d+', valor) or valor.startswith('H-'))
+
+
+def _producto_para_oc_h(conn, producto_id, orden_compra, recuperacion_almacen=False):
+    """Devuelve el producto espejo H cuando la OC pertenece a otra planta.
+
+    El stock H se maneja independiente del producto normal. Si el espejo ya
+    existe, se reutiliza; si no existe, se clona la ficha base con stock 0.
+    """
+    if recuperacion_almacen or not producto_id or not _es_orden_compra_h(orden_compra):
+        return producto_id
+
+    producto = conn.execute("SELECT * FROM productos WHERE id=?", (producto_id,)).fetchone()
+    if not producto:
+        return producto_id
+
+    if (producto['stock_origen'] or '').upper() == 'H' or (producto['codigo'] or '').upper().startswith('H-'):
+        return producto['id']
+
+    codigo_h = f"H-{producto['codigo']}"
+    existente = conn.execute(
+        "SELECT id FROM productos WHERE UPPER(codigo)=UPPER(?)",
+        (codigo_h,)
+    ).fetchone()
+    if existente:
+        return existente['id']
+
+    codigo_barras = generar_codigo_barras_producto(codigo_h)
+    if conn.execute("SELECT 1 FROM productos WHERE codigo_barras=?", (codigo_barras,)).fetchone():
+        codigo_barras = generar_codigo_barras_producto(codigo_h, producto['id'])
+
+    cursor = conn.execute("""
+        INSERT INTO productos
+        (codigo, descripcion, categoria_id, unidad_medida, ubicacion, departamento,
+         maquina, maquina_otro, unidad_compra, factor_conversion, tipo_conversion, stock_actual,
+         stock_minimo, precio_unitario, activo, estado_fisico,
+         categoria_nombre_historico, departamento_nombre_historico,
+         proveedor_nombre_historico, codigo_barras, stock_origen, producto_origen_id)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        codigo_h,
+        f"[OC H] {producto['descripcion']}",
+        producto['categoria_id'], producto['unidad_medida'], producto['ubicacion'],
+        producto['departamento'], producto['maquina'], producto['maquina_otro'],
+        producto['unidad_compra'], producto['factor_conversion'], producto['tipo_conversion'] or 'uso_a_compra', 0,
+        producto['stock_minimo'], producto['precio_unitario'], 1, producto['estado_fisico'],
+        producto['categoria_nombre_historico'], producto['departamento_nombre_historico'],
+        producto['proveedor_nombre_historico'], codigo_barras, 'H', producto['id'],
+    ))
+    return cursor.lastrowid
+
+
+def _crear_producto_desde_entrada(conn, descripcion, unidad_medida, ubicacion, departamento, precio_unitario, stock_origen='ALMACEN'):
+    """Crea un producto básico al convertir una entrada de servicio a inventario."""
+    conn.execute("INSERT OR IGNORE INTO folios VALUES ('producto', 0)")
+    conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo = 'producto'")
+    num = conn.execute("SELECT ultimo FROM folios WHERE tipo = 'producto'").fetchone()[0]
+    codigo = f"PRD-{str(num).zfill(6)}"
+    if (stock_origen or '').upper() == 'H':
+        codigo = f'H-{codigo}'
+        descripcion = f'[OC H] {descripcion}'
+    codigo_barras = generar_codigo_barras_producto(codigo)
+    if conn.execute("SELECT 1 FROM productos WHERE codigo_barras=?", (codigo_barras,)).fetchone():
+        codigo_barras = generar_codigo_barras_producto(codigo, codigo)
+    cursor = conn.execute("""
+        INSERT INTO productos
+        (codigo, codigo_barras, descripcion, unidad_medida, ubicacion, departamento,
+         stock_actual, stock_minimo, precio_unitario, activo, stock_origen)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+    """, (
+        codigo, codigo_barras, descripcion, unidad_medida, ubicacion, departamento,
+        0, 0, precio_unitario or 0, 1, stock_origen,
+    ))
+    return cursor.lastrowid, codigo
+
+
+def _archivar_producto_si_quedo_solo(conn, producto_id, entrada_id):
+    """Oculta del inventario un producto que solo pertenecía a la entrada convertida a servicio."""
+    if not producto_id:
+        return False
+    otras_entradas = conn.execute(
+        "SELECT COUNT(*) FROM entradas WHERE producto_id=? AND id<>?",
+        (producto_id, entrada_id)
+    ).fetchone()[0]
+    salidas = conn.execute(
+        "SELECT COUNT(*) FROM salidas WHERE producto_id=?",
+        (producto_id,)
+    ).fetchone()[0]
+    if otras_entradas == 0 and salidas == 0:
+        conn.execute("UPDATE productos SET activo=0, stock_actual=0 WHERE id=?", (producto_id,))
+        return True
+    return False
+
+
 def _normalizar_oc_pdf(oc):
     digitos = ''.join(re.findall(r'\d+', str(oc or '')))
     if not digitos:
@@ -27,10 +127,24 @@ def _normalizar_oc_pdf(oc):
 
 
 def _ruta_oc_pdf(oc):
-    nombre = _normalizar_oc_pdf(oc)
-    if not nombre:
+    """Devuelve la ruta del PDF de una OC.
+
+    Históricamente los archivos se guardaron como OC##########.pdf, pero
+    algunas órdenes H se guardan como OCH##########.pdf (por ejemplo H-275).
+    Se prueban ambos nombres para que el formato capturado no determine si
+    el PDF aparece o no en el ERP.
+    """
+    digitos = ''.join(re.findall(r'\d+', str(oc or '')))
+    if not digitos:
         return None
-    return os.path.join(OC_PDF_DIR, nombre)
+    numero = digitos[-10:].zfill(10)
+    valor = str(oc or '').strip().upper()
+    nombres = [f"OCH{numero}.pdf", f"OC{numero}.pdf"] if valor.startswith('H') or 'OCH' in valor else [f"OC{numero}.pdf", f"OCH{numero}.pdf"]
+    for nombre in nombres:
+        ruta = os.path.join(OC_PDF_DIR, nombre)
+        if os.path.isfile(ruta):
+            return ruta
+    return os.path.join(OC_PDF_DIR, nombres[0])
 
 
 def _oc_pdf_url(oc):
@@ -293,30 +407,38 @@ def _tspl_etiqueta(e):
     def texto(x, y, valor, xmul=1, ymul=1, fuente="2"):
         lineas.append(f'TEXT {x},{y},"{fuente}",0,{xmul},{ymul},"{_texto_tsc(valor)}"')
 
-    titulo(40, 45, 'Codigo sistema', 205)
-    texto(40, 88, e.get('codigo') or '---', 1, 1, "4")
-    titulo(40, 190, 'Cantidad', 135)
-    texto(40, 233, f"{e.get('cantidad_label', '')} {e.get('unidad_label', '')}", 1, 1, "4")
-    titulo(40, 330, 'Factura/Remision', 230)
+    # 0.5 mm aprox. a 203 dpi = 4 dots.
+    # La columna izquierda queda con el margen ya probado. La columna derecha
+    # se abre hacia la derecha para que no se junte con los textos izquierdos.
+    x_izq = 88
+    x_der = 490
+    y_bottom = -4
+    subir_bloques = -80
+
+    titulo(x_izq, 45, 'Codigo sistema', 205)
+    texto(x_izq, 88, e.get('codigo') or '---', 1, 1, "4")
+    titulo(x_izq, 190, 'Cantidad', 135)
+    texto(x_izq, 233, f"{e.get('cantidad_label', '')} {e.get('unidad_label', '')}", 1, 1, "4")
+    titulo(x_izq, 330, 'Factura/Remision', 230)
     y_doc = 372
     for doc in e.get('documentos_label') or ['---']:
-        texto(40, y_doc, doc, 1, 1, "2")
+        texto(x_izq, y_doc, doc, 1, 1, "2")
         y_doc += 28
-    titulo(40, 535, 'Proveedor', 120)
+    titulo(x_izq, 535 + y_bottom + subir_bloques, 'Proveedor', 120)
     for i, prov in enumerate(_lineas_tsc(e.get('proveedor_nombre') or '---', 26, 2)):
-        texto(40, 570 + (i * 24), prov, 1, 1, "2")
+        texto(x_izq, 570 + y_bottom + subir_bloques + (i * 24), prov, 1, 1, "2")
 
-    titulo(420, 45, 'Producto', 130)
+    titulo(x_der, 45, 'Producto', 130)
     y_prod = 90
-    for prod in _lineas_tsc(e.get('descripcion') or '---', 18, 9):
-        texto(420, y_prod, prod, 1, 1, "4")
-        y_prod += 42
-    titulo(420, 410, 'Ubicacion', 145)
-    for i, ubicacion in enumerate(_lineas_tsc(e.get('ubicacion') or '---', 19, 2)):
-        texto(420, 452 + (i * 32), ubicacion, 1, 1, "3")
-    titulo(420, 535, 'Categoria o maquina', 230)
-    for i, maq in enumerate(_lineas_tsc(e.get('maquina_categoria_label') or '---', 19, 2)):
-        texto(420, 578 + (i * 30), maq, 1, 1, "3")
+    for prod in _lineas_tsc(e.get('descripcion') or '---', 22, 9):
+        texto(x_der, y_prod, prod, 1, 1, "3")
+        y_prod += 34
+    titulo(x_der, 410 + subir_bloques, 'Ubicacion', 145)
+    for i, ubicacion in enumerate(_lineas_tsc(e.get('ubicacion') or '---', 24, 2)):
+        texto(x_der, 452 + subir_bloques + (i * 28), ubicacion, 1, 1, "2")
+    titulo(x_der, 535 + y_bottom + subir_bloques, 'Categoria o maquina', 230)
+    for i, maq in enumerate(_lineas_tsc(e.get('maquina_categoria_label') or '---', 24, 2)):
+        texto(x_der, 578 + y_bottom + subir_bloques + (i * 28), maq, 1, 1, "2")
 
     lineas.append('PRINT 1,1')
     return '\r\n'.join(lineas) + '\r\n'
@@ -393,7 +515,7 @@ try {
 
 
 def _vincular_con_requisicion(conn, doc):
-    """Si el documento de la entrada trae un número de requisición (ej. '12' o 'AL-12'),
+    """Si el documento de la entrada trae número(s) de requisición (ej. '12', 'AL-12' o '120 Y 121'),
     busca la requisición con ese folio y completa (sin sobreescribir lo ya capturado) sus
     campos de seguimiento con la orden de compra / factura / remisión de esta entrada, para
     que el estatus de la requisición se pueda rastrear desde ahí. También cambia su estado a
@@ -401,27 +523,32 @@ def _vincular_con_requisicion(conn, doc):
     texto = (doc.get('no_requisicion') or '').strip()
     if not texto:
         return
-    m = re.search(r'(\d+)', texto)
-    if not m:
+    folios = _folios_requisicion_desde_texto(texto)
+    if not folios:
         return
-    folio_num = int(m.group(1))
-    req = conn.execute("SELECT * FROM requisiciones WHERE folio=?", (folio_num,)).fetchone()
-    if not req:
-        return
-    cambios = {}
-    if not req['orden_compra'] and doc.get('orden_compra'):
-        cambios['orden_compra'] = doc.get('orden_compra')
-    if not req['no_factura'] and doc.get('no_factura'):
-        cambios['no_factura'] = doc.get('no_factura')
-    if not req['no_remision'] and doc.get('no_remision'):
-        cambios['no_remision'] = doc.get('no_remision')
-    if cambios:
-        set_clause = ", ".join(f"{k}=?" for k in cambios)
-        conn.execute(f"UPDATE requisiciones SET {set_clause} WHERE id=?",
-                     (*cambios.values(), req['id']))
-    if req['estado'] not in ('revision', 'parcial', 'completa'):
-        conn.execute("UPDATE requisiciones SET estado='revision' WHERE id=?", (req['id'],))
-    flash(f'Esta entrada se vinculó con la requisición AL-{folio_num}.', 'info')
+    vinculadas = []
+    for folio_num in folios:
+        req = conn.execute("SELECT * FROM requisiciones WHERE folio=?", (folio_num,)).fetchone()
+        if not req:
+            continue
+        cambios = {}
+        if not req['orden_compra'] and doc.get('orden_compra'):
+            cambios['orden_compra'] = doc.get('orden_compra')
+        if not req['no_factura'] and doc.get('no_factura'):
+            cambios['no_factura'] = doc.get('no_factura')
+        if not req['no_remision'] and doc.get('no_remision'):
+            cambios['no_remision'] = doc.get('no_remision')
+        if cambios:
+            set_clause = ", ".join(f"{k}=?" for k in cambios)
+            conn.execute(f"UPDATE requisiciones SET {set_clause} WHERE id=?",
+                         (*cambios.values(), req['id']))
+        if req['estado'] not in ('revision', 'parcial', 'completa'):
+            conn.execute("UPDATE requisiciones SET estado='revision' WHERE id=?", (req['id'],))
+        vinculadas.append(f"AL-{folio_num}")
+    if vinculadas:
+        texto_vinculos = " y ".join(vinculadas) if len(vinculadas) <= 2 else f"{', '.join(vinculadas[:-1])} y {vinculadas[-1]}"
+        etiqueta = "la requisición" if len(vinculadas) == 1 else "las requisiciones"
+        flash(f'Esta entrada se vinculó con {etiqueta} {texto_vinculos}.', 'info')
 
 
 def _normalizar_requisicion(texto):
@@ -430,85 +557,94 @@ def _normalizar_requisicion(texto):
     return str(texto).strip().upper().replace("-", "").replace(" ", "")
 
 
+def _folios_requisicion_desde_texto(texto):
+    if not texto:
+        return []
+    folios = []
+    vistos = set()
+    for match in re.finditer(r'(?:AL\s*-?\s*)?(\d+)', str(texto), flags=re.IGNORECASE):
+        folio = int(match.group(1))
+        if folio not in vistos:
+            vistos.add(folio)
+            folios.append(folio)
+    return folios
+
+
 def _coincide_requisicion(texto, folio_num):
-    valor = _normalizar_requisicion(texto)
-    folio = str(folio_num)
-    return valor in (folio, f"AL{folio}")
+    return int(folio_num) in _folios_requisicion_desde_texto(texto)
 
 
 def _folio_requisicion_desde_texto(texto):
-    texto = (texto or '').strip()
-    if not texto:
-        return None
-    m = re.search(r'(\d+)', texto)
-    return int(m.group(1)) if m else None
+    folios = _folios_requisicion_desde_texto(texto)
+    return folios[0] if folios else None
 
 
 def _recalcular_estado_requisicion_por_texto(conn, texto_requisicion):
-    folio_num = _folio_requisicion_desde_texto(texto_requisicion)
-    if not folio_num:
+    folios = _folios_requisicion_desde_texto(texto_requisicion)
+    if not folios:
         return
 
-    req = conn.execute("SELECT * FROM requisiciones WHERE folio=?", (folio_num,)).fetchone()
-    if not req:
-        return
-
-    entradas = conn.execute("""
-        SELECT producto_id, cantidad, cantidad_piezas, no_requisicion
-        FROM entradas
-        WHERE no_requisicion IS NOT NULL AND TRIM(no_requisicion) != ''
-    """).fetchall()
-    entradas_rel = [
-        e for e in entradas
-        if _coincide_requisicion(e['no_requisicion'], folio_num)
-    ]
-
-    if not entradas_rel:
-        conn.execute("""
-            UPDATE requisiciones
-            SET estado='pendiente',
-                orden_compra=NULL,
-                no_factura=NULL,
-                no_remision=NULL
-            WHERE id=?
-        """, (req['id'],))
-        return
-
-    items = conn.execute(
-        "SELECT producto_id, cantidad, cantidad_recibida FROM requisicion_items WHERE requisicion_id=? ORDER BY orden",
-        (req['id'],)
-    ).fetchall()
-    if not items:
-        conn.execute("UPDATE requisiciones SET estado='revision' WHERE id=?", (req['id'],))
-        return
-
-    recibido_por_producto = {}
-    for entrada in entradas_rel:
-        if not entrada['producto_id']:
+    for folio_num in folios:
+        req = conn.execute("SELECT * FROM requisiciones WHERE folio=?", (folio_num,)).fetchone()
+        if not req:
             continue
-        cantidad = entrada['cantidad_piezas'] if entrada['cantidad_piezas'] is not None else entrada['cantidad']
-        recibido_por_producto[entrada['producto_id']] = recibido_por_producto.get(entrada['producto_id'], 0) + (cantidad or 0)
 
-    completos = 0
-    con_algo = 0
-    for item in items:
-        if item['producto_id']:
-            recibido = recibido_por_producto.get(item['producto_id'], 0)
+        entradas = conn.execute("""
+            SELECT producto_id, cantidad, cantidad_piezas, no_requisicion
+            FROM entradas
+            WHERE no_requisicion IS NOT NULL AND TRIM(no_requisicion) != ''
+        """).fetchall()
+        entradas_rel = [
+            e for e in entradas
+            if _coincide_requisicion(e['no_requisicion'], folio_num)
+        ]
+
+        if not entradas_rel:
+            conn.execute("""
+                UPDATE requisiciones
+                SET estado='pendiente',
+                    orden_compra=NULL,
+                    no_factura=NULL,
+                    no_remision=NULL
+                WHERE id=?
+            """, (req['id'],))
+            continue
+
+        items = conn.execute(
+            "SELECT producto_id, cantidad, cantidad_recibida FROM requisicion_items WHERE requisicion_id=? ORDER BY orden",
+            (req['id'],)
+        ).fetchall()
+        if not items:
+            conn.execute("UPDATE requisiciones SET estado='revision' WHERE id=?", (req['id'],))
+            continue
+
+        recibido_por_producto = {}
+        for entrada in entradas_rel:
+            if not entrada['producto_id']:
+                continue
+            cantidad = entrada['cantidad_piezas'] if entrada['cantidad_piezas'] is not None else entrada['cantidad']
+            recibido_por_producto[entrada['producto_id']] = recibido_por_producto.get(entrada['producto_id'], 0) + (cantidad or 0)
+
+        completos = 0
+        con_algo = 0
+        for item in items:
+            if item['producto_id']:
+                recibido = recibido_por_producto.get(item['producto_id'], 0)
+            else:
+                recibido = item['cantidad_recibida'] or 0
+            if recibido >= item['cantidad']:
+                completos += 1
+            if recibido > 0:
+                con_algo += 1
+
+        if completos == len(items):
+            estado = 'completa'
+        elif con_algo > 0:
+            estado = 'parcial'
         else:
-            recibido = item['cantidad_recibida'] or 0
-        if recibido >= item['cantidad']:
-            completos += 1
-        if recibido > 0:
-            con_algo += 1
+            estado = 'revision'
 
-    if completos == len(items):
-        estado = 'completa'
-    elif con_algo > 0:
-        estado = 'parcial'
-    else:
-        estado = 'revision'
-
-    conn.execute("UPDATE requisiciones SET estado=? WHERE id=?", (estado, req['id']))
+        conn.execute("UPDATE requisiciones SET estado=? WHERE id=?", (estado, req['id']))
 
 
 @entradas_bp.route('/orden-compra/<path:oc>')
@@ -556,9 +692,9 @@ def index():
     conn = get_db()
     select_sql = """
         SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
-               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(e.concepto_servicio, p.descripcion) as descripcion,
                COALESCE(p.unidad_medida, 'SERVICIO') as unidad_medida,
-               p.unidad_compra, p.factor_conversion, COALESCE(e.ubicacion, p.ubicacion) as ubicacion_actual,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion, COALESCE(e.ubicacion, p.ubicacion) as ubicacion_actual,
                u.nombre as usuario_nombre, COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre,
                pr.nombre_comercial as proveedor_nombre_comercial
     """
@@ -683,12 +819,18 @@ def etiquetas():
 def imprimir_etiquetas_tsc():
     etiquetas = _obtener_etiquetas_entradas(request.form)
     volver = request.form.get('volver') or url_for('entradas.index')
+    try:
+        copias = int(request.form.get('copias') or 1)
+    except (TypeError, ValueError):
+        copias = 1
+    copias = max(1, min(copias, 100))
     if not etiquetas:
         flash('No hay etiquetas para imprimir.', 'warning')
         return redirect(volver)
     try:
-        _imprimir_tsc(etiquetas)
-        flash(f'{len(etiquetas)} etiqueta(s) enviadas a {TSC_PRINTER_NAME}.', 'success')
+        etiquetas_a_imprimir = etiquetas * copias
+        _imprimir_tsc(etiquetas_a_imprimir)
+        flash(f'{len(etiquetas_a_imprimir)} etiqueta(s) enviadas a {TSC_PRINTER_NAME}.', 'success')
     except Exception as exc:
         flash(f'No se pudo imprimir en {TSC_PRINTER_NAME}: {exc}', 'danger')
     return redirect(volver)
@@ -749,6 +891,7 @@ def nuevo():
         "SELECT * FROM proveedores WHERE activo=1 ORDER BY nombre").fetchall()
     departamentos = _areas_activas(conn)
     categorias = conn.execute("SELECT * FROM categorias ORDER BY LOWER(nombre)").fetchall()
+    unidades = obtener_nombres_unidades(conn)
 
     if request.method == 'POST':
         accion = request.form.get('accion')
@@ -784,6 +927,9 @@ def nuevo():
             departamento_item = request.form.get('departamento_item') or None
             ubicacion_item = (request.form.get('ubicacion_item') or '').strip()
             uso_item = (request.form.get('uso_item') or '').strip()
+            descripcion_item = (request.form.get('descripcion_item') or '').strip()
+            actualizar_descripcion_producto = request.form.get('actualizar_descripcion_producto') == 'on'
+            recuperacion_almacen_item = request.form.get('recuperacion_almacen_item') == 'on'
             moneda = (request.form.get('moneda') or 'MXN').strip().upper()
             aplica_iva = request.form.get('aplica_iva') == 'on'
             if not pid or not cantidad:
@@ -801,8 +947,56 @@ def nuevo():
                 else:
                     cantidad = float(cantidad)
                     precio = float(precio)
-                    tiene_conversion = bool(prod['unidad_compra'] and prod['factor_conversion'])
-                    cantidad_piezas = round(cantidad / prod['factor_conversion'], 4) if tiene_conversion else cantidad
+                    descripcion_entrada = descripcion_item or prod['descripcion']
+                    unidad_medida_item = _normalizar_unidad((request.form.get('unidad_medida_item') or prod['unidad_medida'] or '').strip())
+                    usa_conversion_item = request.form.get('usa_conversion_item') == 'on'
+                    unidad_compra_item = _normalizar_unidad((request.form.get('unidad_compra_item') or '').strip()) if usa_conversion_item else None
+                    factor_raw = (request.form.get('factor_conversion_item') or '').strip()
+                    tipo_conversion_item = request.form.get('tipo_conversion_item') or 'uso_a_compra'
+                    if tipo_conversion_item not in ('uso_a_compra', 'compra_a_uso'):
+                        tipo_conversion_item = 'uso_a_compra'
+                    try:
+                        factor_conversion_item = float(factor_raw) if usa_conversion_item and factor_raw else None
+                    except ValueError:
+                        factor_conversion_item = None
+                    if not unidad_medida_item:
+                        flash('La unidad de inventario es obligatoria.', 'danger')
+                        conn.close()
+                        return redirect(url_for('entradas.nuevo'))
+                    if usa_conversion_item and (not unidad_compra_item or not factor_conversion_item or factor_conversion_item <= 0):
+                        flash('Para usar conversión captura unidad de compra y un factor mayor a 0.', 'danger')
+                        conn.close()
+                        return redirect(url_for('entradas.nuevo'))
+
+                    conversion_cambio = (
+                        unidad_medida_item != (prod['unidad_medida'] or '') or
+                        (unidad_compra_item or None) != (prod['unidad_compra'] or None) or
+                        (factor_conversion_item or None) != (prod['factor_conversion'] or None) or
+                        (tipo_conversion_item or 'uso_a_compra') != (prod['tipo_conversion'] or 'uso_a_compra')
+                    )
+                    if conversion_cambio:
+                        conn.execute(
+                            """UPDATE productos
+                               SET unidad_medida=?, unidad_compra=?, factor_conversion=?, tipo_conversion=?
+                               WHERE id=?""",
+                            (
+                                unidad_medida_item, unidad_compra_item, factor_conversion_item,
+                                tipo_conversion_item if usa_conversion_item else 'uso_a_compra',
+                                prod['id'],
+                            ),
+                        )
+                    descripcion_cambio = actualizar_descripcion_producto and descripcion_entrada and descripcion_entrada != (prod['descripcion'] or '')
+                    if descripcion_cambio:
+                        conn.execute(
+                            "UPDATE productos SET descripcion=? WHERE id=?",
+                            (descripcion_entrada, prod['id']),
+                        )
+
+                    tiene_conversion = bool(unidad_compra_item and factor_conversion_item)
+                    if tiene_conversion and tipo_conversion_item == 'compra_a_uso':
+                        cantidad_piezas = round(cantidad * factor_conversion_item, 4)
+                    else:
+                        cantidad_piezas = round(cantidad / factor_conversion_item, 4) if tiene_conversion else cantidad
                     categoria_con_maquina = False
                     if categoria_item:
                         cat_row = conn.execute("SELECT nombre FROM categorias WHERE id=?", (categoria_item,)).fetchone()
@@ -840,22 +1034,27 @@ def nuevo():
                             ((maquina_otro_item if maquina_item == 'Otros' else '') != (prod['maquina_otro'] or ''))
                         )) or
                         (departamento_item and departamento_item != (prod['departamento'] or '')) or
-                        (ubicacion_item and ubicacion_item != (prod['ubicacion'] or ''))):
+                            (ubicacion_item and ubicacion_item != (prod['ubicacion'] or ''))):
+                        conn.commit()
+                    elif conversion_cambio or descripcion_cambio:
                         conn.commit()
                     cart = session.get(CART_KEY, [])
                     cart.append({
                         'producto_id': prod['id'], 'codigo': prod['codigo'],
                         'codigo_barras': prod['codigo_barras'],
-                        'descripcion': prod['descripcion'],
-                        'unidad_medida': prod['unidad_compra'] if tiene_conversion else prod['unidad_medida'],
+                        'descripcion': descripcion_entrada,
+                        'concepto_servicio': descripcion_entrada,
+                        'recuperacion_almacen': recuperacion_almacen_item,
+                        'unidad_medida': unidad_compra_item if tiene_conversion else unidad_medida_item,
                         'cantidad': cantidad, 'precio_unitario': precio,
                         'importe': round(cantidad * precio, 4),
                         'departamento': departamento_item or prod['departamento'],
                         'ubicacion': ubicacion_item or prod['ubicacion'],
                         'uso': uso_item,
                         'tiene_conversion': tiene_conversion,
+                        'tipo_conversion': tipo_conversion_item if tiene_conversion else 'uso_a_compra',
                         'cantidad_piezas': cantidad_piezas,
-                        'unidad_piezas': prod['unidad_medida'],
+                        'unidad_piezas': unidad_medida_item,
                         'es_servicio': False,
                         'moneda': moneda,
                         'aplica_iva': aplica_iva,
@@ -865,7 +1064,7 @@ def nuevo():
                     session['entrada_ultimo_aplica_iva'] = aplica_iva
                     session.modified = True
                     if tiene_conversion:
-                        flash(f"{prod['codigo']} agregado a la lista ({cantidad} {prod['unidad_compra']} = {cantidad_piezas} {prod['unidad_medida']}).", 'success')
+                        flash(f"{prod['codigo']} agregado a la lista ({cantidad} {unidad_compra_item} = {cantidad_piezas} {unidad_medida_item}).", 'success')
                     else:
                         flash(f"{prod['codigo']} agregado a la lista.", 'success')
             conn.close()
@@ -941,11 +1140,8 @@ def nuevo():
                       '(sin OC, factura ni requisición), marca la casilla "Solo remisión".', 'danger')
                 conn.close()
                 return redirect(url_for('entradas.nuevo'))
-            if not doc.get('solo_remision') and not (doc.get('proveedor_id') or '').strip():
-                flash('Debes elegir el proveedor de la lista de resultados (o darlo de alta con el botón '
-                      '"¿No lo encuentras?") antes de guardar. Si escribiste el nombre pero no le diste clic a un '
-                      'resultado, el proveedor no quedó seleccionado. Si esta entrada es solo una remisión '
-                      '(sin OC, factura ni requisición), marca la casilla "Solo remisión".', 'danger')
+            if not doc.get('solo_remision') and not (doc.get('proveedor_id') or '').strip() and not (doc.get('proveedor_texto') or '').strip():
+                flash('Captura el nombre del proveedor o selecciónalo de la lista.', 'danger')
                 conn.close()
                 return redirect(url_for('entradas.nuevo'))
             try:
@@ -955,6 +1151,10 @@ def nuevo():
                 fecha_vale = doc.get('fecha_vale') or date.today().isoformat()
                 folios_generados = []
                 for item in cart:
+                    recuperacion_almacen = bool(item.get('recuperacion_almacen'))
+                    producto_id_entrada = _producto_para_oc_h(
+                        conn, item.get('producto_id'), doc.get('orden_compra'), recuperacion_almacen
+                    )
                     conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo = 'entrada'")
                     num = conn.execute("SELECT ultimo FROM folios WHERE tipo = 'entrada'").fetchone()[0]
                     folio = f"ENT-{str(num).zfill(6)}"
@@ -962,23 +1162,25 @@ def nuevo():
                         INSERT INTO entradas
                         (folio, producto_id, es_servicio, concepto_servicio,
                          cantidad, cantidad_piezas, precio_unitario, importe,
-                         no_requisicion, no_factura, orden_compra, no_remision, sin_oc,
-                         proveedor_id, departamento, ubicacion, uso, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale, moneda, aplica_iva, compra_gas)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (folio, item.get('producto_id'), int(item.get('es_servicio', False)),
+                         no_requisicion, no_factura, orden_compra, no_remision, sin_oc, recuperacion_almacen,
+                          proveedor_id, proveedor_nombre_historico, departamento, ubicacion, uso, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale, moneda, aplica_iva, compra_gas)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (folio, producto_id_entrada, int(item.get('es_servicio', False)),
                           item.get('concepto_servicio'),
                           item['cantidad'], item.get('cantidad_piezas', item['cantidad']),
                           item['precio_unitario'],
                           item['importe'], doc.get('no_requisicion'), doc.get('no_factura'),
-                          doc.get('orden_compra'), doc.get('no_remision'), int(doc.get('sin_oc', False)), prov_id,
+                          doc.get('orden_compra'), doc.get('no_remision'), int(doc.get('sin_oc', False)),
+                          int(recuperacion_almacen), prov_id,
+                          doc.get('proveedor_texto') or None,
                           item.get('departamento'), item.get('ubicacion'), item.get('uso'), tipo_mov,
                           session['user_id'], doc.get('observaciones'), fecha_sql, fecha_vale,
                           item.get('moneda') or 'MXN', int(bool(item.get('aplica_iva'))),
                           int(doc.get('compra_gas', False))))
-                    if not item.get('es_servicio') and item.get('producto_id'):
+                    if not item.get('es_servicio') and producto_id_entrada:
                         conn.execute(
                             "UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
-                            (item.get('cantidad_piezas', item['cantidad']), item['producto_id']))
+                            (item.get('cantidad_piezas', item['cantidad']), producto_id_entrada))
                     folios_generados.append(folio)
                 conn.commit()
                 log_actividad(session['user_id'], 'ENTRADA',
@@ -1011,7 +1213,7 @@ def nuevo():
     ahora = datetime.now().strftime('%Y-%m-%dT%H:%M')
     return render_template('entradas/form.html', proveedores=proveedores,
                            doc=doc, cart=cart, preseleccion_id=preseleccion_id,
-                           departamentos=departamentos, categorias=categorias, ahora=ahora,
+                           departamentos=departamentos, categorias=categorias, unidades=unidades, ahora=ahora,
                            categorias_con_maquina=CATEGORIAS_CON_MAQUINA, maquinas=MAQUINAS)
 
 
@@ -1030,9 +1232,9 @@ def detalle(eid):
     conn = get_db()
     entrada = conn.execute("""
         SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
-               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(e.concepto_servicio, p.descripcion) as descripcion,
                COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
-               p.unidad_compra, p.factor_conversion, COALESCE(e.ubicacion, p.ubicacion) as ubicacion_actual,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion, COALESCE(e.ubicacion, p.ubicacion) as ubicacion_actual,
                u.nombre as usuario_nombre, COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
         FROM entradas e
         LEFT JOIN productos p ON e.producto_id=p.id
@@ -1041,11 +1243,18 @@ def detalle(eid):
         WHERE e.id=?
     """, (eid,)).fetchone()
     requisicion_vinculada = None
+    requisiciones_vinculadas = []
     if entrada:
-        m = re.search(r'(\d+)', entrada['no_requisicion'] or '')
-        if m:
-            requisicion_vinculada = conn.execute(
-                "SELECT id, folio FROM requisiciones WHERE folio=?", (int(m.group(1)),)).fetchone()
+        folios = _folios_requisicion_desde_texto(entrada['no_requisicion'] or '')
+        if folios:
+            placeholders = ",".join("?" for _ in folios)
+            filas_req = conn.execute(
+                f"SELECT id, folio FROM requisiciones WHERE folio IN ({placeholders})",
+                folios
+            ).fetchall()
+            req_por_folio = {int(req['folio']): req for req in filas_req}
+            requisiciones_vinculadas = [req_por_folio[folio] for folio in folios if folio in req_por_folio]
+            requisicion_vinculada = requisiciones_vinculadas[0] if requisiciones_vinculadas else None
     conn.close()
     if not entrada:
         flash('Registro no encontrado.', 'danger')
@@ -1059,6 +1268,7 @@ def detalle(eid):
     oc_pdf_url = _oc_pdf_url(entrada['orden_compra'])
     volver = request.args.get('volver', '')
     return render_template('entradas/detalle.html', entrada=entrada, requisicion_vinculada=requisicion_vinculada,
+                           requisiciones_vinculadas=requisiciones_vinculadas,
                            subtotal=subtotal, iva=iva, total_con_iva=total_con_iva, es_dolar=es_dolar,
                            oc_pdf_url=oc_pdf_url, volver=volver)
 
@@ -1105,7 +1315,7 @@ def editar(eid):
     conn = get_db()
     entrada = conn.execute("""
         SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
-               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(e.concepto_servicio, p.descripcion) as descripcion,
                COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
                COALESCE(e.ubicacion, p.ubicacion) as ubicacion_actual,
                COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
@@ -1125,13 +1335,16 @@ def editar(eid):
     entrada['moneda'] = (entrada.get('moneda') or 'MXN').strip().upper()
     if entrada.get('aplica_iva') is None:
         entrada['aplica_iva'] = int(not _es_dolar(entrada['moneda']))
+    unidades = obtener_nombres_unidades(conn)
 
     volver = request.values.get('volver', '')
 
     if request.method == 'POST':
         f = request.form
         try:
-            es_servicio = bool(entrada['es_servicio'])
+            tipo_registro = f.get('tipo_registro') or ('servicio' if entrada['es_servicio'] else 'producto')
+            es_servicio = tipo_registro == 'servicio'
+            cantidad_piezas_original = entrada['cantidad_piezas'] if entrada['cantidad_piezas'] is not None else entrada['cantidad']
 
             if es_servicio:
                 # ---- Editar un servicio/cargo (sin producto, sin stock) ----
@@ -1141,46 +1354,89 @@ def editar(eid):
                 if not concepto or not cantidad_raw:
                     flash('Escribe una descripción del servicio y la cantidad.', 'danger')
                     conn.close()
-                    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, volver=volver)
+                    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
 
                 cantidad = float(cantidad_raw)
                 precio = float(precio_raw)
                 importe = round(cantidad * precio, 4)
                 pid = None
                 cantidad_piezas_nueva = cantidad
+                if not entrada['es_servicio'] and entrada['producto_id']:
+                    conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
+                                (cantidad_piezas_original, entrada['producto_id']))
+                    _archivar_producto_si_quedo_solo(conn, entrada['producto_id'], eid)
             else:
                 # ---- Editar una entrada normal (producto de inventario) ----
-                pid = f.get('producto_id')
                 cantidad_raw = f.get('cantidad')
                 precio_raw = f.get('precio_unitario') or 0
-                if not pid or not cantidad_raw:
-                    flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
+                if not cantidad_raw:
+                    flash('Captura la cantidad.', 'danger')
                     conn.close()
-                    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, volver=volver)
-
-                pid = int(pid)
+                    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
                 cantidad = float(cantidad_raw)
                 precio = float(precio_raw)
+                if entrada['es_servicio']:
+                    descripcion_producto = (f.get('descripcion_producto') or f.get('concepto_servicio') or '').strip()
+                    unidad_medida_nueva = (f.get('unidad_medida_producto') or '').strip()
+                    ubicacion_producto = (f.get('ubicacion') or '').strip() or None
+                    if not descripcion_producto or not unidad_medida_nueva or not cantidad_raw:
+                        flash('Para convertir a producto captura descripción, unidad y cantidad.', 'danger')
+                        conn.close()
+                        return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
+                    stock_origen = 'H' if _es_orden_compra_h(f.get('orden_compra')) else 'ALMACEN'
+                    pid, codigo_nuevo = _crear_producto_desde_entrada(
+                        conn, descripcion_producto, unidad_medida_nueva,
+                        ubicacion_producto, f.get('departamento') or None, precio, stock_origen
+                    )
+                    concepto = None
+                    cantidad_piezas_nueva = cantidad
+                    importe = round(cantidad * precio, 4)
+                    conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
+                                (cantidad_piezas_nueva, pid))
+                    conn.execute(
+                        "INSERT INTO actividad (usuario_id, accion, detalle) VALUES (?,?,?)",
+                        (session['user_id'], 'NUEVO_PRODUCTO_DESDE_ENTRADA',
+                         f"Entrada ID: {eid} | Código: {codigo_nuevo}")
+                    )
+                else:
+                    pid = f.get('producto_id')
+                    if not pid or not cantidad_raw:
+                        flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
+                        conn.close()
+                        return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
+
+                    pid = int(pid)
+
+                    prod_nuevo = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
+                    if not prod_nuevo:
+                        flash('El producto seleccionado no existe.', 'danger')
+                        conn.close()
+                        return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
+
+                    pid = _producto_para_oc_h(conn, pid, f.get('orden_compra'))
+                    prod_nuevo = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
+
+                    tiene_conversion = bool(prod_nuevo['unidad_compra'] and prod_nuevo['factor_conversion'])
+                    if tiene_conversion and (prod_nuevo['tipo_conversion'] or 'uso_a_compra') == 'compra_a_uso':
+                        cantidad_piezas_nueva = round(cantidad * prod_nuevo['factor_conversion'], 4)
+                    else:
+                        cantidad_piezas_nueva = round(cantidad / prod_nuevo['factor_conversion'], 4) if tiene_conversion else cantidad
+                    importe = round(cantidad * precio, 4)
+                    concepto = None
+
+                    # Revertir el efecto en stock del producto/cantidad ORIGINAL de esta entrada
+                    conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
+                                (cantidad_piezas_original, entrada['producto_id']))
+
+                    # Aplicar el efecto en stock del producto/cantidad NUEVO
+                    conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
+                                (cantidad_piezas_nueva, pid))
 
                 prod_nuevo = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
                 if not prod_nuevo:
                     flash('El producto seleccionado no existe.', 'danger')
                     conn.close()
-                    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, volver=volver)
-
-                tiene_conversion = bool(prod_nuevo['unidad_compra'] and prod_nuevo['factor_conversion'])
-                cantidad_piezas_nueva = round(cantidad / prod_nuevo['factor_conversion'], 4) if tiene_conversion else cantidad
-                importe = round(cantidad * precio, 4)
-                concepto = None
-
-                # Revertir el efecto en stock del producto/cantidad ORIGINAL de esta entrada
-                cantidad_piezas_original = entrada['cantidad_piezas'] if entrada['cantidad_piezas'] is not None else entrada['cantidad']
-                conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
-                            (cantidad_piezas_original, entrada['producto_id']))
-
-                # Aplicar el efecto en stock del producto/cantidad NUEVO
-                conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
-                            (cantidad_piezas_nueva, pid))
+                    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
 
             fecha_vale = f.get('fecha_vale') or entrada.get('fecha_vale') or entrada['fecha'][:10]
             proveedor_id = f.get('proveedor_id') or None
@@ -1196,14 +1452,15 @@ def editar(eid):
                 UPDATE entradas SET
                     producto_id=?, concepto_servicio=?, cantidad=?, cantidad_piezas=?, precio_unitario=?, importe=?,
                     no_requisicion=?, no_factura=?, orden_compra=?, no_remision=?,
-                    proveedor_id=?, departamento=?, ubicacion=?, uso=?, observaciones=?, fecha_vale=?, moneda=?, aplica_iva=?
+                    proveedor_id=?, departamento=?, ubicacion=?, uso=?, observaciones=?, fecha_vale=?, moneda=?, aplica_iva=?,
+                    es_servicio=?
                 WHERE id=?
             """, (pid, concepto, cantidad, cantidad_piezas_nueva, precio, importe,
                   f.get('no_requisicion') or None, f.get('no_factura') or None,
                   f.get('orden_compra') or None, f.get('no_remision') or None,
                   proveedor_id, f.get('departamento') or None, ubicacion, f.get('uso') or None,
                   f.get('observaciones') or None,
-                  fecha_vale, moneda, aplica_iva, eid))
+                  fecha_vale, moneda, aplica_iva, int(es_servicio), eid))
 
             doc_requisicion_nueva = {
                 'no_requisicion': f.get('no_requisicion') or None,
@@ -1226,7 +1483,7 @@ def editar(eid):
             flash(f'Error: {str(e)}', 'danger')
 
     conn.close()
-    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, volver=volver)
+    return render_template('entradas/editar.html', entrada=entrada, departamentos=departamentos, unidades=unidades, volver=volver)
 
 
 @entradas_bp.route('/carga_inicial', methods=['GET', 'POST'])
@@ -1313,7 +1570,7 @@ def reporte_diario():
     conn = get_db()
     filas = conn.execute("""
         SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
-               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(e.concepto_servicio, p.descripcion) as descripcion,
                COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
                p.departamento as depto_producto,
                COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre

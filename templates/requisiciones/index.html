@@ -33,6 +33,15 @@
     background-color: #ffe7a3 !important;
   }
 
+  .requisition-overdue-row > td {
+    background-color: #ffd7d7 !important;
+    border-color: #f19999 !important;
+  }
+
+  .requisition-overdue-row:hover > td {
+    background-color: #ffc6c6 !important;
+  }
+
   .select-col {
     width: 38px;
     text-align: center;
@@ -77,6 +86,11 @@
     <strong class="text-info">{{ resumen_estados.parcial }}</strong>
     <small>recibidas parcial</small>
   </a>
+  <a class="mini-stat mini-stat-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado='atrasada') }}">
+    <span class="mini-stat-label">Atrasadas +7 dias</span>
+    <strong class="text-danger">{{ requisiciones_atrasadas }}</strong>
+    <small>no completas</small>
+  </a>
   <a class="mini-stat mini-stat-link" href="{{ url_for('requisiciones.index', q=q, folio=q_folio, descripcion=q_descripcion, partida=q_partida, oc=q_oc, factura=q_factura, estado='completa') }}">
     <span class="mini-stat-label">Completas</span>
     <strong class="text-success">{{ resumen_estados.completa }}</strong>
@@ -114,6 +128,7 @@
           <option value="pendiente" {{ 'selected' if estado_f == 'pendiente' }}>Pendiente</option>
           <option value="revision" {{ 'selected' if estado_f == 'revision' }}>Revision</option>
           <option value="parcial" {{ 'selected' if estado_f == 'parcial' }}>Parcial</option>
+          <option value="atrasada" {{ 'selected' if estado_f == 'atrasada' }}>Atrasadas +7 dias</option>
           <option value="completa" {{ 'selected' if estado_f == 'completa' }}>Completa</option>
         </select>
       </div>
@@ -169,14 +184,20 @@
       </thead>
       <tbody>
         {% for r in requisiciones %}
-        <tr class="{% if r.estado_visible == 'completa' %}requisition-complete-row{% elif r.estado_visible == 'revision' %}requisition-review-row{% endif %}">
+        <tr class="{% if r.atrasada %}requisition-overdue-row{% elif r.estado_visible == 'completa' %}requisition-complete-row{% elif r.estado_visible == 'revision' %}requisition-review-row{% endif %}">
           <td class="select-col">
             {% if r.estado_visible != 'completa' %}
             <input type="checkbox" class="form-check-input requisicion-check" value="{{ r.id }}" title="Seleccionar AL-{{ r.folio }}">
             {% endif %}
           </td>
           <td><span class="badge folio-badge">AL-{{ r.folio }}</span></td>
-          <td>{{ r.fecha_requisicion or r.fecha[:10] }}</td>
+          <td>
+            {{ r.fecha_requisicion or r.fecha[:10] }}
+            {% if r.atrasada %}
+              <br><span class="badge bg-danger">+7 dias</span>
+              <small class="text-danger d-block">{{ r.dias_abierta }} dias abierta</small>
+            {% endif %}
+          </td>
           <td class="col-wrap" style="max-width:150px">{{ r.departamento or '-' }}</td>
           <td class="col-wrap" style="max-width:150px">{{ r.solicitante or '-' }}</td>
           <td class="col-wrap"><div class="fw-semibold">{{ r.asunto or '-' }}</div></td>
@@ -194,7 +215,15 @@
           <td>{{ r.orden_compra or '-' }}</td>
           <td>{{ r.no_factura or '-' }}</td>
           <td>
-            {% if r.estado == 'revision' %}
+            {% if r.atrasada %}
+              {% if r.estado_visible == 'revision' %}
+                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill"></i> Atrasada / Revision</span>
+              {% elif r.estado_visible == 'parcial' %}
+                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill"></i> Atrasada / Parcial</span>
+              {% else %}
+                <span class="badge bg-danger"><i class="bi bi-exclamation-triangle-fill"></i> Atrasada / Pendiente</span>
+              {% endif %}
+            {% elif r.estado == 'revision' %}
               <span class="badge bg-warning text-dark"><i class="bi bi-eye"></i> Revision</span>
             {% elif r.estado_calc == 'completa' or r.estado == 'completa' %}
               <span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Completa</span>

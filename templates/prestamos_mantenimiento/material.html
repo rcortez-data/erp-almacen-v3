@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+{% block title %}Material a Préstamo{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-wrench-adjustable"></i> Material a Préstamo</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('prestamos_mantenimiento.index') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Módulo</a>
+    <button type="button" id="btn-etiquetas-material" class="btn btn-outline-dark btn-sm"><i class="bi bi-tags"></i> Etiquetas seleccionadas</button>
+    <a href="{{ url_for('prestamos_mantenimiento.material_nuevo') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Nuevo material</a>
+  </div>
+</div>
+<div class="card mb-3"><div class="card-body py-2">
+  <form method="GET" class="row g-2 align-items-end">
+    <div class="col-md-5"><input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Buscar código, nombre, categoría..."></div>
+    <input type="hidden" name="estado" value="{{ estado }}">
+    <div class="col-auto"><button class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button><a href="{{ url_for('prestamos_mantenimiento.material') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a></div>
+    <div class="col-auto ms-auto btn-group btn-group-sm flex-wrap">
+      <a href="{{ url_for('prestamos_mantenimiento.material', estado='activos', q=q) }}" class="btn {{ 'btn-primary' if estado=='activos' else 'btn-outline-primary' }}">Activos</a>
+      {% for key, meta in estados_material.items() %}
+      <a href="{{ url_for('prestamos_mantenimiento.material', estado=key, q=q) }}" class="btn {{ 'btn-primary' if estado==key else 'btn-outline-primary' }}">{{ meta[0] }}</a>
+      {% endfor %}
+      <a href="{{ url_for('prestamos_mantenimiento.material', estado='inactivos', q=q) }}" class="btn {{ 'btn-primary' if estado=='inactivos' else 'btn-outline-primary' }}">Inactivos</a>
+    </div>
+  </form>
+</div></div>
+<div class="card"><div class="table-responsive"><table class="table table-hover mb-0">
+  <thead><tr><th style="width:42px"><input type="checkbox" class="form-check-input" id="check-todos-material"></th><th>Fotos</th><th>Código</th><th>Material</th><th>Categoría/ubicación</th><th>Código de barras</th><th>Estado</th><th></th></tr></thead>
+  <tbody>
+  {% for r in registros %}
+    {% set meta = estados_material.get(r.estado, ('Sin estado','secondary')) %}
+    <tr class="{{ '' if r.activo else 'table-secondary text-muted' }}">
+      <td><input type="checkbox" class="form-check-input check-etiqueta-material" value="{{ r.id }}"></td>
+      <td style="width:132px">
+        <div class="d-flex gap-1">
+          {% if r.foto_ruta %}
+          <img src="{{ url_for('static', filename=r.foto_ruta) }}" class="rounded border" style="width:58px;height:58px;object-fit:cover" alt="{{ r.nombre }}" title="Foto del item">
+          {% else %}
+          <div class="rounded bg-light border d-flex align-items-center justify-content-center text-muted" style="width:58px;height:58px" title="Sin foto del item"><i class="bi bi-image"></i></div>
+          {% endif %}
+          {% if r.foto_ubicacion_ruta %}
+          <img src="{{ url_for('static', filename=r.foto_ubicacion_ruta) }}" class="rounded border" style="width:58px;height:58px;object-fit:cover" alt="Ubicación" title="Foto de ubicación">
+          {% else %}
+          <div class="rounded bg-light border d-flex align-items-center justify-content-center text-muted" style="width:58px;height:58px" title="Sin foto de ubicación"><i class="bi bi-geo-alt"></i></div>
+          {% endif %}
+        </div>
+      </td>
+      <td class="font-monospace">{{ r.codigo }}</td>
+      <td><div class="fw-semibold">{{ r.nombre }}</div><small class="text-muted">{{ r.descripcion or '-' }}</small></td>
+      <td>{{ r.categoria or '-' }}<br><small class="text-muted">{{ r.ubicacion or '-' }}</small></td>
+      <td><img src="{{ url_for('prestamos_mantenimiento.material_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}" style="max-width:220px;height:58px"><br><small class="font-monospace text-success">{{ r.codigo_barras }}</small></td>
+      <td><span class="badge bg-{{ meta[1] }}">{{ meta[0] }}</span>{% if not r.activo %}<br><span class="badge bg-secondary mt-1">Inactivo</span>{% endif %}</td>
+      <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('prestamos_mantenimiento.material_editar', item_id=r.id) }}"><i class="bi bi-pencil"></i> Editar</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="text-center text-muted py-4">No hay material registrado.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+<script>
+(() => {
+  const checks = Array.from(document.querySelectorAll('.check-etiqueta-material'));
+  const checkTodos = document.getElementById('check-todos-material');
+  const btn = document.getElementById('btn-etiquetas-material');
+  checkTodos?.addEventListener('change', () => checks.forEach(ch => ch.checked = checkTodos.checked));
+  btn?.addEventListener('click', () => {
+    const ids = checks.filter(ch => ch.checked).map(ch => ch.value);
+    if (!ids.length) {
+      alert('Selecciona al menos un material.');
+      return;
+    }
+    const url = new URL("{{ url_for('prestamos_mantenimiento.etiquetas', _external=True) }}");
+    url.searchParams.set('tipo', 'material');
+    url.searchParams.set('ids', ids.join(','));
+    window.open(url.toString(), '_blank');
+  });
+})();
+</script>
+{% endblock %}

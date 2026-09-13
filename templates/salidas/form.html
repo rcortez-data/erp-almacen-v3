@@ -78,6 +78,18 @@
               {% endfor %}
             </select>
           </div>
+          <div class="col-md-6" id="fila_maquina_otro" style="display:none">
+            <label class="form-label fw-semibold">¿Cuál máquina? (Otros)</label>
+            <input type="text" name="maquina_otro" id="maquina_otro" class="form-control"
+                   value="{{ doc.get('maquina_otro','') }}" placeholder="Especifica la máquina">
+          </div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Proveedor</label>
+            <input type="text" name="proveedor" id="proveedor" class="form-control"
+                   value="{{ doc.get('proveedor','') }}" placeholder="Escribe el nombre del proveedor">
+          </div>
         </div>
         <div class="row g-3 mb-3">
           <div class="col-md-6">
@@ -121,7 +133,13 @@
           </div>
         </details>
         <div class="mb-3 position-relative">
-          <label class="form-label fw-semibold">Producto</label>
+          <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <label class="form-label fw-semibold mb-1">Producto</label>
+            <div class="form-check form-switch mb-1">
+              <input class="form-check-input" type="checkbox" id="buscar-solo-h" tabindex="-1">
+              <label class="form-check-label" for="buscar-solo-h" style="font-size:.82rem">Solo OC H</label>
+            </div>
+          </div>
           <input type="text" id="buscador-producto" class="form-control" autocomplete="off" tabindex="4"
                  {{ 'autofocus' if cart }}
                  placeholder="Busca por código o descripción, ej: tornillo 1/4">
@@ -137,8 +155,12 @@
         <div class="mb-3">
           <label class="form-label fw-semibold">Cantidad</label>
           <div class="input-group" style="max-width:220px">
-            <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.25" step="0.25" tabindex="5">
+            <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.001" step="0.001" tabindex="5">
             <span class="input-group-text" id="lbl-unidad">—</span>
+          </div>
+          <div class="input-group input-group-sm mt-2" id="fila-cantidad-stock" style="max-width:220px; display:none">
+            <input type="number" name="cantidad_compra" id="cantidad-compra" class="form-control" min="0.001" step="0.001">
+            <span class="input-group-text" id="lbl-unidad-stock">—</span>
           </div>
           <div id="conversion-salida" class="form-text fw-semibold text-danger" style="display:none"></div>
         </div>
@@ -166,16 +188,20 @@
               <tr>
                 <td class="font-monospace">
                   {{ item.codigo }}
+                  {% if item.stock_origen == 'H' %}
+                  <span class="badge bg-info text-dark ms-1">OC H</span>
+                  {% endif %}
                   {% if item.codigo_barras %}
                   <br><span class="text-success" style="font-size:.72rem">{{ item.codigo_barras }}</span>
                   {% endif %}
                   <br><span class="text-muted" style="font-size:.72rem">{{ item.descripcion }}</span>
                 </td>
-                <td>{{ item.cantidad }} {{ item.unidad_medida }}
+                {% set cantidad_stock_item = ((item.cantidad * item.factor_conversion) if item.unidad_compra and item.factor_conversion and item.tipo_conversion == 'compra_a_uso' else ((item.cantidad / item.factor_conversion) if item.unidad_compra and item.factor_conversion else item.cantidad)) %}
+                <td>{{ cantidad_stock_item|cantidad_unidad(item.unidad_medida) }}
                   {% if item.unidad_compra and item.factor_conversion %}
-                    <br><span class="text-muted" style="font-size:.72rem">= {{ (item.cantidad * item.factor_conversion)|moneda }} {{ item.unidad_compra }}</span>
+                    <br><span class="text-muted" style="font-size:.72rem">= {{ item.cantidad|cantidad_unidad(item.unidad_compra) }}</span>
                   {% endif %}
-                  {% if item.stock_actual is not none and item.cantidad > item.stock_actual %}
+                  {% if item.stock_actual is not none and cantidad_stock_item > item.stock_actual %}
                     <br><span class="badge bg-danger" style="font-size:.62rem">Excede stock ({{ item.stock_actual }})</span>
                   {% endif %}
                 </td>
@@ -212,15 +238,21 @@
   const infoStock = document.getElementById('info-stock');
   const valStock = document.getElementById('val-stock');
   const cantidadInput = document.getElementById('cantidad');
+  const cantidadCompraInput = document.getElementById('cantidad-compra');
+  const filaCantidadStock = document.getElementById('fila-cantidad-stock');
+  const lblUnidadStock = document.getElementById('lbl-unidad-stock');
   const mantenimientoCheck = document.getElementById('es_mantenimiento');
   const maquinadosCheck = document.getElementById('es_maquinados');
   const valeInput = document.getElementById('no_vale');
   const areaInput = document.getElementById('area');
   const maquinaInput = document.getElementById('maquina');
+  const maquinaOtroInput = document.getElementById('maquina_otro');
+  const filaMaquinaOtro = document.getElementById('fila_maquina_otro');
   const filaMaquinados = document.getElementById('fila_maquinados');
   const responsableInput = document.getElementById('responsable');
   const btnAgregar = document.getElementById('btn-agregar');
   const conversionSalida = document.getElementById('conversion-salida');
+  const buscarSoloH = document.getElementById('buscar-solo-h');
   let productoSeleccionado = null;
   let debounceTimer = null;
   let resultadoActivo = -1;
@@ -341,10 +373,20 @@
       if (areaInput.value.trim().toUpperCase() === 'MAQUINADOS') areaInput.value = '';
     }
   }
+  function actualizarMaquinaOtro() {
+    // El campo depende de la opción elegida, no de que el checkbox se haya
+    // marcado antes: así también aparece si el usuario cambia directamente
+    // el select a "Otros".
+    const visible = maquinaInput.value === 'Otros';
+    filaMaquinaOtro.style.display = visible ? '' : 'none';
+    if (!visible) maquinaOtroInput.value = '';
+  }
+  maquinaInput.addEventListener('change', actualizarMaquinaOtro);
   mantenimientoCheck.addEventListener('change', () => aplicarMantenimiento(true));
   maquinadosCheck.addEventListener('change', () => aplicarMaquinados(true));
   if (mantenimientoCheck.checked) aplicarMantenimiento(false);
   if (maquinadosCheck.checked) aplicarMaquinados(false);
+  actualizarMaquinaOtro();
 
   buscador.addEventListener('input', function() {
     productoIdInput.value = '';
@@ -353,7 +395,8 @@
     clearTimeout(debounceTimer);
     if (q.length < 2) { resultados.style.display = 'none'; return; }
     debounceTimer = setTimeout(() => {
-      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+      const filtroH = buscarSoloH && buscarSoloH.checked ? '&solo_h=1' : '';
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}${filtroH}`)
         .then(r => r.json())
         .then(data => {
           resultados.innerHTML = '';
@@ -367,7 +410,8 @@
               item.tabIndex = -1;
               item.className = 'list-group-item list-group-item-action';
               const barras = p.codigo_barras ? `<div class="text-success font-monospace" style="font-size:.76rem">${p.codigo_barras}</div>` : '';
-              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}${barras}
+              const origen = p.stock_origen === 'H' ? '<span class="badge bg-info text-dark ms-1">OC H</span>' : '';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span>${origen} — ${p.descripcion}${barras}
                 <div class="text-muted" style="font-size:.78rem">Stock actual: ${p.stock_actual} ${p.unidad_medida}</div>`;
               item.addEventListener('click', () => seleccionarProducto(p));
               resultados.appendChild(item);
@@ -387,8 +431,12 @@
     productoSeleccionado = p;
     productoIdInput.value = p.id;
     lblUnidad.textContent = p.unidad_medida || '—';
+    lblUnidadStock.textContent = (p.unidad_compra && p.factor_conversion) ? p.unidad_compra : '—';
+    filaCantidadStock.style.display = (p.unidad_compra && p.factor_conversion) ? 'flex' : 'none';
+    cantidadInput.value = '';
+    cantidadCompraInput.value = '';
     const conversion = (p.unidad_compra && p.factor_conversion)
-      ? ` = ${(Number(p.stock_actual || 0) * Number(p.factor_conversion)).toFixed(2)} ${p.unidad_compra}`
+      ? ` = ${stockACompra(Number(p.stock_actual || 0), p).toFixed(2)} ${p.unidad_compra}`
       : '';
     valStock.textContent = `${p.stock_actual} ${p.unidad_medida}${conversion}`;
     infoStock.style.display = 'block';
@@ -398,20 +446,51 @@
   }
 
 
-  function actualizarConversionSalida() {
-    if (!productoSeleccionado || !productoSeleccionado.unidad_compra || !productoSeleccionado.factor_conversion || !cantidadInput.value) {
+  function actualizarConversionSalida(origen = 'stock') {
+    if (!productoSeleccionado || !productoSeleccionado.unidad_compra || !productoSeleccionado.factor_conversion) {
       conversionSalida.style.display = 'none';
       conversionSalida.textContent = '';
       return;
     }
-    const cantidad = Number(cantidadInput.value || 0);
     const factor = Number(productoSeleccionado.factor_conversion || 0);
-    if (!cantidad || !factor) {
+    if (!factor) {
       conversionSalida.style.display = 'none';
       return;
     }
-    conversionSalida.textContent = `${cantidad} ${productoSeleccionado.unidad_medida} = ${(cantidad * factor).toFixed(2)} ${productoSeleccionado.unidad_compra}`;
+    if (origen === 'stock') {
+      if (!cantidadInput.value) return;
+      cantidadCompraInput.value = stockACompra(Number(cantidadInput.value), productoSeleccionado).toFixed(2);
+    } else {
+      if (!cantidadCompraInput.value) return;
+      cantidadInput.value = compraAStock(Number(cantidadCompraInput.value), productoSeleccionado).toFixed(2);
+    }
+    conversionSalida.textContent = `${cantidadInput.value} ${productoSeleccionado.unidad_medida} = ${cantidadCompraInput.value} ${productoSeleccionado.unidad_compra}`;
     conversionSalida.style.display = 'block';
+  }
+  function stockACompra(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad / factor : cantidad * factor;
+  }
+  function compraAStock(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad * factor : cantidad / factor;
+  }
+  cantidadInput.addEventListener('input', () => actualizarConversionSalida('stock'));
+  cantidadCompraInput.addEventListener('input', () => actualizarConversionSalida('compra'));
+  if (buscarSoloH) {
+    buscarSoloH.addEventListener('change', () => {
+      productoIdInput.value = '';
+      productoSeleccionado = null;
+      buscador.value = '';
+      resultados.style.display = 'none';
+      infoStock.style.display = 'none';
+      cantidadInput.value = '';
+      cantidadCompraInput.value = '';
+      actualizarConversionSalida();
+      buscador.focus();
+    });
   }
   buscador.addEventListener('keydown', function(e) {
     const botones = botonesResultado();
@@ -445,7 +524,6 @@
       responsableInput.select();
     }
   });
-  cantidadInput.addEventListener('input', actualizarConversionSalida);
 
   document.getElementById('btn-agregar').addEventListener('click', function(e) {
     if (!productoIdInput.value) {
@@ -453,7 +531,9 @@
       alert('Selecciona un producto de la lista de resultados.');
       return;
     }
-    if (!cantidadInput.value || parseFloat(cantidadInput.value) <= 0) {
+    const cantidadCompraOk = cantidadCompraInput.value && parseFloat(cantidadCompraInput.value) > 0;
+    const cantidadStockOk = cantidadInput.value && parseFloat(cantidadInput.value) > 0;
+    if (!cantidadCompraOk && !cantidadStockOk) {
       e.preventDefault();
       alert('Captura una cantidad mayor a 0.');
     }
@@ -497,7 +577,37 @@
       if (documentos.no_remision) document.querySelector('input[name="no_remision"]').value = documentos.no_remision;
       listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
       listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
-      data.forEach(p=>{ const row=document.createElement('div'); row.className='d-flex align-items-center gap-2 border-bottom py-1'; row.innerHTML=`<label class="mb-0 flex-grow-1"><input type="checkbox" class="producto-documento me-2" value="${p.id}"> <span class="font-monospace">${p.codigo}</span> — ${p.descripcion} <small class="text-muted">(máximo ${p.cantidad} ${p.unidad_medida})</small></label><input type="number" class="form-control form-control-sm cantidad-documento" data-producto-id="${p.id}" value="${p.cantidad}" min="0.25" max="${p.cantidad}" step="0.25" style="width:110px" title="Cantidad a agregar">`; listaProductosDocumento.appendChild(row); });
+      data.forEach(p=>{
+        const row=document.createElement('div');
+        row.className='d-flex align-items-center gap-2 border-bottom py-1 flex-wrap';
+        const tieneConversion=p.unidad_compra && p.factor_conversion;
+        const unidad=p.unidad_medida;
+        const maxStock=tieneConversion ? compraAStock(Number(p.cantidad || 0), p).toFixed(2) : '';
+        const maxCompra=tieneConversion ? Number(p.cantidad || 0).toFixed(2) : '';
+        const conversion=tieneConversion ? ` = ${maxCompra} ${p.unidad_compra}` : '';
+        const origen=p.stock_origen === 'H' ? '<span class="badge bg-info text-dark ms-1">OC H</span>' : '';
+        const compraInput=tieneConversion ? `<div class="input-group input-group-sm" style="width:150px"><input type="number" class="form-control cantidad-documento" data-producto-id="${p.id}" data-factor="${p.factor_conversion}" data-tipo-conversion="${p.tipo_conversion || 'uso_a_compra'}" value="${maxCompra}" min="0.001" max="${p.cantidad}" step="0.001" title="Cantidad en ${p.unidad_compra}"><span class="input-group-text">${p.unidad_compra}</span></div>` : '';
+        row.innerHTML=`<label class="mb-0 flex-grow-1"><input type="checkbox" class="producto-documento me-2" value="${p.id}"> <span class="font-monospace">${p.codigo}</span>${origen} — ${p.descripcion} <small class="text-muted">(máximo ${maxStock || p.cantidad} ${unidad}${conversion})</small></label><div class="input-group input-group-sm" style="width:150px"><input type="number" class="form-control cantidad-documento-stock" data-producto-id="${p.id}" data-factor="${p.factor_conversion || ''}" data-tipo-conversion="${p.tipo_conversion || 'uso_a_compra'}" value="${maxStock || p.cantidad}" min="0.001" step="0.001" title="Cantidad en ${unidad}"><span class="input-group-text">${unidad}</span></div>${compraInput}`;
+        listaProductosDocumento.appendChild(row);
+      });
+      document.querySelectorAll('.cantidad-documento').forEach(input=>{
+        input.addEventListener('input',()=>{
+          const factor=Number(input.dataset.factor || 0);
+          const tipo=input.dataset.tipoConversion || 'uso_a_compra';
+          const stock=document.querySelector(`.cantidad-documento-stock[data-producto-id="${input.dataset.productoId}"]`);
+          if (!factor || !stock || input.value==='') return;
+          stock.value=(tipo === 'compra_a_uso' ? Number(input.value)*factor : Number(input.value)/factor).toFixed(2);
+        });
+      });
+      document.querySelectorAll('.cantidad-documento-stock').forEach(input=>{
+        input.addEventListener('input',()=>{
+          const factor=Number(input.dataset.factor || 0);
+          const tipo=input.dataset.tipoConversion || 'uso_a_compra';
+          const compra=document.querySelector(`.cantidad-documento[data-producto-id="${input.dataset.productoId}"]`);
+          if (!factor || !compra || input.value==='') return;
+          compra.value=(tipo === 'compra_a_uso' ? Number(input.value)/factor : Number(input.value)*factor).toFixed(2);
+        });
+      });
       productosDocumento.style.display=data.length?'block':'none';
     });
   }
@@ -509,6 +619,7 @@
       if (e.submitter.value === 'agregar_documento_seleccionados') {
         document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const h=document.createElement('input'); h.type='hidden'; h.name='producto_ids'; h.value=x.value; e.currentTarget.appendChild(h); });
         document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const cantidad=document.querySelector(`.cantidad-documento[data-producto-id="${x.value}"]`); const h=document.createElement('input'); h.type='hidden'; h.name=`producto_cantidad_${x.value}`; h.value=cantidad ? cantidad.value : ''; e.currentTarget.appendChild(h); });
+        document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const cantidad=document.querySelector(`.cantidad-documento-stock[data-producto-id="${x.value}"]`); const h=document.createElement('input'); h.type='hidden'; h.name=`producto_cantidad_stock_${x.value}`; h.value=cantidad ? cantidad.value : ''; e.currentTarget.appendChild(h); });
       }
     }
   });

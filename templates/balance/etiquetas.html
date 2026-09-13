@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Etiquetas de balance</title>
+  <style>
+    @page {
+      size: 101mm 76mm;
+      margin: 0;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #e5e7eb;
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #fff;
+      border-bottom: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+
+    .toolbar button,
+    .toolbar a {
+      border: 1px solid #9ca3af;
+      background: #fff;
+      color: #111827;
+      border-radius: 6px;
+      padding: 7px 11px;
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .toolbar button.primary {
+      border-color: #15803d;
+      background: #15803d;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .toolbar form {
+      display: inline;
+    }
+
+    .sheet {
+      position: relative;
+      width: 101mm;
+      min-height: 76mm;
+      margin: 12px auto;
+      background: #fff;
+      page-break-after: always;
+      overflow: hidden;
+      font-weight: 900;
+      text-transform: uppercase;
+      border: 1px solid #d1d5db;
+    }
+
+    .brand {
+      position: absolute;
+      left: 6mm;
+      top: 0;
+      right: 6mm;
+      height: 18mm;
+      padding-bottom: 1.5mm;
+      border-bottom: .55mm solid #111827;
+      text-align: center;
+    }
+
+    .brand img {
+      display: block;
+      height: 15.5mm;
+      max-width: 58mm;
+      margin: 0 auto;
+      object-fit: contain;
+    }
+
+    .field {
+      position: absolute;
+      min-width: 0;
+    }
+
+    .label {
+      display: inline-block;
+      padding-bottom: .5mm;
+      border-bottom: .35mm solid #111827;
+      font-size: 10px;
+      line-height: 1;
+      letter-spacing: .35px;
+      color: #111827;
+      white-space: nowrap;
+    }
+
+    .value {
+      margin-top: 3mm;
+      color: #111827;
+      overflow-wrap: anywhere;
+    }
+
+    .prod {
+      left: 8mm;
+      top: 22mm;
+      width: 85mm;
+      text-align: center;
+    }
+
+    .prod .value {
+      font-size: var(--desc-font-size, 24px);
+      line-height: 1.08;
+      max-height: 22mm;
+      overflow: hidden;
+    }
+
+    .qty {
+      left: 12mm;
+      right: 12mm;
+      bottom: 15mm;
+      width: auto;
+      text-align: center;
+    }
+
+    .qty .value {
+      font-size: 26px;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .qty .conversion {
+      display: block;
+      margin-top: 2mm;
+      font-size: 26px;
+      line-height: 1;
+      color: #374151;
+      white-space: nowrap;
+    }
+
+    .periodo {
+      display: block;
+      margin-top: 2mm;
+      font-size: 14px;
+      color: #374151;
+    }
+
+    .empty {
+      width: 101mm;
+      margin: 20px auto;
+      background: #fff;
+      padding: 16px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      text-align: center;
+      color: #6b7280;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      .sheet {
+        margin: 0;
+        width: 101mm;
+        height: 76mm;
+        min-height: 76mm;
+        page-break-after: always;
+        border: 0;
+      }
+
+      .sheet:last-child {
+        page-break-after: auto;
+      }
+
+      .empty {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div>
+      <strong>{{ etiquetas|length }}</strong> etiqueta(s) de balance · {{ meses[mes] }} {{ anio }}
+    </div>
+    <div>
+      <a href="{{ url_for('balance.index', anio=anio, mes=mes) }}">Regresar</a>
+      <form method="POST" action="{{ url_for('balance.imprimir_etiquetas_tsc') }}">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        {% for key, value in request.args.items() %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        {% for value in request.args.getlist('ids') %}
+        <input type="hidden" name="ids" value="{{ value }}">
+        {% endfor %}
+        <input type="hidden" name="volver" value="{{ url_for('balance.index', anio=anio, mes=mes) }}">
+        <button type="submit" class="primary">Imprimir {{ printer_name }}</button>
+      </form>
+      <button type="button" onclick="window.print()">Vista navegador</button>
+    </div>
+  </div>
+
+  {% if etiquetas %}
+    {% for e in etiquetas %}
+    <section class="sheet">
+      <div class="brand">
+        <img src="{{ url_for('static', filename='img/grupo-tensa-logo.png') }}" alt="Grupo Tensa">
+      </div>
+
+      <div class="field prod">
+        <div class="label">Producto</div>
+        <div class="value js-fit-desc">{{ e.producto or '---' }}</div>
+      </div>
+
+      <div class="field qty">
+        <div class="label">Cantidad</div>
+        <div class="value">
+          {{ e.cantidad_texto or (e.cantidad ~ ' ' ~ e.unidad) }}
+          {% if e.cantidad_compra_texto %}
+          <span class="conversion">{{ e.cantidad_compra_texto }}</span>
+          {% endif %}
+          <span class="periodo">{{ e.periodo }}</span>
+        </div>
+      </div>
+    </section>
+    {% endfor %}
+  {% else %}
+  <div class="empty">
+    No hay productos seleccionados. Carga Insumos Producción o Insumos Caldera desde Balance.
+  </div>
+  {% endif %}
+
+  <script>
+    function ajustarDescripciones() {
+      document.querySelectorAll('.js-fit-desc').forEach((el) => {
+        let size = 24;
+        el.style.setProperty('--desc-font-size', `${size}px`);
+        while ((el.scrollHeight > el.clientHeight || el.scrollWidth > el.clientWidth) && size > 9) {
+          size -= 0.5;
+          el.style.setProperty('--desc-font-size', `${size}px`);
+        }
+      });
+    }
+
+    window.addEventListener('load', ajustarDescripciones);
+    window.addEventListener('beforeprint', ajustarDescripciones);
+  </script>
+</body>
+</html>

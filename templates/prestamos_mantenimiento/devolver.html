@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Registrar devolución{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-box-arrow-in-down"></i> Registrar devolución</h1>
+  <a href="{{ url_for('prestamos_mantenimiento.index') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Regresar</a>
+</div>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <div class="card"><div class="card-body">
+      <form method="POST">
+        <div class="mb-3">
+          <label class="form-label">1. Escanea material/herramienta</label>
+          <input name="material_codigo" id="material_codigo" class="form-control form-control-lg font-monospace" autocomplete="off" autofocus placeholder="Ej: PRES-000001">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">2. ¿Quién lo devuelve? *</label>
+          <div class="btn-group w-100" role="group">
+            <input type="radio" class="btn-check" name="devuelve_modo" id="devuelve-catalogo" value="catalogo" checked>
+            <label class="btn btn-outline-primary" for="devuelve-catalogo"><i class="bi bi-upc-scan"></i> Escanear persona</label>
+            <input type="radio" class="btn-check" name="devuelve_modo" id="devuelve-manual" value="manual">
+            <label class="btn btn-outline-primary" for="devuelve-manual"><i class="bi bi-pencil-square"></i> Captura manual</label>
+          </div>
+        </div>
+        <div id="bloque-devuelve-catalogo">
+        <div class="mb-3">
+          <label class="form-label">Escanea quién devuelve *</label>
+          <input name="devuelve_codigo" id="devuelve_codigo" class="form-control font-monospace" autocomplete="off" placeholder="Puede ser la misma persona u otra">
+        </div>
+        </div>
+        <div id="bloque-devuelve-manual" class="border rounded bg-light p-3 mb-3 d-none">
+          <div class="row g-2">
+            <div class="col-md-4"><label class="form-label">Nómina *</label><input name="devuelve_manual_nomina" id="devuelve_manual_nomina" class="form-control" list="nominas-sugeridas" autocomplete="off"></div>
+            <div class="col-md-5"><label class="form-label">Nombre *</label><input name="devuelve_manual_nombre" id="devuelve_manual_nombre" class="form-control" list="responsables-sugeridos" autocomplete="off"></div>
+            <div class="col-md-3"><label class="form-label">Área *</label><input name="devuelve_manual_area" id="devuelve_manual_area" class="form-control" list="areas-sugeridas"></div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Estado al regresar</label>
+          <select name="estado_devolucion" class="form-select">
+            <option value="bueno">Bueno / disponible</option>
+            <option value="danado">Dañado</option>
+            <option value="mantenimiento">Mandar a mantenimiento</option>
+            <option value="perdido">Perdido</option>
+          </select>
+        </div>
+        <div class="mb-3"><label class="form-label">Observaciones</label><textarea name="observaciones" class="form-control" rows="3"></textarea></div>
+        <button class="btn btn-success"><i class="bi bi-check-lg"></i> Registrar devolución</button>
+      </form>
+    </div></div>
+  </div>
+  <div class="col-lg-5">
+    <div class="card"><div class="card-header">Préstamo detectado</div><div class="card-body" id="panel-material"><div class="text-muted">Escanea material para ver quién lo tiene.</div></div></div>
+  </div>
+</div>
+<datalist id="responsables-sugeridos"></datalist>
+<datalist id="nominas-sugeridas"></datalist>
+<datalist id="areas-sugeridas"></datalist>
+{% endblock %}
+{% block extra_js %}
+<script>
+const materialInput = document.getElementById('material_codigo');
+const panel = document.getElementById('panel-material');
+const devuelveCatalogo = document.getElementById('devuelve-catalogo');
+const devuelveManual = document.getElementById('devuelve-manual');
+const bloqueDevuelveCatalogo = document.getElementById('bloque-devuelve-catalogo');
+const bloqueDevuelveManual = document.getElementById('bloque-devuelve-manual');
+const devuelveCodigo = document.getElementById('devuelve_codigo');
+const devuelveManualNomina = document.getElementById('devuelve_manual_nomina');
+const devuelveManualNombre = document.getElementById('devuelve_manual_nombre');
+const devuelveManualArea = document.getElementById('devuelve_manual_area');
+const responsablesSugeridos = document.getElementById('responsables-sugeridos');
+const nominasSugeridas = document.getElementById('nominas-sugeridas');
+const areasSugeridas = document.getElementById('areas-sugeridas');
+let responsablesCache = [];
+function htmlSafe(v) {
+  return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+function aplicarModoDevolucion() {
+  const manual = devuelveManual.checked;
+  bloqueDevuelveCatalogo.classList.toggle('d-none', manual);
+  bloqueDevuelveManual.classList.toggle('d-none', !manual);
+  devuelveCodigo.required = !manual;
+  devuelveManualNomina.required = manual;
+  devuelveManualNombre.required = manual;
+  devuelveManualArea.required = manual;
+}
+
+devuelveCatalogo.addEventListener('change', aplicarModoDevolucion);
+devuelveManual.addEventListener('change', aplicarModoDevolucion);
+aplicarModoDevolucion();
+async function cargarMaterial() {
+  const codigo = materialInput.value.trim();
+  if (!codigo) return;
+  const res = await fetch(`{{ url_for('prestamos_mantenimiento.api_material', codigo='__COD__') }}`.replace('__COD__', encodeURIComponent(codigo)));
+  const data = await res.json();
+  if (!res.ok) {
+    panel.innerHTML = `<div class="text-danger">No encontrado: ${htmlSafe(codigo)}</div>`;
+    return;
+  }
+  materialInput.value = data.codigo_barras;
+  const p = data.prestamo;
+  const fotoItem = data.foto_ruta ? `<img src="/static/${htmlSafe(data.foto_ruta)}" class="rounded border me-2" style="width:86px;height:86px;object-fit:cover" alt="Foto item">` : '';
+  const fotoUbicacion = data.foto_ubicacion_ruta ? `<img src="/static/${htmlSafe(data.foto_ubicacion_ruta)}" class="rounded border" style="width:86px;height:86px;object-fit:cover" alt="Foto ubicación">` : '';
+  panel.innerHTML = `
+    <div class="fw-bold">${htmlSafe(data.nombre)}</div>
+    <div class="font-monospace text-success">${htmlSafe(data.codigo_barras)}</div>
+    <div class="mt-2">Estado: <span class="badge bg-${data.estado === 'prestado' ? 'warning text-dark' : 'secondary'}">${htmlSafe(data.estado)}</span></div>
+    ${(fotoItem || fotoUbicacion) ? `<div class="mt-2">${fotoItem}${fotoUbicacion}</div>` : ''}
+    ${p ? `<hr><div>Lo tiene:</div><div class="fw-semibold">${htmlSafe(p.recibe_nombre)}</div><div class="font-monospace text-muted">${htmlSafe(p.recibe_codigo)}</div><div class="text-muted mt-1">${htmlSafe(p.fecha_prestamo)}</div>` : '<hr><div class="text-muted">No tiene préstamo activo.</div>'}
+  `;
+}
+
+materialInput.addEventListener('change', cargarMaterial);
+materialInput.addEventListener('keydown', event => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  cargarMaterial();
+});
+
+async function buscarResponsables(valor) {
+  if (!valor.trim()) return;
+  const res = await fetch(`{{ url_for('prestamos_mantenimiento.api_responsables') }}?q=${encodeURIComponent(valor.trim())}`);
+  responsablesCache = await res.json();
+  responsablesSugeridos.innerHTML = responsablesCache.map(r => `<option value="${htmlSafe(r.label)}"></option>`).join('');
+  nominasSugeridas.innerHTML = responsablesCache.map(r => `<option value="${htmlSafe(r.codigo)}">${htmlSafe(r.nombre)} · ${htmlSafe(r.area || '-')}</option>`).join('');
+  const areas = [...new Set(responsablesCache.map(r => r.area).filter(Boolean))];
+  areasSugeridas.innerHTML = areas.map(a => `<option value="${htmlSafe(a)}"></option>`).join('');
+}
+
+function aplicarResponsableManual(valor) {
+  const encontrado = responsablesCache.find(r => r.label === valor || r.codigo === valor || r.nombre === valor);
+  if (!encontrado) return;
+  devuelveManualNomina.value = encontrado.codigo;
+  devuelveManualNombre.value = encontrado.nombre;
+  devuelveManualArea.value = encontrado.area || '';
+}
+
+[devuelveManualNomina, devuelveManualNombre, devuelveManualArea].forEach(input => {
+  input.addEventListener('input', () => buscarResponsables(input.value));
+  input.addEventListener('change', () => aplicarResponsableManual(input.value));
+});
+
+devuelveManualNomina.addEventListener('blur', async () => {
+  const nomina = devuelveManualNomina.value.trim();
+  if (!nomina) return;
+  await buscarResponsables(nomina);
+  const exacto = responsablesCache.find(r => r.codigo === nomina);
+  if (!exacto) return;
+  devuelveManualNombre.value = exacto.nombre || devuelveManualNombre.value;
+  devuelveManualArea.value = exacto.area || devuelveManualArea.value;
+});
+</script>
+{% endblock %}
