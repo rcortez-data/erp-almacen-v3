@@ -1,0 +1,360 @@
+PLAN MAESTRO PYTHON + ERP DE PRACTICA
+Alumno: Ricardo
+Objetivo: Aprender Python de forma practica y conectar lo aprendido con un ERP de prueba.
+
+============================================================
+1. FORMA DE TRABAJO CON CADA CLASE
+============================================================
+
+Cuando avances una clase, puedes mandarme una de estas opciones:
+
+1. Archivo .py de la clase.
+2. PDF de la clase.
+3. Tu codigo resuelto.
+4. Titulo de la clase + lo que entendiste.
+
+Yo hare lo siguiente:
+
+1. Analizar el tema de la clase.
+2. Explicarlo en palabras simples.
+3. Decirte que debes entender si o si.
+4. Revisar tu codigo si ya hiciste ejercicios.
+5. Corregir errores con pistas antes de darte la solucion completa.
+6. Dejarte ejercicios extra si hace falta reforzar.
+7. Convertir ejercicios con potencial en mini proyectos.
+8. Conectar lo aprendido con ideas reales para ERP o freelance.
+
+
+============================================================
+2. REGLA PARA REVISIONES DE CODIGO
+============================================================
+
+Cuando termines un ejercicio, dime algo como:
+
+revisa la clase 05-12-13
+
+o:
+
+revisa mi reto de calculadora
+
+Yo revisare:
+
+1. Si el codigo corre.
+2. Si la logica esta bien.
+3. Si hay errores de sintaxis.
+4. Si hay casos que pueden fallar.
+5. Si el codigo se puede escribir mas claro.
+6. Que calificacion tiene para tu nivel actual.
+
+
+============================================================
+3. ETAPA ACTUAL: SECCION 8 - CICLOS EN PYTHON
+============================================================
+
+Estado actual:
+Vas en la seccion 8: ciclos en Python.
+
+Temas actuales:
+- while
+- menus
+- salir de un ciclo
+- opciones de usuario
+- calculadora por consola
+- proximamente: range, break y mas ejercicios
+
+Objetivo de esta etapa:
+Aprender a repetir acciones y controlar menus.
+
+Mini proyectos adecuados en esta etapa:
+
+1. Calculadora con menu.
+2. Menu falso de ERP.
+3. Sistema de acceso con intentos.
+4. Contador de productos.
+5. Simulador de caja simple.
+
+Bloque ERP permitido en esta etapa:
+Solo prototipos de menu, todavia sin estructura grande.
+
+Ejemplo:
+
+1. Agregar producto
+2. Listar productos
+3. Buscar producto
+4. Salir
+
+En esta etapa puede bastar con imprimir mensajes.
+
+
+============================================================
+4. SECCION 9 - COLECCIONES EN PYTHON
+============================================================
+
+Aqui empezaremos a acercarnos mas al ERP.
+
+Temas esperados:
+- listas
+- tuplas
+- sets
+- diccionarios
+- recorrer colecciones
+- agregar, buscar y modificar datos
+
+Objetivo:
+Representar datos reales como productos, clientes o ventas.
+
+Mini proyectos:
+
+1. Lista de productos.
+2. Inventario en memoria.
+3. Buscador de productos por codigo.
+4. Lista de clientes.
+5. Reporte de productos con bajo stock.
+
+Primer bloque ERP de practica:
+
+Inventario en memoria:
+
+- agregar producto
+- listar productos
+- buscar producto
+- actualizar stock
+- mostrar productos con bajo stock
+
+Todavia sin archivos ni base de datos.
+
+
+============================================================
+5. SECCION 10 - FUNCIONES EN PYTHON
+============================================================
+
+Aqui el codigo empezara a verse mas ordenado.
+
+Objetivo:
+Separar el programa en partes reutilizables.
+
+Ejemplo:
+
+def agregar_producto():
+    ...
+
+def listar_productos():
+    ...
+
+def buscar_producto():
+    ...
+
+Mini proyecto:
+Rehacer el inventario usando funciones.
+
+Bloque ERP de practica:
+Inventario por consola organizado con funciones.
+
+
+============================================================
+6. SECCION 11 Y 12 - CLASES, OBJETOS Y POO
+============================================================
+
+Aqui aprenderas a modelar entidades.
+
+Ejemplos:
+
+Producto
+Cliente
+Venta
+Usuario
+
+Objetivo:
+Entender como convertir datos del ERP en objetos.
+
+Mini proyecto:
+
+class Producto:
+    codigo
+    nombre
+    precio
+    stock
+
+Bloque ERP de practica:
+Inventario con clases.
+
+
+============================================================
+7. SECCION 14 - MANEJO DE ARCHIVOS
+============================================================
+
+Aqui el ERP de practica se vuelve mas util.
+
+Objetivo:
+Guardar y leer datos.
+
+Formatos posibles:
+- .txt
+- .csv
+- .json
+
+Mini proyecto:
+Inventario que guarda productos en archivo.
+
+Bloque ERP de practica:
+Inventario persistente sin base de datos.
+
+
+============================================================
+8. SECCION 15 - BASE DE DATOS
+============================================================
+
+Aqui empieza la parte mas cercana a un ERP real.
+
+Objetivo:
+Guardar productos, clientes y ventas en MySQL.
+
+Mini proyecto:
+CRUD de productos con base de datos.
+
+Bloque ERP de practica:
+Modulo de inventario basico con MySQL.
+
+
+============================================================
+9. SECCIONES 16 A 19 - INTERFAZ Y WEB
+============================================================
+
+Aqui ya se puede pensar en interfaz grafica o web.
+
+Seccion 16:
+Aplicaciones de escritorio con Tkinter.
+
+Seccion 17:
+Aplicaciones web con Flask.
+
+Seccion 19:
+Fullstack con Angular, Flask y MySQL.
+
+Objetivo:
+Convertir el modulo de inventario en una aplicacion real.
+
+
+============================================================
+10. PLAN POR NIVELES
+============================================================
+
+Nivel 1 - Fundamentos
+- variables
+- operadores
+- if
+- and / or
+- ciclos
+- input
+- menus
+
+Nivel 2 - Datos
+- listas
+- diccionarios
+- colecciones
+- busquedas
+- filtros
+
+Nivel 3 - Orden
+- funciones
+- separar responsabilidades
+- evitar repetir codigo
+
+Nivel 4 - Persistencia
+- archivos
+- csv
+- json
+
+Nivel 5 - Base de datos
+- MySQL
+- CRUD
+- consultas
+
+Nivel 6 - Aplicacion
+- Tkinter o Flask
+- formularios
+- pantallas
+- conexion con base de datos
+
+
+============================================================
+11. COMO VAMOS A CONECTARLO CON FREELANCE
+============================================================
+
+Cuando avances, iremos conectando ejercicios con trabajos sencillos:
+
+1. Scripts para calcular descuentos.
+2. Validadores de datos.
+3. Automatizacion de reportes.
+4. Limpieza de archivos CSV o Excel.
+5. Inventarios simples.
+6. Generacion de reportes.
+7. Conversion de archivos.
+8. Mini sistemas internos por consola.
+
+No buscaremos freelance grande al inicio.
+Primero haremos piezas pequenas, reales y entendibles.
+
+
+============================================================
+12. REGLA SOBRE GITHUB COPILOT
+============================================================
+
+Puedes usar GitHub Copilot, pero con control.
+
+No lo uses para que piense por ti.
+Usalo como apoyo, no como piloto automatico.
+
+Regla recomendada:
+
+1. Primero intenta escribir tu idea en comentarios o pseudocodigo.
+2. Escribe al menos la estructura principal tu.
+3. Si Copilot sugiere codigo, leelo antes de aceptarlo.
+4. Acepta solo lo que entiendas.
+5. Modifica el codigo con tus propias decisiones.
+6. Si no puedes explicar una linea, no la dejes sin preguntarla.
+
+Buena forma de usarlo:
+
+# pedir edad
+# validar si es mayor de edad
+# imprimir resultado
+
+Luego dejas que sugiera, pero tu revisas.
+
+Mala forma de usarlo:
+
+Aceptar todo sin entenderlo.
+
+Para aprender mejor:
+- En ejercicios nuevos, intenta primero sin Copilot.
+- En ejercicios largos o repetitivos, puedes usarlo.
+- En retos importantes, puedes hacer una primera version tu solo y luego comparar con Copilot.
+
+Conclusion:
+No hace falta quitar Copilot.
+Pero debes usarlo como maestro auxiliar, no como sustituto de tu logica.
+
+
+============================================================
+13. PROXIMO PASO
+============================================================
+
+Terminar seccion 8: ciclos.
+
+Retos sugeridos:
+
+1. Mejorar calculadora.
+2. Crear menu falso de ERP.
+3. Crear sistema de intentos de login.
+4. Practicar range.
+5. Practicar break.
+
+Cuando termines cada clase, manda:
+
+- archivo .py
+- resumen de lo que entendiste
+- dudas
+
+Y Codex revisara, corregira y dejara el siguiente reto.
+
