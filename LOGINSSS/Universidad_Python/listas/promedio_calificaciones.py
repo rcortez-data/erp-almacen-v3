@@ -1,15 +1,23 @@
 print('*** Promedio de Calificaciones ***')
 
 calificaciones = []
+suma_calificaciones = 0
 
 numero_calificaciones = int(input('Proporciona el numero de calificaciones a evaluar: '))
 
 for indice in range(numero_calificaciones):
-    calificacion = int(input(f'Calificacion [{indice}] = '))
+    calificacion = float(input(f'Calificacion [{indice}] = '))
     calificaciones.append(calificacion)
-
+    suma_calificaciones += calificacion
 print(f'\nLas calificaciones proporcionadas son: {calificaciones}')
 
-for promedio in calificaciones:
-    promedio = calificacion + calificacion / numero_calificaciones
-print(f'Promedio de las calificaciones: {promedio}')
+promedio = suma_calificaciones / numero_calificaciones
+print(f'\nPromedio de las calificaciones: {promedio}')
+
+
+# Calculamos el promedio de las calificaciones
+# Sum(iterable)
+# suma_calificaciones = sum(calificaciones)
+# promedio = suma_calificaciones / numero_calificaciones
+# print(f'\nPromedio de las calificaciones: {promedio}')
+
