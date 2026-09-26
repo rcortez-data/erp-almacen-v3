@@ -29,10 +29,10 @@
       <dd class="col-sm-8">{{ salida.codigo }} — {{ salida.descripcion }}</dd>
       <dt class="col-sm-4">Cantidad</dt>
       <dd class="col-sm-8 fw-bold text-danger">
-        -{{ ((salida.cantidad * salida.factor_conversion) if salida.unidad_compra and salida.factor_conversion and salida.tipo_conversion == 'compra_a_uso' else ((salida.cantidad / salida.factor_conversion) if salida.unidad_compra and salida.factor_conversion else salida.cantidad))|cantidad_unidad(salida.unidad_medida) }}
-        {% if salida.unidad_compra and salida.factor_conversion %}
+        -{{ (salida.cantidad_stock if salida.cantidad_stock is not none else salida.cantidad)|cantidad_unidad(salida.unidad_medida) }}
+        {% if salida.unidad_compra_movimiento and salida.factor_conversion_movimiento %}
         <br><span class="text-muted fw-normal" style="font-size:.85rem">
-          = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra) }}
+          = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra_movimiento) }}
         </span>
         {% endif %}
       </dd>

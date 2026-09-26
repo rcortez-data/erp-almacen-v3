@@ -38,9 +38,9 @@
       </dd>
       <dt class="col-sm-4">Cantidad</dt>
       <dd class="col-sm-8 fw-bold text-success">
-        {% if entrada.unidad_compra and entrada.factor_conversion and entrada.cantidad_piezas %}
+        {% if (entrada.unidad_compra_movimiento and entrada.factor_conversion_movimiento) or (entrada.unidad_compra and entrada.cantidad_piezas is not none and entrada.cantidad_piezas != entrada.cantidad) %}
           {{ entrada.cantidad_piezas|cantidad_unidad(entrada.unidad_medida) }}
-          <small class="text-muted fw-normal">(= {{ entrada.cantidad }} {{ entrada.unidad_compra }})</small>
+          <small class="text-muted fw-normal">(= {{ entrada.cantidad }} {{ entrada.unidad_compra_movimiento or entrada.unidad_compra }})</small>
         {% else %}
           {{ entrada.cantidad|cantidad_unidad(entrada.unidad_medida) }}
         {% endif %}

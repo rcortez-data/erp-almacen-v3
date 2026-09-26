@@ -153,11 +153,11 @@
             <div class="fw-semibold">{{ s.descripcion }}</div>
           </td>
           <td class="text-end fw-bold text-danger">
-            {% set salida_stock = ((s.cantidad * s.factor_conversion) if s.unidad_compra and s.factor_conversion and s.tipo_conversion == 'compra_a_uso' else ((s.cantidad / s.factor_conversion) if s.unidad_compra and s.factor_conversion else s.cantidad)) %}
+            {% set salida_stock = s.cantidad_stock if s.cantidad_stock is not none else s.cantidad %}
             -{{ salida_stock|cantidad_unidad(s.unidad_medida) }}
-            {% if s.unidad_compra and s.factor_conversion %}
+            {% if s.unidad_compra_movimiento and s.factor_conversion_movimiento %}
             <br><span class="text-muted fw-normal" style="font-size:.72rem">
-              = {{ s.cantidad|cantidad_unidad(s.unidad_compra) }}
+              = {{ s.cantidad|cantidad_unidad(s.unidad_compra_movimiento) }}
             </span>
             {% endif %}
           </td>

@@ -1052,6 +1052,8 @@ def nuevo():
                         'ubicacion': ubicacion_item or prod['ubicacion'],
                         'uso': uso_item,
                         'tiene_conversion': tiene_conversion,
+                        'unidad_compra_movimiento': unidad_compra_item if tiene_conversion else None,
+                        'factor_conversion_movimiento': factor_conversion_item if tiene_conversion else None,
                         'tipo_conversion': tipo_conversion_item if tiene_conversion else 'uso_a_compra',
                         'cantidad_piezas': cantidad_piezas,
                         'unidad_piezas': unidad_medida_item,
@@ -1163,8 +1165,9 @@ def nuevo():
                         (folio, producto_id, es_servicio, concepto_servicio,
                          cantidad, cantidad_piezas, precio_unitario, importe,
                          no_requisicion, no_factura, orden_compra, no_remision, sin_oc, recuperacion_almacen,
-                          proveedor_id, proveedor_nombre_historico, departamento, ubicacion, uso, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale, moneda, aplica_iva, compra_gas)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                          proveedor_id, proveedor_nombre_historico, departamento, ubicacion, uso, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale, moneda, aplica_iva, compra_gas,
+                          unidad_compra_movimiento, factor_conversion_movimiento, tipo_conversion_movimiento)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     """, (folio, producto_id_entrada, int(item.get('es_servicio', False)),
                           item.get('concepto_servicio'),
                           item['cantidad'], item.get('cantidad_piezas', item['cantidad']),
@@ -1176,7 +1179,8 @@ def nuevo():
                           item.get('departamento'), item.get('ubicacion'), item.get('uso'), tipo_mov,
                           session['user_id'], doc.get('observaciones'), fecha_sql, fecha_vale,
                           item.get('moneda') or 'MXN', int(bool(item.get('aplica_iva'))),
-                          int(doc.get('compra_gas', False))))
+                          int(doc.get('compra_gas', False)), item.get('unidad_compra_movimiento'),
+                          item.get('factor_conversion_movimiento'), item.get('tipo_conversion') or 'uso_a_compra'))
                     if not item.get('es_servicio') and producto_id_entrada:
                         conn.execute(
                             "UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
@@ -1233,7 +1237,7 @@ def detalle(eid):
     entrada = conn.execute("""
         SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
                COALESCE(e.concepto_servicio, p.descripcion) as descripcion,
-               COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
+               COALESCE(p.unidad_medida, 'SERVICIO') as unidad_medida,
                p.unidad_compra, p.factor_conversion, p.tipo_conversion, COALESCE(e.ubicacion, p.ubicacion) as ubicacion_actual,
                u.nombre as usuario_nombre, COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
         FROM entradas e

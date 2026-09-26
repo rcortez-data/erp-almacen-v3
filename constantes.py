@@ -6,7 +6,7 @@ CATEGORIAS = [
     'Formatos',
     'Montaje de grabados',
     'Herramienta',
-    'Insumos Caldera'
+    'Insumos Caldera',
     'Insumos corrugadora',
     'Grasas, Aceites y Lubricantes',
     'Limpieza',    

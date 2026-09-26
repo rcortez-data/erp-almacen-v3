@@ -108,13 +108,13 @@ def _sumar_entradas_stock(conn, producto, fecha_ini, fecha_fin_excl):
 def _sumar_salidas_stock(conn, producto, fecha_ini, fecha_fin_excl):
     """Suma salidas en la unidad de inventario, igual que Balance Mensual."""
     cantidad_db = conn.execute("""
-        SELECT COALESCE(SUM(cantidad),0)
+        SELECT COALESCE(SUM(COALESCE(cantidad_stock, cantidad)),0)
         FROM salidas
         WHERE producto_id=?
           AND DATE(COALESCE(fecha_vale, fecha)) >= ?
           AND DATE(COALESCE(fecha_vale, fecha)) < ?
     """, (producto['id'], fecha_ini, fecha_fin_excl)).fetchone()[0] or 0
-    return _cantidad_salida_stock(cantidad_db, producto)
+    return float(cantidad_db)
 
 
 def _inicio_mes_balance(conn, producto, anio, mes):
@@ -172,7 +172,8 @@ def eliminar(sid):
         return redirect(_salidas_return_url())
     try:
         producto = conn.execute("SELECT * FROM productos WHERE id=?", (salida['producto_id'],)).fetchone()
-        cantidad_stock = _cantidad_salida_stock(salida['cantidad'], producto) if producto else salida['cantidad']
+        cantidad_stock = (salida['cantidad_stock'] if salida['cantidad_stock'] is not None
+                          else (_cantidad_salida_stock(salida['cantidad'], producto) if producto else salida['cantidad']))
         conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
                     (cantidad_stock, salida['producto_id']))
         conn.execute("DELETE FROM salidas WHERE id=?", (sid,))
@@ -397,10 +398,11 @@ def consumo_mensual():
                 folio = f'SAL-{str(numero).zfill(6)}'
                 conn.execute("""
                     INSERT INTO salidas
-                    (folio, producto_id, cantidad, responsable, area, no_vale, tipo_vale,
+                    (folio, producto_id, cantidad, cantidad_stock, unidad_compra_movimiento,
+                     factor_conversion_movimiento, tipo_conversion_movimiento, responsable, area, no_vale, tipo_vale,
                      tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-                """, (folio, producto['id'], cantidad_db, 'CONSUMO FISICO', 'CALDERA', no_vale,
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, (folio, producto['id'], cantidad_db, cantidad, producto['unidad_compra'], producto['factor_conversion'], producto['tipo_conversion'] or 'uso_a_compra', 'CONSUMO FISICO', 'CALDERA', no_vale,
                       'caldera', 'consumo_fisico', session['user_id'],
                       'Consumo fisico mensual capturado desde Balance Mensual',
                       datetime.now().strftime('%Y-%m-%d %H:%M:%S'), ultimo_dia))
@@ -420,9 +422,10 @@ def consumo_mensual():
     if productos:
         marks = ','.join('?' for _ in productos)
         existentes = {
-            r['producto_id']: _cantidad_salida_stock(r['cantidad'], r) for r in conn.execute(
+            r['producto_id']: float(r['cantidad']) for r in conn.execute(
                 f"""
-                SELECT s.producto_id, s.cantidad, p.unidad_compra, p.factor_conversion, p.tipo_conversion
+                SELECT s.producto_id, COALESCE(s.cantidad_stock, s.cantidad) AS cantidad,
+                       p.unidad_compra, p.factor_conversion, p.tipo_conversion
                 FROM salidas s JOIN productos p ON p.id=s.producto_id
                 WHERE s.producto_id IN ({marks})
                   AND s.tipo_movimiento='consumo_fisico'
@@ -661,11 +664,16 @@ def nuevo():
                     folio = f"SAL-{str(num).zfill(6)}"
                     conn.execute("""
                         INSERT INTO salidas
-                        (folio, producto_id, cantidad, responsable, area, no_vale, tipo_vale, maquina,
+                        (folio, producto_id, cantidad, cantidad_stock, unidad_compra_movimiento,
+                         factor_conversion_movimiento, tipo_conversion_movimiento,
+                         responsable, area, no_vale, tipo_vale, maquina,
                          maquina_otro, proveedor,
                          orden_compra, no_factura, no_remision, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
-                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, (folio, item['producto_id'], item['cantidad'], doc.get('responsable'), area,
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (folio, item['producto_id'], item['cantidad'],
+                          _cantidad_salida_stock(item['cantidad'], item), item.get('unidad_compra'),
+                          item.get('factor_conversion'), item.get('tipo_conversion') or 'uso_a_compra',
+                          doc.get('responsable'), area,
                           doc.get('no_vale'), doc.get('tipo_vale') or 'normal', doc.get('maquina') or None,
                           doc.get('maquina_otro') if doc.get('maquina') == 'Otros' else None, doc.get('proveedor') or None,
                           item.get('orden_compra') or doc.get('orden_compra') or None,
@@ -763,10 +771,12 @@ def api_movil_registrar():
         folio = f"SAL-{str(num).zfill(6)}"
         conn.execute("""
             INSERT INTO salidas
-            (folio, producto_id, cantidad, responsable, area, no_vale, tipo_vale, maquina,
+            (folio, producto_id, cantidad, cantidad_stock, unidad_compra_movimiento,
+             factor_conversion_movimiento, tipo_conversion_movimiento, responsable, area, no_vale, tipo_vale, maquina,
              no_factura, no_remision, tipo_movimiento, usuario_id, observaciones, fecha, fecha_vale)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (folio, pid, cantidad, responsable, area or None, no_vale, tipo_vale, maquina or None,
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (folio, pid, cantidad, _cantidad_salida_stock(cantidad, prod), prod['unidad_compra'],
+              prod['factor_conversion'], prod['tipo_conversion'] or 'uso_a_compra', responsable, area or None, no_vale, tipo_vale, maquina or None,
               (data.get('no_factura') or '').strip() or None,
               (data.get('no_remision') or '').strip() or None,
               tipo_mov, session['user_id'], (data.get('observaciones') or '').strip() or None,
@@ -932,8 +942,10 @@ def editar(sid):
                 return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
 
             # Revertir el efecto en stock de la salida ORIGINAL (regresar la cantidad al producto original)
+            cantidad_stock_original = (salida['cantidad_stock'] if salida['cantidad_stock'] is not None
+                                       else _cantidad_salida_stock(salida['cantidad'], salida))
             conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
-                        (_cantidad_salida_stock(salida['cantidad'], salida), salida['producto_id']))
+                        (cantidad_stock_original, salida['producto_id']))
 
             # Antes esto bloqueaba la edición si no había suficiente stock. Ya no bloquea:
             # solo avisa (el stock puede quedar en negativo si ya venía así de antes, por
@@ -956,10 +968,12 @@ def editar(sid):
             proveedor = (f.get('proveedor') or '').strip() or None
             conn.execute("""
                 UPDATE salidas SET
-                    producto_id=?, cantidad=?, responsable=?, area=?, no_vale=?, tipo_vale=?, maquina=?, maquina_otro=?, proveedor=?,
+                    producto_id=?, cantidad=?, cantidad_stock=?, unidad_compra_movimiento=?, factor_conversion_movimiento=?, tipo_conversion_movimiento=?,
+                    responsable=?, area=?, no_vale=?, tipo_vale=?, maquina=?, maquina_otro=?, proveedor=?,
                     no_factura=?, no_remision=?, tipo_movimiento=?, observaciones=?, fecha_vale=?
                 WHERE id=?
-            """, (pid, cantidad, responsable, area, no_vale, tipo_vale, maquina, maquina_otro, proveedor,
+            """, (pid, cantidad, cantidad_stock, prod_nuevo['unidad_compra'], prod_nuevo['factor_conversion'],
+                  prod_nuevo['tipo_conversion'] or 'uso_a_compra', responsable, area, no_vale, tipo_vale, maquina, maquina_otro, proveedor,
                   f.get('no_factura') or None, f.get('no_remision') or None, tipo_mov,
                   f.get('observaciones') or None, fecha_vale, sid))
             conn.commit()

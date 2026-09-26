@@ -521,14 +521,25 @@ def migrar_esquema():
                      ('aplica_iva', 'INTEGER'),
                      ('compra_gas', 'INTEGER DEFAULT 0'),
                      ('recuperacion_almacen', 'INTEGER DEFAULT 0'),
-                     ('fecha_vale', 'TEXT')],
+                     ('fecha_vale', 'TEXT'),
+                     # Snapshot de la conversion usada al capturar el movimiento.
+                     # Evita que editar el catalogo reinterprete entradas historicas.
+                     ('unidad_compra_movimiento', 'TEXT'),
+                     ('factor_conversion_movimiento', 'REAL'),
+                     ('tipo_conversion_movimiento', "TEXT DEFAULT 'uso_a_compra'")],
         'salidas': [('no_vale', 'TEXT'), ('tipo_movimiento', 'TEXT'),
                     ('area', 'TEXT'), ('folio_excel', 'TEXT'),
                     ('es_servicio', 'INTEGER DEFAULT 0'), ('concepto_servicio', 'TEXT'),
                     ('tipo_vale', 'TEXT'), ('maquina', 'TEXT'),
                     ('maquina_otro', 'TEXT'), ('proveedor', 'TEXT'),
                     ('orden_compra', 'TEXT'), ('no_factura', 'TEXT'), ('no_remision', 'TEXT'),
-                    ('fecha_vale', 'TEXT')],
+                    ('fecha_vale', 'TEXT'),
+                    # La cantidad que realmente movio inventario queda congelada
+                    # para que el factor vigente del producto no cambie historicos.
+                    ('cantidad_stock', 'REAL'),
+                    ('unidad_compra_movimiento', 'TEXT'),
+                    ('factor_conversion_movimiento', 'REAL'),
+                    ('tipo_conversion_movimiento', "TEXT DEFAULT 'uso_a_compra'")],
         'proveedores': [('nombre_comercial', 'TEXT')],
         'vales_montacargas': [('area_id', 'INTEGER REFERENCES areas(id)'),
                               ('area_nombre_historico', 'TEXT'),
@@ -546,6 +557,10 @@ def migrar_esquema():
         for columna, tipo in columnas:
             if not col_existe(tabla, columna):
                 c.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {tipo}")
+
+    # Los registros anteriores a esta mejora almacenaban la cantidad en la
+    # unidad de inventario. Se conserva exactamente ese valor como snapshot.
+    c.execute("UPDATE salidas SET cantidad_stock=cantidad WHERE cantidad_stock IS NULL")
 
     # Las credenciales temporales existentes obligan al usuario a cambiar su
     # contrasena en el siguiente inicio de sesion.

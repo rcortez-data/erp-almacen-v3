@@ -187,9 +187,9 @@
           </td>
           <td class="col-wrap" style="max-width:160px">{{ e.ubicacion or '-' }}</td>
           <td class="text-end fw-semibold">
-            {% if e.unidad_compra and e.factor_conversion and e.cantidad_piezas %}
+            {% if (e.unidad_compra_movimiento and e.factor_conversion_movimiento) or (e.unidad_compra and e.cantidad_piezas is not none and e.cantidad_piezas != e.cantidad) %}
               {{ e.cantidad_piezas|cantidad_unidad(e.unidad_medida) }}
-              <br><span class="text-muted fw-normal" style="font-size:.72rem">= {{ e.cantidad }} {{ e.unidad_compra }}</span>
+              <br><span class="text-muted fw-normal" style="font-size:.72rem">= {{ e.cantidad }} {{ e.unidad_compra_movimiento or e.unidad_compra }}</span>
             {% else %}
               {{ e.cantidad|cantidad_unidad(e.unidad_medida) }}
             {% endif %}
