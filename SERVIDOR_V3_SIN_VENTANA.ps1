@@ -7,6 +7,7 @@ $env:ERP_DB_BACKEND = 'sqlite'
 $env:ERP_HOST = '0.0.0.0'
 $env:ERP_PORT = '5000'
 $env:DEBUG = 'False'
+$env:ERP_AUTO_MIGRATE = 'True'
 $env:FLASK_ENV = 'production'
 
 $python = 'C:\Users\Almacen\AppData\Local\Python\pythoncore-3.14-64\python.exe'

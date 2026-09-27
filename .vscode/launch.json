@@ -1,0 +1,33 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "ERP Almacen (rapido)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\app.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "DEBUG": "False",
+                "ERP_AUTO_MIGRATE": "False",
+                "ERP_PORT": "5001"
+            }
+        },
+        {
+            "name": "ERP Almacen (depurar y migrar)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\app.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "DEBUG": "True",
+                "ERP_AUTO_MIGRATE": "True",
+                "ERP_PORT": "5001"
+            }
+        }
+    ]
+}

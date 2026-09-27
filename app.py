@@ -266,16 +266,26 @@ def bad_request(error):
 
 # ====== INICIALIZACIÓN DE BASE DE DATOS ======
 with app.app_context():
+    # La migracion es idempotente, pero no es necesario ejecutarla en cada
+    # arranque local. Se conserva activa por defecto para no cambiar el
+    # comportamiento de instalaciones existentes; VS Code puede desactivarla
+    # mediante ERP_AUTO_MIGRATE=False.
+    auto_migrate = os.environ.get('ERP_AUTO_MIGRATE', 'True').lower() == 'true'
     if DB_BACKEND == 'postgres':
         app.logger.info('PostgreSQL activo; el esquema se administra con migrations/.')
     elif os.path.exists(DB_PATH):
-        migrar_esquema()
+        if auto_migrate:
+            migrar_esquema()
+        else:
+            app.logger.info('Migracion automatica omitida (ERP_AUTO_MIGRATE=False)')
     else:
         init_db()
     app.logger.info("Base de datos inicializada correctamente")
 
 # ====== PUNTO DE ENTRADA ======
 if __name__ == "__main__":
-    debug_mode = os.environ.get('DEBUG', 'True').lower() == 'true'
+    # Evita que una ejecucion normal active el recargador de Flask y arranque
+    # el ERP dos veces. Para depurar se puede establecer DEBUG=True.
+    debug_mode = os.environ.get('DEBUG', 'False').lower() == 'true'
     port = int(os.environ.get('ERP_PORT', '5001'))
     app.run(debug=debug_mode, host="127.0.0.1", port=port)
