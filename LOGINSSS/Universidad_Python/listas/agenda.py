@@ -18,3 +18,22 @@ agenda = {
 }
 
 print(agenda)
+
+# Acceder a la información de un contacto en especifico
+
+print(f'''Informacion del contacto Maria:
+    Telefono: {agenda["maria"]['telefono']}
+    Email: {agenda["maria"]['email']}
+    Direccion: {agenda["maria"]['direccion']}
+''')
+
+# Agregar un nuevo contacto
+agenda['Ana'] = {
+    'telefono': '55678392',
+    'email': 'ana@mail.com',
+    'direccion': 'Calle salvador dias'
+}
+print(agenda)
+
+# Eliminar un contacto existente
+agenda.pop()
