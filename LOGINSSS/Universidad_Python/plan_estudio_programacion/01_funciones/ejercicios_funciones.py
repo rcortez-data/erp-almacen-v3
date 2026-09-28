@@ -2,7 +2,13 @@
 
 # F01 - Crea calcular_total(precio, cantidad) y devuelve el total.
 # Agrega una validacion para evitar precios o cantidades negativos.
-
+precio = int(input('Digita el precio: '))
+cantidad = int(input('Digita la candidad: '))
+if precio and cantidad > 0:
+    calcular_total = precio * cantidad
+    print(f'La cantidad total es: {calcular_total}')
+else:
+    print('Digita una cantidad superior a cero.')
 
 # F02 - Crea estado_stock(stock, minimo) que devuelva "OK", "BAJO" o "SIN EXISTENCIA".
 # Prueba con 10, 3; 3, 3; y 0, 3.
