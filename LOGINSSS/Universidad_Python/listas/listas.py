@@ -13,3 +13,6 @@ print(f'Accedemos al valor del indice -1: {mi_lista[-1]}')
 # Modificar los elementos de una lista
 mi_lista[1] = 10
 print(f'Modificamos el valor de indice 1: {mi_lista[1]} ')
+
+# Agregar un nuevo elemento al final de la lista
+mi_lista.append(6)
