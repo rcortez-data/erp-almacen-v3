@@ -84,6 +84,20 @@ def _cantidad_salida_db_desde_stock(cantidad_stock, producto):
     return _stock_a_compra(cantidad_stock, producto) if _factor_conversion(producto) else float(cantidad_stock or 0)
 
 
+def _cantidad_salida_registrada_stock(salida, producto):
+    """Devuelve el descuento real en unidad de inventario.
+
+    ``cantidad_stock`` solo es confiable en salidas nuevas que guardaron el
+    snapshot de conversión. En salidas históricas ese campo puede repetir la
+    cantidad de compra, aunque el producto se controle en piezas.
+    """
+    if (salida['cantidad_stock'] is not None and
+            salida['unidad_compra_movimiento'] and
+            salida['factor_conversion_movimiento']):
+        return float(salida['cantidad_stock'] or 0)
+    return _cantidad_salida_stock(salida['cantidad'], producto)
+
+
 def _sumar_entradas_stock(conn, producto, fecha_ini, fecha_fin_excl):
     """Suma entradas en la unidad de inventario, igual que Balance Mensual."""
     factor = _factor_conversion(producto)
@@ -107,14 +121,23 @@ def _sumar_entradas_stock(conn, producto, fecha_ini, fecha_fin_excl):
 
 def _sumar_salidas_stock(conn, producto, fecha_ini, fecha_fin_excl):
     """Suma salidas en la unidad de inventario, igual que Balance Mensual."""
-    cantidad_db = conn.execute("""
-        SELECT COALESCE(SUM(COALESCE(cantidad_stock, cantidad)),0)
+    filas = conn.execute("""
+        SELECT cantidad, cantidad_stock, unidad_compra_movimiento,
+               factor_conversion_movimiento
         FROM salidas
         WHERE producto_id=?
           AND DATE(COALESCE(fecha_vale, fecha)) >= ?
           AND DATE(COALESCE(fecha_vale, fecha)) < ?
-    """, (producto['id'], fecha_ini, fecha_fin_excl)).fetchone()[0] or 0
-    return float(cantidad_db)
+    """, (producto['id'], fecha_ini, fecha_fin_excl)).fetchall()
+    total = 0.0
+    for fila in filas:
+        if (fila['cantidad_stock'] is not None and
+                fila['unidad_compra_movimiento'] and
+                fila['factor_conversion_movimiento']):
+            total += float(fila['cantidad_stock'] or 0)
+        else:
+            total += _cantidad_salida_stock(fila['cantidad'], producto)
+    return total
 
 
 def _inicio_mes_balance(conn, producto, anio, mes):
@@ -172,8 +195,8 @@ def eliminar(sid):
         return redirect(_salidas_return_url())
     try:
         producto = conn.execute("SELECT * FROM productos WHERE id=?", (salida['producto_id'],)).fetchone()
-        cantidad_stock = (salida['cantidad_stock'] if salida['cantidad_stock'] is not None
-                          else (_cantidad_salida_stock(salida['cantidad'], producto) if producto else salida['cantidad']))
+        cantidad_stock = (_cantidad_salida_registrada_stock(salida, producto)
+                          if producto else salida['cantidad'])
         conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
                     (cantidad_stock, salida['producto_id']))
         conn.execute("DELETE FROM salidas WHERE id=?", (sid,))
@@ -942,8 +965,7 @@ def editar(sid):
                 return render_template('salidas/editar.html', salida=salida, areas_lista=areas_lista, maquinas=MAQUINAS, return_to=return_to)
 
             # Revertir el efecto en stock de la salida ORIGINAL (regresar la cantidad al producto original)
-            cantidad_stock_original = (salida['cantidad_stock'] if salida['cantidad_stock'] is not None
-                                       else _cantidad_salida_stock(salida['cantidad'], salida))
+            cantidad_stock_original = _cantidad_salida_registrada_stock(salida, salida)
             conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
                         (cantidad_stock_original, salida['producto_id']))
 

@@ -114,6 +114,40 @@ def _cantidad_salida_db_desde_stock(cantidad_stock, producto):
     return _a_unidad_compra(float(cantidad_stock or 0), producto, redondear_pieza=False)
 
 
+def _sumar_salidas_en_stock(conn, producto, fecha_inicio=None, fecha_fin=None):
+    """Suma salidas en la unidad de inventario del producto.
+
+    Las salidas nuevas guardan ``cantidad_stock`` como snapshot de la
+    cantidad descontada del inventario. Las salidas históricas pueden no
+    tener ese campo; para ellas se usa la conversión de ``cantidad`` como
+    respaldo. Esto evita interpretar una salida histórica de 50 PIEZAS como
+    50 KILOS cuando el producto tiene conversión.
+    """
+    where = ["producto_id=?"]
+    params = [producto['id']]
+    if fecha_inicio is not None:
+        where.append("DATE(COALESCE(fecha_vale, fecha)) >= ?")
+        params.append(fecha_inicio)
+    if fecha_fin is not None:
+        where.append("DATE(COALESCE(fecha_vale, fecha)) <= ?")
+        params.append(fecha_fin)
+
+    rows = conn.execute(
+        f"SELECT cantidad, cantidad_stock, unidad_compra_movimiento, "
+        f"factor_conversion_movimiento FROM salidas WHERE {' AND '.join(where)}",
+        params,
+    ).fetchall()
+    total = 0.0
+    for row in rows:
+        if (row['cantidad_stock'] is not None and
+                row['unidad_compra_movimiento'] and
+                row['factor_conversion_movimiento']):
+            total += float(row['cantidad_stock'] or 0)
+        else:
+            total += float(_cantidad_salida_stock(row['cantidad'], producto) or 0)
+    return total
+
+
 def _es_producto_caldera(conn, producto_id):
     row = conn.execute(
         "SELECT 1 FROM bloque_productos WHERE bloque_id=2 AND producto_id=? LIMIT 1",
@@ -514,6 +548,10 @@ def _calcular_fila(conn, producto, anio, mes):
     """Calcula inicio + entradas - salidas manuales = existencia final."""
     inicio_mes, fin_mes = _rango_mes(anio, mes)
     pid = producto['id']
+    # Septiembre de 2026 es el primer periodo que contiene vales mixtos:
+    # históricos capturados en piezas y nuevos capturados en kilos con
+    # cantidad_stock. Los cierres anteriores se conservan como históricos.
+    usar_snapshot_salidas = (anio, mes) >= (2026, 9)
 
     # 1) El cierre del mes anterior es la existencia inicial del mes consultado.
     anio_ant, mes_ant = _mes_anterior(anio, mes)
@@ -534,11 +572,15 @@ def _calcular_fila(conn, producto, anio, mes):
             entradas_anteriores = conn.execute(
                 "SELECT COALESCE(SUM(COALESCE(cantidad_piezas, cantidad)),0) FROM entradas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) >= ? AND DATE(COALESCE(fecha_vale, fecha)) < ?",
                 (pid, f'{anio}-01-01', inicio_mes)).fetchone()[0]
-            salidas_anteriores = conn.execute(
-                "SELECT COALESCE(SUM(cantidad),0) FROM salidas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) >= ? AND DATE(COALESCE(fecha_vale, fecha)) < ?",
-                (pid, f'{anio}-01-01', inicio_mes)).fetchone()[0]
-            if factor:
-                salidas_anteriores = _a_unidad_stock(salidas_anteriores or 0, producto)
+            if usar_snapshot_salidas:
+                salidas_anteriores = _sumar_salidas_en_stock(
+                    conn, producto, f'{anio}-01-01', inicio_mes)
+            else:
+                salidas_anteriores = conn.execute(
+                    "SELECT COALESCE(SUM(cantidad),0) FROM salidas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) >= ? AND DATE(COALESCE(fecha_vale, fecha)) < ?",
+                    (pid, f'{anio}-01-01', inicio_mes)).fetchone()[0]
+                if factor:
+                    salidas_anteriores = _a_unidad_stock(salidas_anteriores or 0, producto)
             existencia_inicio = float(referencia_caldera['cantidad'] or 0) + float(entradas_anteriores or 0) - float(salidas_anteriores or 0)
             inicio_es_estimado = False
         else:
@@ -555,11 +597,14 @@ def _calcular_fila(conn, producto, anio, mes):
                 entradas_post = conn.execute(
                     "SELECT COALESCE(SUM(COALESCE(cantidad_piezas, cantidad)),0) FROM entradas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) >= ?",
                     (pid, inicio_mes)).fetchone()[0]
-            salidas_post = conn.execute(
-                "SELECT COALESCE(SUM(cantidad),0) FROM salidas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) >= ?",
-                (pid, inicio_mes)).fetchone()[0]
-            if factor:
-                salidas_post = _a_unidad_stock(salidas_post or 0, producto)
+            if usar_snapshot_salidas:
+                salidas_post = _sumar_salidas_en_stock(conn, producto, inicio_mes)
+            else:
+                salidas_post = conn.execute(
+                    "SELECT COALESCE(SUM(cantidad),0) FROM salidas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) >= ?",
+                    (pid, inicio_mes)).fetchone()[0]
+                if factor:
+                    salidas_post = _a_unidad_stock(salidas_post or 0, producto)
             existencia_inicio = producto['stock_actual'] - entradas_post + salidas_post
             inicio_es_estimado = True
 
@@ -580,7 +625,12 @@ def _calcular_fila(conn, producto, anio, mes):
 
     # 3) Salidas registradas en el ERP, en unidad de inventario.
     factor = _factor_conversion(producto)
-    if factor:
+    if factor and usar_snapshot_salidas:
+        salidas_registradas = _sumar_salidas_en_stock(
+            conn, producto, inicio_mes, fin_mes)
+        salidas_registradas_compra = _a_unidad_compra(
+            salidas_registradas, producto, redondear_pieza=False)
+    elif factor:
         salidas_registradas_compra = conn.execute(
             "SELECT COALESCE(SUM(cantidad),0) FROM salidas WHERE producto_id=? AND DATE(COALESCE(fecha_vale, fecha)) BETWEEN ? AND ?",
             (pid, inicio_mes, fin_mes)).fetchone()[0]

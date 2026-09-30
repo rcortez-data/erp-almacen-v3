@@ -29,10 +29,12 @@
       <dd class="col-sm-8">{{ salida.codigo }} — {{ salida.descripcion }}</dd>
       <dt class="col-sm-4">Cantidad</dt>
       <dd class="col-sm-8 fw-bold text-danger">
-        -{{ (salida.cantidad_stock if salida.cantidad_stock is not none else salida.cantidad)|cantidad_unidad(salida.unidad_medida) }}
-        {% if salida.unidad_compra_movimiento and salida.factor_conversion_movimiento %}
+        {% set tiene_snapshot = salida.unidad_compra_movimiento and salida.factor_conversion_movimiento %}
+        {% set salida_stock = salida.cantidad_stock if tiene_snapshot and salida.cantidad_stock is not none else (((salida.cantidad * salida.factor_conversion) if salida.tipo_conversion == 'compra_a_uso' else (salida.cantidad / salida.factor_conversion)) if salida.unidad_compra and salida.factor_conversion else salida.cantidad) %}
+        -{{ salida_stock|cantidad_unidad(salida.unidad_medida) }}
+        {% if salida.unidad_compra and salida.factor_conversion %}
         <br><span class="text-muted fw-normal" style="font-size:.85rem">
-          = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra_movimiento) }}
+          = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra) }}
         </span>
         {% endif %}
       </dd>
