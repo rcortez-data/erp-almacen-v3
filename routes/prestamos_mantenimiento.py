@@ -122,7 +122,12 @@ def personal():
     if q:
         query += " AND (codigo LIKE ? OR codigo_barras LIKE ? OR nombre LIKE ? OR area LIKE ?)"
         params.extend([f'%{q}%', f'%{q}%', f'%{q}%', f'%{q}%'])
-    query += " ORDER BY activo DESC, nombre"
+    # La nómina se guarda como texto para conservar ceros y códigos manuales,
+    # pero el listado debe ordenarla numéricamente (2 antes que 10).
+    query += """ ORDER BY activo DESC,
+        CASE WHEN codigo <> '' AND codigo NOT GLOB '*[^0-9]*' THEN 0 ELSE 1 END,
+        CASE WHEN codigo <> '' AND codigo NOT GLOB '*[^0-9]*' THEN CAST(codigo AS INTEGER) END,
+        codigo COLLATE NOCASE, nombre COLLATE NOCASE"""
     conn = get_db()
     registros = conn.execute(query, params).fetchall()
     conn.close()
@@ -143,7 +148,10 @@ def personal_catalogo():
     if q:
         query += " AND (codigo LIKE ? OR codigo_barras LIKE ? OR nombre LIKE ? OR area LIKE ?)"
         params.extend([f'%{q}%', f'%{q}%', f'%{q}%', f'%{q}%'])
-    query += " ORDER BY area, nombre, codigo"
+    query += """ ORDER BY
+        CASE WHEN codigo <> '' AND codigo NOT GLOB '*[^0-9]*' THEN 0 ELSE 1 END,
+        CASE WHEN codigo <> '' AND codigo NOT GLOB '*[^0-9]*' THEN CAST(codigo AS INTEGER) END,
+        codigo COLLATE NOCASE, nombre COLLATE NOCASE"""
     conn = get_db()
     registros = conn.execute(query, params).fetchall()
     conn.close()

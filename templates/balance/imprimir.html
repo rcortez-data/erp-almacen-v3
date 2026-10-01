@@ -58,7 +58,7 @@
   .col-desc { width: 23%; }
   .col-unidad { width: 8%; }
   .col-conv { width: 17%; }
-  .col-num { width: 13%; }
+  .col-num { width: 11%; }
   .reporte-hoja.grupo-produccion {
     font-size: 10.4px;
   }
@@ -93,7 +93,7 @@
   .grupo-produccion .col-desc { width: 22%; }
   .grupo-produccion .col-unidad { width: 8%; }
   .grupo-produccion .col-conv { width: 14%; }
-  .grupo-produccion .col-num { width: 14%; }
+  .grupo-produccion .col-num { width: 12%; }
   .reporte-hoja.grupo-caldera {
     font-size: 11px;
   }
@@ -182,6 +182,7 @@
     <col class="col-num">
     <col class="col-num">
     <col class="col-num">
+    <col class="col-num">
   </colgroup>
   <thead>
     <tr>
@@ -190,7 +191,8 @@
       <th>Conversion</th>
       <th class="txt-r">Cierre anterior</th>
       <th class="txt-r">Entradas mes</th>
-      <th class="txt-r">Salidas mes</th>
+      <th class="txt-r">Salidas registradas</th>
+      <th class="txt-r">Salidas calculadas</th>
       <th class="txt-r">Existencia final</th>
     </tr>
   </thead>
@@ -198,9 +200,15 @@
     {% for f in filas_tabla %}
     <tr>
       <td>{{ f.descripcion }}</td>
-      <td>{% if f.unidad_compra and f.factor_conversion %}{{ f.unidad_compra|upper }}{% else %}{{ f.unidad_medida|upper }}{% endif %}</td>
       <td>
-        {% if f.unidad_compra and f.factor_conversion %}
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] %}
+          {{ f.unidad_compra|upper }}
+        {% else %}
+          {{ f.unidad_medida|upper }}
+        {% endif %}
+      </td>
+      <td>
+        {% if f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
           {% if f.tipo_conversion == 'compra_a_uso' %}
           1 {{ f.unidad_compra|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_medida) }}
           {% else %}
@@ -209,16 +217,43 @@
         {% else %}—{% endif %}
       </td>
       <td class="txt-r">
-        {% if f.unidad_compra and f.factor_conversion and f.existencia_inicio_compra is not none %}{{ f.existencia_inicio_compra|moneda }}{% else %}{{ f.existencia_inicio|moneda }}{% endif %}
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.existencia_inicio_compra is not none %}
+          {{ f.existencia_inicio_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.existencia_inicio|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
       </td>
       <td class="txt-r">
-        {% if f.unidad_compra and f.factor_conversion and f.entradas_mes_compra is not none %}{{ f.entradas_mes_compra|moneda }}{% else %}{{ f.entradas_mes|moneda }}{% endif %}
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.entradas_mes_compra is not none %}
+          +{{ f.entradas_mes_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          +{{ f.entradas_mes|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
       </td>
       <td class="txt-r">
-        {% if f.salidas_reporte is none %}-{% elif f.unidad_compra and f.factor_conversion and f.salidas_reporte_compra is not none %}{{ f.salidas_reporte_compra|moneda }}{% else %}{{ f.salidas_reporte|moneda }}{% endif %}
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.salidas_registradas_compra is not none %}
+          {{ f.salidas_registradas_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.salidas_registradas|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
       </td>
       <td class="txt-r">
-        {% if f.existencia_final is none %}pendiente{% elif f.unidad_compra and f.factor_conversion and f.existencia_final_compra is not none %}{{ f.existencia_final_compra|moneda }}{% else %}{{ f.existencia_final|moneda }}{% endif %}
+        {% if f.salidas_manual is none %}
+          -
+        {% elif f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.salidas_manual_compra is not none %}
+          {{ f.salidas_manual_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.salidas_manual|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
+      </td>
+      <td class="txt-r">
+        {% if f.existencia_final is none %}
+          pendiente
+        {% elif f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.existencia_final_compra is not none %}
+          {{ f.existencia_final_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.existencia_final|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
       </td>
     </tr>
     {% endfor %}

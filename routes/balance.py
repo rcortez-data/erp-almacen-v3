@@ -650,7 +650,13 @@ def _calcular_fila(conn, producto, anio, mes):
     if inicio_guardado:
         existencia_inicio = conteo_actual['existencia_inicio']
         inicio_es_estimado = False
-    if conteo_actual and conteo_actual['entradas_mes'] is not None:
+    # Desde agosto de 2026 las entradas del balance son siempre las entradas
+    # registradas en el ERP. El campo guardado en conteos_fisicos solo es un
+    # dato histórico de captura manual (usado hasta julio); si se conserva
+    # como prioridad, una entrada registrada después del cierre deja el total
+    # mensual desactualizado (por ejemplo, 2000 mostradas como 1000).
+    if (conteo_actual and conteo_actual['entradas_mes'] is not None
+            and (anio, mes) <= (2026, 7)):
         entradas_mes = conteo_actual['entradas_mes']
         entradas_mes_compra = _a_unidad_compra(entradas_mes, producto, redondear_pieza=False)
     salidas_manual = conteo_actual['salidas_manual'] if conteo_actual else None
