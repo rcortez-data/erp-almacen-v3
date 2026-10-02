@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Inventario actual - ERP ALMACEN GENERAL</title>
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #222; margin: 1.5cm; }
+  h1 { font-size: 16px; margin-bottom: 2px; }
+  .meta { color: #666; font-size: 10px; margin-bottom: 12px; }
+  .resumen { display: flex; gap: 24px; margin-bottom: 14px; }
+  .resumen div { background: #f5f5f5; padding: 6px 14px; border-radius: 4px; }
+  .resumen span { font-weight: bold; font-size: 15px; display: block; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #1a1d23; color: #fff; padding: 5px 6px; text-align: left; font-size: 10px; }
+  td { padding: 4px 6px; border-bottom: 1px solid #eee; }
+  tr.bajo td { background: #fff3cd; }
+  tr:nth-child(even):not(.bajo) td { background: #f9f9f9; }
+  .badge-ok  { background: #198754; color:#fff; padding:1px 6px; border-radius:3px; }
+  .badge-low { background: #dc3545; color:#fff; padding:1px 6px; border-radius:3px; }
+  .badge-zero{ background: #6c757d; color:#fff; padding:1px 6px; border-radius:3px; }
+  .footer { margin-top: 16px; font-size: 9px; color: #999; }
+  @media print { button { display: none; } }
+</style>
+</head>
+<body>
+<button onclick="window.print()" style="margin-bottom:12px;padding:4px 14px;cursor:pointer">
+  🖨️ Imprimir / Guardar PDF
+</button>
+<h1>Reporte de inventario - ERP ALMACEN GENERAL</h1>
+<div class="meta">Generado: {{ now }} &nbsp;|&nbsp; {{ productos|length }} productos activos</div>
+
+<div class="resumen">
+  <div><span>{{ productos|length }}</span>Total productos</div>
+  <div><span style="color:#dc3545">{{ bajos|length }}</span>Con stock bajo</div>
+  <div><span style="color:#198754">{{ productos|length - bajos|length }}</span>En niveles normales</div>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Código</th><th>Descripción</th><th>Categoría</th>
+      <th>Unidad</th><th>Ubicación</th><th>Stock actual</th><th>Stock mín.</th><th>Estado</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for p in productos %}
+    <tr class="{{ 'bajo' if p.stock_actual <= p.stock_minimo and p.stock_minimo > 0 }}">
+      <td><b>{{ p.codigo }}</b></td>
+      <td>{{ p.descripcion }}</td>
+      <td>{{ p.categoria or '—' }}</td>
+      <td>{{ p.unidad_medida }}</td>
+      <td>{{ p.ubicacion or '—' }}</td>
+      <td><b>{{ p.stock_actual }}</b></td>
+      <td>{{ p.stock_minimo }}</td>
+      <td>
+        {% if p.stock_actual <= p.stock_minimo and p.stock_minimo > 0 %}
+        <span class="badge-low">Bajo</span>
+        {% elif p.stock_actual == 0 %}
+        <span class="badge-zero">Sin stock</span>
+        {% else %}
+        <span class="badge-ok">OK</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<div class="footer">ERP ALMACEN GENERAL - Documento generado el {{ now }}</div>
+</body>
+</html>

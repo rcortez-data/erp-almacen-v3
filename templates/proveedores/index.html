@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% block title %}Proveedores{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-truck text-primary"></i> Proveedores</h1>
+  {% if session.get('rol') == 'admin' %}
+  <div class="d-flex gap-2">
+    <button type="button" id="btn-eliminar-varios" class="btn btn-outline-danger btn-sm" disabled>
+      <i class="bi bi-trash"></i> Eliminar seleccionados (<span id="contador-sel">0</span>)
+    </button>
+    <a href="{{ url_for('proveedores.nuevo') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-lg"></i> Nuevo proveedor
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <input type="text" name="q" class="form-control form-control-sm"
+               placeholder="Buscar por nombre fiscal o comercial..." value="{{ q }}">
+      </div>
+      <input type="hidden" name="ver" value="{{ ver }}">
+      <div class="col-auto">
+        <button type="submit" class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button>
+        <a href="{{ url_for('proveedores.index', ver=ver) }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+      </div>
+      <div class="col-auto ms-auto btn-group btn-group-sm" role="group">
+        <a href="{{ url_for('proveedores.index', ver='activos', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='activos' else 'btn-outline-primary' }}">
+          Activos ({{ total_activos }})
+        </a>
+        <a href="{{ url_for('proveedores.index', ver='archivados', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='archivados' else 'btn-outline-primary' }}">
+          Archivados ({{ total_archivados }})
+        </a>
+        <a href="{{ url_for('proveedores.index', ver='todos', q=q) }}"
+           class="btn {{ 'btn-primary' if ver=='todos' else 'btn-outline-primary' }}">
+          Todos
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Form de eliminación masiva: solo contiene los checkboxes ocultos, fuera de la tabla #}
+<form id="form-varios" method="POST" action="{{ url_for('proveedores.eliminar_varios') }}">
+  <div id="hidden-ids-container"></div>
+</form>
+
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead>
+        <tr>
+          {% if session.get('rol') == 'admin' %}
+          <th style="width:30px"><input type="checkbox" id="check-todos" class="form-check-input"></th>
+          {% endif %}
+          <th class="col-desc">Nombre fiscal</th>
+          <th class="col-medium">Nombre comercial</th>
+          <th class="col-compact">Estado</th>
+          {% if session.get('rol') == 'admin' %}<th class="col-acciones">Acciones</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in proveedores %}
+        <tr class="{{ '' if p.activo else 'table-secondary text-muted' }}">
+          {% if session.get('rol') == 'admin' %}
+          <td><input type="checkbox" data-id="{{ p.id }}" class="form-check-input check-item"></td>
+          {% endif %}
+          <td class="fw-semibold">{{ p.nombre }}</td>
+          <td>{{ p.nombre_comercial or '—' }}</td>
+          <td>
+            {% if p.activo %}
+            <span class="badge bg-success">Activo</span>
+            {% else %}
+            <span class="badge bg-secondary">Inactivo</span>
+            {% endif %}
+          </td>
+          {% if session.get('rol') == 'admin' %}
+          <td>
+            <a href="{{ url_for('proveedores.editar', pid=p.id) }}"
+               class="btn btn-sm btn-outline-primary py-0 px-2">
+              <i class="bi bi-pencil"></i> Editar
+            </a>
+            <button type="button"
+                    class="btn btn-sm btn-outline-danger py-0 px-2 btn-eliminar-uno"
+                    data-action="{{ url_for('proveedores.eliminar', pid=p.id) }}"
+                    data-nombre="{{ p.nombre }}">
+              <i class="bi bi-trash"></i> Eliminar
+            </button>
+          </td>
+          {% endif %}
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-muted py-4">No se encontraron proveedores.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.8rem">{{ proveedores|length }} proveedor(es)</div>
+</div>
+
+{# Form reutilizable para eliminar un proveedor individual #}
+<form id="form-eliminar-uno" method="POST" action="">
+</form>
+
+<script>
+  const checkTodos = document.getElementById('check-todos');
+  const btnVarios = document.getElementById('btn-eliminar-varios');
+  const contadorSel = document.getElementById('contador-sel');
+  const formVarios = document.getElementById('form-varios');
+  const hiddenContainer = document.getElementById('hidden-ids-container');
+  const formEliminarUno = document.getElementById('form-eliminar-uno');
+
+  function actualizarContador() {
+    const marcados = document.querySelectorAll('.check-item:checked').length;
+    contadorSel.textContent = marcados;
+    btnVarios.disabled = marcados === 0;
+  }
+
+  // Checkbox "seleccionar todos"
+  if (checkTodos) {
+    checkTodos.addEventListener('change', function () {
+      document.querySelectorAll('.check-item').forEach(cb => cb.checked = checkTodos.checked);
+      actualizarContador();
+    });
+    document.querySelectorAll('.check-item').forEach(cb => cb.addEventListener('change', function () {
+      if (!this.checked) checkTodos.checked = false;
+      actualizarContador();
+    }));
+  }
+
+  // Botón eliminar seleccionados: inyecta los IDs como hidden inputs y envía el form
+  if (btnVarios) {
+    btnVarios.addEventListener('click', function () {
+      const checkboxes = document.querySelectorAll('.check-item:checked');
+      if (checkboxes.length === 0) return;
+      if (!confirm(`Se eliminarán ${checkboxes.length} proveedor(es) permanentemente. ¿Estás seguro?`)) return;
+
+      hiddenContainer.innerHTML = '';
+      checkboxes.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'ids';
+        input.value = cb.dataset.id;
+        hiddenContainer.appendChild(input);
+      });
+      formVarios.submit();
+    });
+  }
+
+  // Botones eliminar individual: usan un form separado
+  document.querySelectorAll('.btn-eliminar-uno').forEach(btn => {
+    btn.addEventListener('click', function () {
+      const nombre = this.dataset.nombre;
+      if (!confirm(`¿Eliminar el proveedor "${nombre}" permanentemente?`)) return;
+      formEliminarUno.action = this.dataset.action;
+      formEliminarUno.submit();
+    });
+  });
+</script>
+{% endblock %}

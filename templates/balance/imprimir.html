@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>{{ titulo_reporte }}</title>
+<style>
+  @page { size: letter landscape; margin: 0.9cm; }
+  body { font-family: "Segoe UI", Arial, sans-serif; font-size: 10px; color: #1f2937; margin: 1.2cm; }
+  .header { border-bottom: 3px solid #2563eb; padding-bottom: 10px; margin-bottom: 16px; }
+  h1 { color: #123b68; font-size: 20px; letter-spacing: .2px; margin: 0 0 5px; }
+  .meta { color: #64748b; font-size: 10px; margin: 0; }
+  table { width: 100%; border-collapse: collapse; border: 2px solid #26384c; border-radius: 5px; overflow: hidden; }
+  th {
+    background: #ffffff;
+    color: #000000;
+    padding: 10px 7px;
+    text-align: left;
+    font-size: 10.5px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .4px;
+    border: 2px solid #000000;
+    border-top: 3px solid #000000;
+    border-bottom: 3px solid #000000;
+    font-family: Arial, Helvetica, sans-serif;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  td { padding: 7px; border: 1.5px solid #8da1b5; }
+  tr:nth-child(even) td { background: #fff; }
+  .txt-r { text-align: right; }
+  .footer { margin-top: 16px; font-size: 9px; color: #64748b; border-top: 1px solid #dbe4ef; padding-top: 8px; }
+  .badge { background: #eee; color: #555; border-radius: 3px; padding: 1px 5px; font-size: 8px; }
+  tfoot td { font-weight: bold; border: 1.5px solid #526b84; border-top: 2px solid #123b68; background: #fff; }
+  .bloque-titulo {
+    margin: 18px 0 7px;
+    padding: 6px 8px;
+    color: #000;
+    font-size: 12px;
+    font-weight: 900;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    border: 2px solid #000;
+    background: #fff;
+  }
+  .bloque-titulo:first-of-type { margin-top: 0; }
+  .reporte-hoja {
+    page-break-after: always;
+    break-after: page;
+  }
+  .reporte-hoja:last-child {
+    page-break-after: auto;
+    break-after: auto;
+  }
+  .reporte-hoja table {
+    table-layout: fixed;
+  }
+  .col-desc { width: 23%; }
+  .col-unidad { width: 8%; }
+  .col-conv { width: 17%; }
+  .col-num { width: 11%; }
+  .reporte-hoja.grupo-produccion {
+    font-size: 10.4px;
+  }
+  .grupo-produccion .header {
+    padding-bottom: 9px;
+    margin-bottom: 14px;
+  }
+  .grupo-produccion h1 {
+    font-size: 22px;
+  }
+  .grupo-produccion .meta {
+    font-size: 10.5px;
+  }
+  .grupo-produccion .bloque-titulo {
+    margin: 14px 0 7px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .grupo-produccion th {
+    padding: 8px 6px;
+    font-size: 10px;
+    letter-spacing: .25px;
+  }
+  .grupo-produccion td {
+    padding: 6px;
+    font-size: 10px;
+    line-height: 1.18;
+  }
+  .grupo-produccion td span {
+    font-size: 9px !important;
+  }
+  .grupo-produccion .col-desc { width: 22%; }
+  .grupo-produccion .col-unidad { width: 8%; }
+  .grupo-produccion .col-conv { width: 14%; }
+  .grupo-produccion .col-num { width: 12%; }
+  .reporte-hoja.grupo-caldera {
+    font-size: 11px;
+  }
+  .grupo-caldera .header {
+    margin-bottom: 20px;
+  }
+  .grupo-caldera h1 {
+    font-size: 23px;
+  }
+  .grupo-caldera .meta {
+    font-size: 11px;
+  }
+  .grupo-caldera .bloque-titulo {
+    margin: 20px 0 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+  .grupo-caldera th {
+    padding: 11px 8px;
+    font-size: 10.8px;
+  }
+  .grupo-caldera td {
+    padding: 8px;
+    font-size: 10.8px;
+    line-height: 1.28;
+  }
+  .grupo-caldera td span {
+    font-size: 9.8px !important;
+  }
+  @media print {
+    body { margin: 0; }
+    button { display: none; }
+    .header {
+      page-break-after: avoid;
+      break-after: avoid;
+    }
+    .reporte-hoja {
+      page-break-after: always;
+      break-after: page;
+    }
+    .reporte-hoja:last-child {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .bloque-titulo {
+      page-break-after: avoid;
+      break-after: avoid;
+      color: #000 !important;
+      border: 2px solid #000 !important;
+      font-weight: 900 !important;
+    }
+    table {
+      page-break-inside: auto;
+    }
+    tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+    th {
+      background: #ffffff !important;
+      color: #000000 !important;
+      border: 2px solid #000000 !important;
+      border-bottom: 3px solid #000000 !important;
+      font-weight: 900 !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    thead tr {
+      border-top: 3px solid #000000;
+      border-bottom: 3px solid #000000;
+    }
+  }
+</style>
+</head>
+<body>
+<button onclick="window.print()" style="margin-bottom:12px;padding:4px 14px;cursor:pointer">
+  Imprimir / Guardar PDF
+</button>
+{% macro tabla_balance(filas_tabla) -%}
+<table>
+  <colgroup>
+    <col class="col-desc">
+    <col class="col-unidad">
+    <col class="col-conv">
+    <col class="col-num">
+    <col class="col-num">
+    <col class="col-num">
+    <col class="col-num">
+    <col class="col-num">
+  </colgroup>
+  <thead>
+    <tr>
+      <th>Descripcion</th>
+      <th>Unidad</th>
+      <th>Conversion</th>
+      <th class="txt-r">Cierre anterior</th>
+      <th class="txt-r">Entradas mes</th>
+      <th class="txt-r">Salidas registradas</th>
+      <th class="txt-r">Salidas calculadas</th>
+      <th class="txt-r">Existencia final</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for f in filas_tabla %}
+    <tr>
+      <td>{{ f.descripcion }}</td>
+      <td>
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] %}
+          {{ f.unidad_compra|upper }}
+        {% else %}
+          {{ f.unidad_medida|upper }}
+        {% endif %}
+      </td>
+      <td>
+        {% if f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+          {% if f.tipo_conversion == 'compra_a_uso' %}
+          1 {{ f.unidad_compra|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_medida) }}
+          {% else %}
+          1 {{ f.unidad_medida|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_compra) }}
+          {% endif %}
+        {% else %}—{% endif %}
+      </td>
+      <td class="txt-r">
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.existencia_inicio_compra is not none %}
+          {{ f.existencia_inicio_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.existencia_inicio|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
+      </td>
+      <td class="txt-r">
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.entradas_mes_compra is not none %}
+          +{{ f.entradas_mes_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          +{{ f.entradas_mes|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
+      </td>
+      <td class="txt-r">
+        {% if f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.salidas_registradas_compra is not none %}
+          {{ f.salidas_registradas_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.salidas_registradas|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
+      </td>
+      <td class="txt-r">
+        {% if f.salidas_manual is none %}
+          -
+        {% elif f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.salidas_manual_compra is not none %}
+          {{ f.salidas_manual_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.salidas_manual|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
+      </td>
+      <td class="txt-r">
+        {% if f.existencia_final is none %}
+          pendiente
+        {% elif f.unidad_compra and f.factor_conversion and f.unidad_compra|upper in ['KILO', 'KILOS', 'KILOGRAMO', 'KILOGRAMOS', 'KG', 'KGS'] and f.existencia_final_compra is not none %}
+          {{ f.existencia_final_compra|cantidad_unidad(f.unidad_compra) }}
+        {% else %}
+          {{ f.existencia_final|cantidad_unidad(f.unidad_medida) }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{%- endmacro %}
+
+{% if grupos_reporte %}
+  {% for grupo in grupos_reporte %}
+    <section class="reporte-hoja {{ grupo.clase or '' }}">
+      <div class="header">
+        <h1>{{ grupo.titulo }}</h1>
+        <div class="meta">Periodo: {{ meses[mes] }} {{ anio }}</div>
+      </div>
+      <div class="bloque-titulo">{{ grupo.subtitulo or grupo.titulo }}</div>
+      {{ tabla_balance(grupo.filas) }}
+    </section>
+  {% endfor %}
+{% else %}
+  <section class="reporte-hoja grupo-{{ tipo_reporte if tipo_reporte in ['produccion', 'caldera'] else 'inventario' }}">
+    <div class="header">
+      <h1>{{ titulo_reporte }}</h1>
+      <div class="meta">Periodo: {{ meses[mes] }} {{ anio }}</div>
+    </div>
+    {{ tabla_balance(filas) }}
+  </section>
+{% endif %}
+</body>
+</html>

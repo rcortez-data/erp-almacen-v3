@@ -1,0 +1,155 @@
+{% extends 'base.html' %}
+{% block title %}Editar material por pedir{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-pencil-square text-warning"></i> Editar material por pedir</h1>
+  <a href="{{ url_for('material_por_pedir.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="card" style="max-width:820px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="producto_id" id="producto_id" value="{{ item.producto_id or '' }}">
+      <input type="hidden" name="codigo" id="codigo" value="{{ item.codigo or '' }}">
+
+      <div class="mb-3 position-relative">
+        <label class="form-label fw-semibold">Producto existente</label>
+        <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
+               placeholder="Buscar por código o descripción"
+               value="{{ (item.codigo ~ ' — ' ~ item.descripcion) if item.producto_id else '' }}">
+        <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+             style="z-index:20; max-height:260px; overflow-y:auto; display:none;"></div>
+        <div class="form-text">Opcional. Puedes dejarlo sin producto ligado si es material libre.</div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Último proveedor</label>
+        <div id="ultimo-proveedor-producto" class="form-control-plaintext border rounded px-2 bg-light text-muted"
+             style="min-height:38px">
+          {{ 'Cargando proveedor...' if item.producto_id else 'Selecciona un producto del catálogo' }}
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Descripción / material</label>
+        <input type="text" name="descripcion" id="descripcion" class="form-control" required value="{{ item.descripcion }}">
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Cantidad</label>
+          <input type="number" name="cantidad" class="form-control" min="0" step="0.001" value="{{ item.cantidad }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Unidad</label>
+          <select name="unidad" id="unidad" class="form-select">
+            <option value="">Sin unidad</option>
+            {% for unidad in unidades %}
+            <option value="{{ unidad }}" {{ 'selected' if item.unidad == unidad }}>{{ unidad }}</option>
+            {% endfor %}
+            {% if item.unidad and item.unidad not in unidades %}
+            <option value="{{ item.unidad }}" selected>{{ item.unidad }}</option>
+            {% endif %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Prioridad</label>
+          <select name="prioridad" class="form-select">
+            <option value="normal" {{ 'selected' if item.prioridad == 'normal' }}>Normal</option>
+            <option value="urgente" {{ 'selected' if item.prioridad == 'urgente' }}>Urgente</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Motivo / notas</label>
+        <textarea name="motivo" class="form-control" rows="3">{{ item.motivo or '' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+        <a href="{{ url_for('material_por_pedir.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoId = document.getElementById('producto_id');
+  const codigo = document.getElementById('codigo');
+  const descripcion = document.getElementById('descripcion');
+  const unidad = document.getElementById('unidad');
+  const ultimoProveedor = document.getElementById('ultimo-proveedor-producto');
+  let debounceTimer = null;
+
+  function textoUltimoProveedor(producto) {
+    if (!producto || !producto.ultimo_proveedor) return 'Sin entradas previas registradas';
+    const fecha = producto.ultima_entrada_fecha ? ` (${String(producto.ultima_entrada_fecha).slice(0, 10)})` : '';
+    return `${producto.ultimo_proveedor}${fecha}`;
+  }
+
+  if (productoId?.value) {
+    fetch(`{{ url_for('inventario.api_producto', pid=0) }}`.replace('/0', `/${productoId.value}`))
+      .then(r => r.json())
+      .then(data => {
+        if (ultimoProveedor) ultimoProveedor.textContent = textoUltimoProveedor(data);
+      })
+      .catch(() => {
+        if (ultimoProveedor) ultimoProveedor.textContent = 'No se pudo consultar el último proveedor';
+      });
+  }
+
+  buscador?.addEventListener('input', function() {
+    productoId.value = '';
+    codigo.value = '';
+    if (ultimoProveedor) ultimoProveedor.textContent = 'Selecciona un producto del catálogo';
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) {
+      resultados.style.display = 'none';
+      return;
+    }
+    debounceTimer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          if (!data.length) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}
+                <div class="text-muted" style="font-size:.78rem">Stock: ${p.stock_actual} ${p.unidad_medida}</div>
+                <div class="text-primary" style="font-size:.78rem">Último proveedor: ${textoUltimoProveedor(p)}</div>`;
+              item.addEventListener('click', () => {
+                productoId.value = p.id;
+                codigo.value = p.codigo;
+                descripcion.value = p.descripcion;
+                unidad.value = p.unidad_medida || '';
+                buscador.value = `${p.codigo} — ${p.descripcion}`;
+                if (ultimoProveedor) ultimoProveedor.textContent = textoUltimoProveedor(p);
+                resultados.style.display = 'none';
+              });
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (resultados && !resultados.contains(e.target) && e.target !== buscador) {
+      resultados.style.display = 'none';
+    }
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+{% block title %}Posibles productos duplicados{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-copy"></i> Limpieza de inventario</span>
+    <h1 class="page-title mb-1">Posibles productos duplicados</h1>
+    <div class="text-muted" style="font-size:.88rem">
+      Revisa la descripcion completa de cada producto y depura desde esta misma pantalla.
+    </div>
+  </div>
+  <a href="{{ url_for('inventario.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Volver al inventario
+  </a>
+</div>
+
+<div class="module-stats mb-3">
+  <div class="mini-stat">
+    <span class="mini-stat-label">Grupos encontrados</span>
+    <strong>{{ total_grupos }}</strong>
+    <small>coincidencias de alta confianza</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Productos por revisar</span>
+    <strong>{{ total_productos }}</strong>
+    <small>ninguno fue modificado</small>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-8">
+        <label class="form-label">Buscar dentro de las coincidencias</label>
+        <input type="text" name="q" class="form-control" value="{{ q }}"
+               placeholder="Ej: tornillo allen, balero, pintura">
+      </div>
+      <div class="col-md-4 d-flex gap-2">
+        <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> Buscar</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('inventario.duplicados') }}">Limpiar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if session.get('rol') == 'admin' and grupos %}
+<form method="POST" action="{{ url_for('inventario.baja_multiple') }}" id="form-baja-duplicados">
+  <div class="card mb-3 border-warning">
+    <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+      <label class="form-check mb-0">
+        <input type="checkbox" class="form-check-input" id="seleccionar-todos-duplicados">
+        <span class="form-check-label">Seleccionar todos los productos visibles</span>
+      </label>
+      <button type="submit" class="btn btn-warning" id="btn-baja-duplicados" disabled>
+        <i class="bi bi-archive"></i> Dar de baja seleccionados (<span id="contador-duplicados">0</span>)
+      </button>
+    </div>
+  </div>
+{% endif %}
+
+{% for grupo in grupos %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <strong>{{ grupo.productos|length }} coincidencias</strong>
+      <details class="duplicate-signature ms-2">
+        <summary>Comparacion tecnica</summary>
+        <span>{{ grupo.firma }}</span>
+      </details>
+    </div>
+    <span class="badge bg-light text-dark border">Stock combinado: {{ grupo.stock_total }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 duplicate-review-table">
+      <thead>
+        <tr>
+          {% if session.get('rol') == 'admin' %}<th class="text-center">Baja</th>{% endif %}
+          <th>Codigo</th>
+          <th>Descripcion completa</th>
+          <th class="text-end">Stock</th>
+          <th>Unidad</th>
+          <th>Categoria</th>
+          <th>Ubicacion</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for p in grupo.productos %}
+        <tr>
+          {% if session.get('rol') == 'admin' %}
+          <td class="text-center"><input type="checkbox" class="form-check-input chk-duplicado" name="ids" value="{{ p.id }}" aria-label="Seleccionar {{ p.codigo }}"></td>
+          {% endif %}
+          <td class="font-monospace fw-semibold duplicate-code">{{ p.codigo }}</td>
+          <td class="duplicate-description"><div>{{ p.descripcion }}</div></td>
+          <td class="text-end fw-semibold">{{ p.stock_actual }}</td>
+          <td>{{ p.unidad_medida or '-' }}</td>
+          <td>{{ p.categoria or '-' }}</td>
+          <td>{{ p.ubicacion or '-' }}</td>
+          <td class="text-end text-nowrap duplicate-actions">
+            <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('inventario.movimientos', pid=p.id) }}" title="Ver movimientos"><i class="bi bi-clock-history"></i></a>
+            {% if session.get('rol') == 'admin' %}
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('inventario.editar', pid=p.id) }}" title="Editar"><i class="bi bi-pencil"></i></a>
+            <button type="submit" formaction="{{ url_for('inventario.baja', pid=p.id) }}"
+                    class="btn btn-sm btn-outline-danger" title="Dar de baja"
+                    onclick="return confirm('Dar de baja este producto? Se guardaran automaticamente tu usuario y la fecha.');">
+              <i class="bi bi-archive"></i>
+            </button>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body empty-state">No se encontraron coincidencias con este filtro.</div></div>
+{% endfor %}
+
+{% if session.get('rol') == 'admin' and grupos %}
+</form>
+<script>
+(function () {
+  const form = document.getElementById('form-baja-duplicados');
+  const todos = document.getElementById('seleccionar-todos-duplicados');
+  const checks = [...document.querySelectorAll('.chk-duplicado')];
+  const boton = document.getElementById('btn-baja-duplicados');
+  const contador = document.getElementById('contador-duplicados');
+  function actualizar() {
+    const cantidad = checks.filter(check => check.checked).length;
+    contador.textContent = cantidad;
+    boton.disabled = cantidad === 0;
+    todos.checked = cantidad > 0 && cantidad === checks.length;
+    todos.indeterminate = cantidad > 0 && cantidad < checks.length;
+  }
+  todos.addEventListener('change', function () {
+    checks.forEach(check => { check.checked = todos.checked; });
+    actualizar();
+  });
+  checks.forEach(check => check.addEventListener('change', actualizar));
+  form.addEventListener('submit', function (event) {
+    if (event.submitter && event.submitter.formAction !== form.action) return;
+    const cantidad = checks.filter(check => check.checked).length;
+    if (!cantidad || !confirm(`Dar de baja ${cantidad} producto(s) seleccionado(s)? Se guardaran tu usuario y la fecha.`)) {
+      event.preventDefault();
+    }
+  });
+})();
+</script>
+{% endif %}
+
+{% if total_paginas > 1 %}
+<nav aria-label="Paginacion de duplicados">
+  <ul class="pagination justify-content-center">
+    <li class="page-item {{ 'disabled' if pagina_actual <= 1 }}"><a class="page-link" href="{{ url_for('inventario.duplicados', q=q, pagina=pagina_actual-1) }}">Anterior</a></li>
+    <li class="page-item disabled"><span class="page-link">Pagina {{ pagina_actual }} de {{ total_paginas }}</span></li>
+    <li class="page-item {{ 'disabled' if pagina_actual >= total_paginas }}"><a class="page-link" href="{{ url_for('inventario.duplicados', q=q, pagina=pagina_actual+1) }}">Siguiente</a></li>
+  </ul>
+</nav>
+{% endif %}
+{% endblock %}

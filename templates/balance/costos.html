@@ -1,0 +1,255 @@
+{% extends 'base.html' %}
+{% block title %}Costos y gráficos{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-graph-up-arrow text-primary"></i> Costos por producto y comparación mensual</h1>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="POST" id="form-costos">
+      <input type="hidden" name="accion" value="agregar_producto">
+      <div class="row g-3 mb-3 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">Mes A (actual)</label>
+          <select name="mes_a" form="form-periodo" class="form-select" onchange="document.getElementById('form-periodo').submit()">
+            {% for i in range(1,13) %}
+            <option value="{{ i }}" {{ 'selected' if i == mes_a }}>{{ meses[i] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">Año A</label>
+          <select name="anio_a" form="form-periodo" class="form-select" onchange="document.getElementById('form-periodo').submit()">
+            {% for a in range(anio_actual-3, anio_actual+1) %}
+            <option value="{{ a }}" {{ 'selected' if a == anio_a }}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">Mes B (comparar contra)</label>
+          <select name="mes_b" form="form-periodo" class="form-select" onchange="document.getElementById('form-periodo').submit()">
+            {% for i in range(1,13) %}
+            <option value="{{ i }}" {{ 'selected' if i == mes_b }}>{{ meses[i] }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label fw-semibold">Año B</label>
+          <select name="anio_b" form="form-periodo" class="form-select" onchange="document.getElementById('form-periodo').submit()">
+            {% for a in range(anio_actual-3, anio_actual+1) %}
+            <option value="{{ a }}" {{ 'selected' if a == anio_b }}>{{ a }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <hr>
+      <label class="form-label fw-semibold">Agregar producto a la comparación</label>
+      <div class="row g-2 mb-2">
+        <div class="col-md-8 position-relative">
+          <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
+                 placeholder="Busca por código o descripción, ej: tornillo 1/4">
+          <input type="hidden" name="producto_id" id="producto_id">
+          <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+               style="z-index:20; max-height:280px; overflow-y:auto; display:none;"></div>
+        </div>
+        <div class="col-md-2">
+          <button type="submit" id="btn-agregar" class="btn btn-primary w-100">
+            <i class="bi bi-plus-lg"></i> Agregar
+          </button>
+        </div>
+        {% if filas %}
+        <div class="col-md-2">
+          <button type="submit" name="accion" value="limpiar_seleccion" formnovalidate class="btn btn-outline-danger w-100"
+                  onclick="return confirm('¿Quitar todos los productos de esta comparación?')">
+            <i class="bi bi-x-lg"></i> Limpiar
+          </button>
+        </div>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<form method="GET" id="form-periodo"></form>
+
+<form method="POST" action="{{ url_for('balance.quitar_costo') }}" id="form-quitar-oculto" style="display:none">
+  <input type="hidden" name="producto_id" id="quitar-producto-id">
+  <input type="hidden" name="mes_a" value="{{ mes_a }}">
+  <input type="hidden" name="anio_a" value="{{ anio_a }}">
+  <input type="hidden" name="mes_b" value="{{ mes_b }}">
+  <input type="hidden" name="anio_b" value="{{ anio_b }}">
+</form>
+
+{% if filas %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-4">
+    <div class="stat-card" style="background:linear-gradient(135deg,#0d6efd,#0a58ca)">
+      <div style="font-size:.8rem;opacity:.85">Gasto total (con IVA) {{ meses[mes_a] }} {{ anio_a }}</div>
+      <div style="font-size:1.6rem;font-weight:700">${{ total_a|moneda }}</div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    <div class="stat-card" style="background:linear-gradient(135deg,#6c757d,#495057)">
+      <div style="font-size:.8rem;opacity:.85">Gasto total (con IVA) {{ meses[mes_b] }} {{ anio_b }}</div>
+      <div style="font-size:1.6rem;font-weight:700">${{ total_b|moneda }}</div>
+    </div>
+  </div>
+  <div class="col-lg-4">
+    {% set var_total = ((total_a - total_b) / total_b * 100) if total_b else None %}
+    <div class="stat-card" style="background:linear-gradient(135deg,{{ '#dc3545,#a71d2a' if var_total and var_total > 0 else '#198754,#146c43' }})">
+      <div style="font-size:.8rem;opacity:.85">Variación</div>
+      <div style="font-size:1.6rem;font-weight:700">{{ ('%.1f'|format(var_total)) + '%' if var_total is not none else 'N/D' }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header">Comparación de importe por producto (hasta 30)</div>
+  <div class="card-body" style="max-height:700px; overflow-y:auto">
+    <canvas id="graficaCostos" height="{{ (filas|length * 32) if filas else 90 }}"></canvas>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span>Detalle</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle">
+      <thead>
+        <tr>
+          <th rowspan="2" class="align-middle">Código</th>
+          <th rowspan="2" class="align-middle">Descripción</th>
+          <th colspan="4" class="text-center">{{ meses[mes_a] }} {{ anio_a }}</th>
+          <th colspan="4" class="text-center">{{ meses[mes_b] }} {{ anio_b }}</th>
+          <th rowspan="2" class="align-middle">Variación</th>
+          <th rowspan="2" class="align-middle"></th>
+        </tr>
+        <tr>
+          <th>Cant.</th><th>P. Unit. prom.</th><th>Importe</th><th>IVA</th><th>Importe total</th>
+          <th>Cant.</th><th>P. Unit. prom.</th><th>Importe</th><th>IVA</th><th>Importe total</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in filas %}
+        <tr>
+          <td class="font-monospace">{{ f.codigo }}</td>
+          <td>{{ f.descripcion }}</td>
+          <td>{{ f.a.cantidad }} {{ f.unidad_medida }}</td>
+          <td>${{ f.a.precio_prom|moneda }}</td>
+          <td>${{ f.a.importe|moneda }}</td>
+          <td class="text-muted">${{ f.a.iva|moneda }}</td>
+          <td class="fw-semibold">${{ f.a.importe_total|moneda }}</td>
+          <td>{{ f.b.cantidad }} {{ f.unidad_medida }}</td>
+          <td>${{ f.b.precio_prom|moneda }}</td>
+          <td>${{ f.b.importe|moneda }}</td>
+          <td class="text-muted">${{ f.b.iva|moneda }}</td>
+          <td class="fw-semibold">${{ f.b.importe_total|moneda }}</td>
+          <td class="{{ 'text-danger' if f.variacion and f.variacion > 0 else 'text-success' if f.variacion and f.variacion < 0 else 'text-muted' }}">
+            {{ ('%.1f'|format(f.variacion)) + '%' if f.variacion is not none else 'N/D' }}
+          </td>
+          <td>
+            <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1"
+                    onclick="document.getElementById('quitar-producto-id').value='{{ f.producto_id }}'; document.getElementById('form-quitar-oculto').submit();">
+              <i class="bi bi-x"></i>
+            </button>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="fw-bold">
+          <td colspan="4" class="text-end">Totales:</td>
+          <td colspan="2"></td>
+          <td>${{ total_a|moneda }}</td>
+          <td colspan="2"></td>
+          <td colspan="2"></td>
+          <td>${{ total_b|moneda }}</td>
+          <td colspan="2"></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+  const labels = {{ filas | map(attribute='codigo') | list | tojson }};
+  const dataA = {{ filas | map(attribute='a') | map(attribute='importe_total') | list | tojson }};
+  const dataB = {{ filas | map(attribute='b') | map(attribute='importe_total') | list | tojson }};
+
+  new Chart(document.getElementById('graficaCostos'), {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        { label: '{{ meses[mes_a] }} {{ anio_a }}', data: dataA, backgroundColor: '#0d6efd' },
+        { label: '{{ meses[mes_b] }} {{ anio_b }}', data: dataB, backgroundColor: '#adb5bd' }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: { x: { beginAtZero: true, ticks: { callback: v => '$' + v } } }
+    }
+  });
+</script>
+{% else %}
+<div class="card"><div class="card-body text-center text-muted py-5">
+  Agrega productos para comparar su costo entre {{ meses[mes_a] }} {{ anio_a }} y {{ meses[mes_b] }} {{ anio_b }}.
+</div></div>
+{% endif %}
+
+<script>
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoIdInput = document.getElementById('producto_id');
+  let debounceTimer = null;
+
+  buscador.addEventListener('input', function() {
+    productoIdInput.value = '';
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { resultados.style.display = 'none'; return; }
+    debounceTimer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          if (data.length === 0) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}`;
+              item.addEventListener('click', () => {
+                buscador.value = `${p.codigo} — ${p.descripcion}`;
+                productoIdInput.value = p.id;
+                resultados.style.display = 'none';
+              });
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!resultados.contains(e.target) && e.target !== buscador) resultados.style.display = 'none';
+  });
+
+  document.getElementById('btn-agregar').addEventListener('click', function(e) {
+    if (!productoIdInput.value) {
+      e.preventDefault();
+      alert('Selecciona un producto de la lista de resultados.');
+    }
+  });
+</script>
+{% endblock %}

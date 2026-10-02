@@ -12,3 +12,11 @@ media/products/
 logs/
 .idea/
 .vscode/
+.secret_key
+almacen*.db
+flask_session/
+backups_db/
+exports/
+*.zip
+ORDENES DE COMPRA/
+*.xlsm

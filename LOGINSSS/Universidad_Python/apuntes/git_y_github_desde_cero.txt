@@ -1,0 +1,98 @@
+GIT Y GITHUB DESDE CERO
+========================
+
+ENLACES OFICIALES
+------------------
+Git para Windows: https://git-scm.com/download/win
+Crear cuenta GitHub: https://github.com/signup
+Documentacion: https://docs.github.com/es/get-started
+Libro oficial de Git: https://git-scm.com/book/es/v2
+GitHub Desktop: https://desktop.github.com/download/
+
+CONCEPTOS
+---------
+Git guarda el historial de cambios en tu computadora.
+GitHub guarda repositorios en internet y permite colaborar.
+Un commit es una fotografia del proyecto.
+Una rama permite trabajar una mejora separadamente.
+
+INSTALACION Y CONFIGURACION
+---------------------------
+Instala Git con las opciones predeterminadas. Luego abre PowerShell:
+
+git --version
+git config --global user.name "TU NOMBRE"
+git config --global user.email "TU_CORREO_DE_GITHUB"
+git config --global --list
+
+PRIMERA CONFIGURACION DEL ERP
+-----------------------------
+cd "C:\Users\Almacen\Desktop\ERP\erp_almacen_v3"
+git init
+git status
+
+COMANDOS PRINCIPALES
+--------------------
+git status                 Muestra cambios pendientes.
+git diff                   Muestra el detalle de los cambios.
+git add archivo.py         Prepara un archivo para guardar.
+git add .                  Prepara todos los cambios; revisar status antes.
+git commit -m "Mensaje"   Guarda una fotografia del proyecto.
+git log --oneline          Muestra el historial resumido.
+git branch                 Muestra las ramas.
+git branch nombre          Crea una rama.
+git switch nombre          Cambia de rama.
+git pull                  Trae cambios desde GitHub.
+git push                  Sube commits a GitHub.
+
+CONEXION CON GITHUB
+-------------------
+1. Crea un repositorio en https://github.com/new
+2. Copia su direccion HTTPS.
+3. Desde la carpeta del ERP ejecuta:
+
+git remote add origin https://github.com/TU_USUARIO/NOMBRE_REPOSITORIO.git
+git branch -M main
+git push -u origin main
+
+Para futuros cambios:
+git add .
+git commit -m "Explicacion clara del cambio"
+git push
+
+COMENTARIOS EN PYTHON
+---------------------
+Los comentarios empiezan con # y explican la razon del codigo:
+
+# Validamos antes de guardar para mostrar un mensaje claro al usuario.
+
+Un buen comentario explica por que, no repite lo que ya dice la instruccion.
+
+RUTAS DE WINDOWS
+----------------
+Usa comillas si hay espacios:
+cd "C:\Users\Almacen\Desktop\ERP\erp_almacen_v3"
+
+En Python puedes usar raw strings:
+ruta = r"C:\Users\Almacen\Desktop\ERP\erp_almacen_v3"
+
+FLUJO QUE USAREMOS
+------------------
+1. Ejecutar guardar_avance.bat.
+2. Explicar el cambio antes de hacerlo.
+3. Modificar el codigo.
+4. Reiniciar y probar el servidor si cambia el ERP.
+5. Revisar git status y crear un commit.
+6. Subir a GitHub cuando este probado.
+
+EJEMPLOS DE COMMITS
+-------------------
+git commit -m "Corrige mensaje de codigo de barras duplicado"
+git commit -m "Agrega validacion al registrar productos"
+git commit -m "Documenta primera leccion de Python"
+
+SEGURIDAD
+---------
+No publiques contrasenas, tokens, claves, bases de datos de produccion ni
+datos personales sin revisarlos primero. Antes de usar GitHub configuraremos
+un archivo .gitignore para excluir informacion privada.

@@ -1,0 +1,351 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if producto else 'Nuevo' }} producto{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title">
+    <i class="bi bi-box-seam text-primary"></i>
+    {{ 'Editar producto' if producto else 'Nuevo producto' }}
+  </h1>
+  <a href="{{ url_for('inventario.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="origen" value="{{ origen }}">
+      {% if producto %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Código</label>
+        <input type="text" class="form-control font-monospace" value="{{ producto.codigo }}" disabled>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Código de barras interno</label>
+        <input type="text" class="form-control font-monospace" value="{{ producto.codigo_barras or ('TENSA-' ~ producto.codigo) }}" disabled>
+        <div class="form-text">Este código es interno de TENSA y se usará para escanear productos.</div>
+      </div>
+      {% else %}
+      <div class="alert alert-secondary py-2 mb-3" style="font-size:.85rem">
+        <i class="bi bi-info-circle"></i> El código se genera automáticamente al guardar (formato <strong>PRD-000001</strong>) y el código de barras quedará como <strong>TENSA-PRD-000001</strong>.
+      </div>
+      {% endif %}
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Descripción <span class="text-danger">*</span></label>
+        <input type="text" name="descripcion" class="form-control" required
+               value="{{ producto.descripcion if producto else '' }}">
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Categoría</label>
+          {% set cat_actual = producto.categoria if producto else '' %}
+          <select name="categoria_id" id="categoria_id" class="form-select">
+            <option value="">Sin categoría</option>
+            {% for c in categorias %}
+            <option value="{{ c.id }}" data-nombre="{{ c.nombre }}"
+              {{ 'selected' if producto and producto.categoria_id == c.id }}>
+              {{ c.nombre }}
+            </option>
+            {% endfor %}
+          </select>
+          {% if producto and not producto.categoria_id and producto.categoria_nombre_historico %}
+          <div class="form-text text-warning">
+            <i class="bi bi-exclamation-triangle"></i> Antes tenía la categoría "<strong>{{ producto.categoria_nombre_historico }}</strong>"
+            (ya no está en la lista oficial). Elige la categoría correcta de arriba.
+          </div>
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Unidad de stock <span class="text-danger">*</span></label>
+          {% set unidad_actual = producto.unidad_medida if producto else '' %}
+          <select name="unidad_medida" class="form-select" required>
+            <option value="">Selecciona...</option>
+            {% for u in unidades %}
+            <option value="{{ u }}" {{ 'selected' if unidad_actual == u }}>{{ u }}</option>
+            {% endfor %}
+            {% if unidad_actual and unidad_actual not in unidades %}
+            <option value="{{ unidad_actual }}" selected>{{ unidad_actual }} (actual)</option>
+            {% endif %}
+          </select>
+        </div>
+      </div>
+      <div class="row g-3 mb-3" id="fila_maquina" style="display:none">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Máquina / equipo</label>
+          <select name="maquina" id="maquina" class="form-select">
+            <option value="">Selecciona...</option>
+            {% for m in maquinas %}
+            <option value="{{ m }}" {{ 'selected' if producto and producto.maquina == m }}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6" id="fila_maquina_otro" style="display:none">
+          <label class="form-label fw-semibold">¿Cuál? (otros)</label>
+          <input type="text" name="maquina_otro" id="maquina_otro" class="form-control"
+                 value="{{ producto.maquina_otro if producto else '' }}" placeholder="Especifica la máquina">
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Departamento</label>
+          {% set depto_actual = producto.departamento if producto else '' %}
+          <select name="departamento" class="form-select">
+            <option value="">Sin departamento</option>
+            {% for d in departamentos %}
+            <option value="{{ d }}" {{ 'selected' if depto_actual == d }}>{{ d }}</option>
+            {% endfor %}
+            {% if depto_actual and depto_actual not in departamentos %}
+            <option value="{{ depto_actual }}" selected>{{ depto_actual }} (actual)</option>
+            {% endif %}
+          </select>
+          {% if producto and not producto.departamento and producto.departamento_nombre_historico %}
+          <div class="form-text text-warning">
+            <i class="bi bi-exclamation-triangle"></i> Antes tenía el departamento "<strong>{{ producto.departamento_nombre_historico }}</strong>"
+            (ya no está en la lista oficial). Elige el departamento correcto de arriba.
+          </div>
+          {% endif %}
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Ubicación en almacén <span class="text-danger">*</span></label>
+          <input type="text" name="ubicacion" id="ubicacion" class="form-control" required minlength="6"
+                 value="{{ producto.ubicacion if producto else '' }}"
+                 placeholder="Ej: A-12, Estante 3">
+          <div class="form-text">Mínimo 6 caracteres, ej: "A-12" no basta, usa "A-12 EST3".</div>
+        </div>
+      </div>
+
+      <div class="card border-primary mb-3">
+        <div class="card-header bg-primary text-white">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="usa_conversion" name="usa_conversion"
+                   {{ 'checked' if producto and producto.unidad_compra }}>
+            <label class="form-check-label fw-semibold text-white" for="usa_conversion">
+              <i class="bi bi-arrow-left-right"></i> Producto con conversión de unidades
+            </label>
+          </div>
+        </div>
+        <div class="card-body" id="fila_conversion" style="display:none">
+          <p class="text-muted mb-3" style="font-size:.9rem">
+            <i class="bi bi-info-circle"></i> 
+            Algunos productos llegan en una unidad (ej: kilos) pero se usan en otra (ej: piezas). 
+            Configura aquí cómo convertir automáticamente.
+          </p>
+          
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <i class="bi bi-box-arrow-in"></i> Se compra/recibe en:
+              </label>
+              <select name="unidad_compra" id="unidad_compra" class="form-select form-select-lg">
+                <option value="">-- Selecciona unidad --</option>
+                {% for u in unidades %}
+                <option value="{{ u }}" {{ 'selected' if producto and producto.unidad_compra == u }}>{{ u }}</option>
+                {% endfor %}
+                {% if producto and producto.unidad_compra and producto.unidad_compra not in unidades %}
+                <option value="{{ producto.unidad_compra }}" selected>{{ producto.unidad_compra }} (actual)</option>
+                {% endif %}
+              </select>
+              <div class="form-text">La unidad que ves en remisiones del proveedor</div>
+            </div>
+            
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                <i class="bi bi-box-arrow-out"></i> Se usa/entrega en:
+              </label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text bg-light">
+                  <strong id="unidad_uso_label">PIEZA</strong>
+                </span>
+              </div>
+              <div class="form-text">La unidad en que se usa internamente (seleccionada arriba)</div>
+            </div>
+          </div>
+
+          <div class="row g-3 mb-3">
+            <div class="col-12">
+              <label class="form-label fw-semibold">Tipo de conversión</label>
+              {% set tipo_conv = producto.tipo_conversion if producto and producto.tipo_conversion else 'uso_a_compra' %}
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="border rounded p-2 d-block h-100">
+                    <input class="form-check-input me-1" type="radio" name="tipo_conversion" value="uso_a_compra"
+                           {{ 'checked' if tipo_conv != 'compra_a_uso' }}>
+                    <strong>1 unidad de uso = X unidades de compra</strong>
+                    <div class="text-muted" style="font-size:.82rem">Ej: 1 PIEZA = 2.5 KILOS. Si entran 10 kilos, stock sube 4 piezas.</div>
+                  </label>
+                </div>
+                <div class="col-md-6">
+                  <label class="border rounded p-2 d-block h-100">
+                    <input class="form-check-input me-1" type="radio" name="tipo_conversion" value="compra_a_uso"
+                           {{ 'checked' if tipo_conv == 'compra_a_uso' }}>
+                    <strong>1 unidad de compra = X unidades de uso</strong>
+                    <div class="text-muted" style="font-size:.82rem">Ej: 1 CAJA = 12 PIEZAS. Si entran 5 cajas, stock sube 60 piezas.</div>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                Factor de conversión
+              </label>
+              <div class="input-group input-group-lg">
+                <span class="input-group-text">1</span>
+                <span class="input-group-text" id="factor_unidad_base">PIEZA</span>
+                <span class="input-group-text">=</span>
+                <input type="number" id="factor_conversion" name="factor_conversion" class="form-control" 
+                       min="0.0001" step="0.0001" pattern="[0-9.]+"
+                       value="{{ producto.factor_conversion if producto and producto.factor_conversion else '' }}"
+                       placeholder="Ej: 4">
+                <span class="input-group-text" id="factor_unidad_resultado">KILOGRAMO</span>
+              </div>
+              <div class="form-text mt-1" id="factor-ayuda">Define la equivalencia según el tipo seleccionado.</div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">
+                📊 Vista previa
+              </label>
+              <div class="alert alert-light border" id="vista_previa" style="background-color:#f0f8ff; border-color:#0d6efd">
+                <div style="font-size:.9rem; text-align:center">
+                  Si llegan <strong id="prev_cantidad">100</strong> 
+                  <span id="prev_unidad_compra">KILOGRAMO</span>
+                  <br/>
+                  → Stock será: <strong id="prev_stock">?</strong> 
+                  <span id="prev_unidad_uso">PIEZA</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-info mb-0">
+            <strong>Ejemplo con RAFIA:</strong><br/>
+            • Se compra en: <strong>KILOGRAMO</strong><br/>
+            • Se usa en: <strong>PIEZA</strong><br/>
+            • Factor: <strong>4</strong> (4 kg = 1 pieza)<br/>
+            • Si llegan 412 kilos → Stock será 103 piezas<br/>
+            <small class="text-muted">Las entradas se capturan en kilos y se convierten automáticamente a piezas en stock.</small>
+          </div>
+        </div>
+      </div>
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Stock mínimo</label>
+          <input type="number" name="stock_minimo" class="form-control" min="0" step="0.001"
+                 value="{{ producto.stock_minimo if producto else '0' }}">
+          <div class="form-text">Para alertas de stock bajo.</div>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Precio unitario</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="precio_unitario" class="form-control" min="0" step="0.00001"
+                   value="{{ producto.precio_unitario if producto else '0' }}">
+          </div>
+          <div class="form-text">Se usa como referencia al registrar entradas.</div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 flex-wrap">
+        <button type="submit" name="accion" value="finalizar" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {{ 'Guardar cambios' if producto else 'Registrar producto' }}
+        </button>
+        {% if not producto and origen != 'entradas' %}
+        <button type="submit" name="accion" value="otro" class="btn btn-outline-primary">
+          <i class="bi bi-plus-lg"></i> Guardar y registrar otro
+        </button>
+        {% endif %}
+        <a href="{{ url_for('entradas.nuevo') if origen == 'entradas' else url_for('inventario.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  const CATS_MAQUINA = {{ categorias_con_maquina | tojson }};
+  const catSel = document.getElementById('categoria_id');
+  const filaMaquina = document.getElementById('fila_maquina');
+  const maquinaSel = document.getElementById('maquina');
+  const filaOtro = document.getElementById('fila_maquina_otro');
+
+  function actualizarMaquina() {
+    const opt = catSel.options[catSel.selectedIndex];
+    const nombre = opt ? opt.getAttribute('data-nombre') : null;
+    if (nombre && CATS_MAQUINA.includes(nombre)) {
+      filaMaquina.style.display = '';
+    } else {
+      filaMaquina.style.display = 'none';
+      maquinaSel.value = '';
+      filaOtro.style.display = 'none';
+    }
+    actualizarOtro();
+  }
+  function actualizarOtro() {
+    filaOtro.style.display = (maquinaSel.value === 'Otros') ? '' : 'none';
+  }
+  catSel.addEventListener('change', actualizarMaquina);
+  maquinaSel.addEventListener('change', actualizarOtro);
+  actualizarMaquina();
+
+  const usaConversion = document.getElementById('usa_conversion');
+  const filaConversion = document.getElementById('fila_conversion');
+  const unidadMedida = document.querySelector('select[name="unidad_medida"]');
+  const unidadCompra = document.getElementById('unidad_compra');
+  const factorConversion = document.getElementById('factor_conversion');
+  const tipoConversionRadios = document.querySelectorAll('input[name="tipo_conversion"]');
+
+  // Mostrar/ocultar sección de conversión
+  function actualizarConversion() {
+    filaConversion.style.display = usaConversion.checked ? '' : 'none';
+    actualizarVista();
+  }
+
+  // Actualizar vista previa cuando cambian los valores
+  function actualizarVista() {
+    const unidadUso = unidadMedida.value || 'PIEZA';
+    const unidadCom = unidadCompra.value || 'KILOGRAMO';
+    const factor = parseFloat(factorConversion.value) || 0;
+    const tipo = document.querySelector('input[name="tipo_conversion"]:checked')?.value || 'uso_a_compra';
+
+    // Actualizar etiquetas
+    document.getElementById('unidad_uso_label').textContent = unidadUso;
+    document.getElementById('factor_unidad_base').textContent = tipo === 'compra_a_uso' ? unidadCom : unidadUso;
+    document.getElementById('factor_unidad_resultado').textContent = tipo === 'compra_a_uso' ? unidadUso : unidadCom;
+    document.getElementById('prev_unidad_compra').textContent = unidadCom;
+    document.getElementById('prev_unidad_uso').textContent = unidadUso;
+    document.getElementById('factor-ayuda').textContent = tipo === 'compra_a_uso'
+      ? `¿Cuántas ${unidadUso} trae 1 ${unidadCom}?`
+      : `¿Cuántas ${unidadCom} equivalen a 1 ${unidadUso}?`;
+
+    // Calcular ejemplo
+    const cantidadEjemplo = 100;
+    const stockResultado = factor > 0
+      ? (tipo === 'compra_a_uso' ? cantidadEjemplo * factor : cantidadEjemplo / factor).toFixed(2)
+      : '?';
+    
+    document.getElementById('prev_cantidad').textContent = cantidadEjemplo;
+    document.getElementById('prev_stock').textContent = stockResultado;
+
+    // Color visual según esté lleno
+    const vistaPrevia = document.getElementById('vista_previa');
+    if (factor > 0 && unidadCom && unidadUso) {
+      vistaPrevia.style.backgroundColor = '#d4edda';
+      vistaPrevia.style.borderColor = '#28a745';
+    } else {
+      vistaPrevia.style.backgroundColor = '#f0f8ff';
+      vistaPrevia.style.borderColor = '#0d6efd';
+    }
+  }
+
+  // Event listeners
+  usaConversion.addEventListener('change', actualizarConversion);
+  unidadMedida.addEventListener('change', actualizarVista);
+  unidadCompra.addEventListener('change', actualizarVista);
+  factorConversion.addEventListener('input', actualizarVista);
+  tipoConversionRadios.forEach(radio => radio.addEventListener('change', actualizarVista));
+  
+  actualizarConversion();
+
+  // Refuerzo de validación de ubicación en el cliente (letras/números, min 6)
+  document.getElementById('ubicacion').addEventListener('input', function() {
+    this.setCustomValidity(this.value.trim().length < 6 ? 'La ubicación debe tener al menos 6 caracteres.' : '');
+  });
+</script>
+{% endblock %}

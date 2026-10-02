@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block title %}Reportes de movimientos{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-bar-chart-line"></i> Reportes</span>
+    <h1 class="page-title mb-1">Reportes de movimientos</h1>
+    <div class="text-muted" style="font-size:.88rem">
+      Exporta y revisa entradas, salidas y movimientos por periodo.
+    </div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('reportes.exportar_csv', fecha_ini=fecha_ini, fecha_fin=fecha_fin, tipo=tipo, producto_q=producto_q) }}"
+       class="btn btn-sm btn-success"><i class="bi bi-file-earmark-excel"></i> Exportar CSV</a>
+    <a href="{{ url_for('reportes.exportar_pdf', fecha_ini=fecha_ini, fecha_fin=fecha_fin, tipo=tipo, producto_q=producto_q) }}"
+       class="btn btn-sm btn-danger" target="_blank"><i class="bi bi-file-earmark-pdf"></i> Ver PDF</a>
+  </div>
+</div>
+
+{% set entradas = movimientos | selectattr('tipo', 'equalto', 'Entrada') | list %}
+{% set salidas  = movimientos | selectattr('tipo', 'equalto', 'Salida')  | list %}
+
+<div class="module-stats mb-3">
+  <div class="mini-stat">
+    <span class="mini-stat-label">Entradas</span>
+    <strong class="text-success">{{ entradas | length }}</strong>
+    <small>en el periodo</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Salidas</span>
+    <strong class="text-warning">{{ salidas | length }}</strong>
+    <small>en el periodo</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Movimientos</span>
+    <strong>{{ movimientos | length }}</strong>
+    <small>total filtrado</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Filtro</span>
+    <strong>{{ tipo or 'Todos' }}</strong>
+    <small>{{ producto_q or 'sin producto especifico' }}</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Periodo</span>
+    <strong style="font-size:1rem">{{ fecha_ini or '-' }}</strong>
+    <small>hasta {{ fecha_fin or '-' }}</small>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-lg-4 col-md-6">
+        <label class="form-label">Producto</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" name="producto_q" class="form-control" placeholder="Codigo o producto" value="{{ producto_q }}">
+        </div>
+      </div>
+      <div class="col-lg-2 col-md-6">
+        <label class="form-label">Desde</label>
+        <input type="date" name="fecha_ini" class="form-control" value="{{ fecha_ini }}">
+      </div>
+      <div class="col-lg-2 col-md-6">
+        <label class="form-label">Hasta</label>
+        <input type="date" name="fecha_fin" class="form-control" value="{{ fecha_fin }}">
+      </div>
+      <div class="col-lg-2 col-md-6">
+        <label class="form-label">Tipo</label>
+        <select name="tipo" class="form-select">
+          <option value="">Entradas y salidas</option>
+          <option value="entrada" {{ 'selected' if tipo=='entrada' }}>Solo entradas</option>
+          <option value="salida" {{ 'selected' if tipo=='salida' }}>Solo salidas</option>
+        </select>
+      </div>
+      <div class="col-lg-2 col-md-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-search"></i></button>
+        <a href="{{ url_for('reportes.index') }}" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card reports-table-card">
+  <div class="table-toolbar">
+    <div>
+      <strong>Movimientos encontrados</strong>
+      <span class="text-muted" style="font-size:.82rem">{{ movimientos|length }} registro(s)</span>
+    </div>
+    <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 reports-table">
+      <thead>
+        <tr>
+          <th class="col-compact">Tipo</th>
+          <th class="col-code">Folio</th>
+          <th class="col-code">Codigo</th>
+          <th class="col-desc">Descripcion</th>
+          <th class="col-compact text-end">Cantidad</th>
+          <th class="col-compact">Unidad</th>
+          <th class="col-fecha">Fecha</th>
+          <th class="col-medium">Usuario</th>
+          <th class="col-medium">Factura/Resp.</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in movimientos %}
+        <tr>
+          <td>
+            {% if m.tipo == 'Entrada' %}
+            <span class="badge bg-success">Entrada</span>
+            {% else %}
+            <span class="badge bg-warning text-dark">Salida</span>
+            {% endif %}
+          </td>
+          <td class="font-monospace">{{ m.folio }}</td>
+          <td class="font-monospace">{{ m.codigo }}</td>
+          <td class="col-wrap">{{ m.descripcion }}</td>
+          <td class="text-end {{ 'text-success' if m.tipo=='Entrada' else 'text-danger' }} fw-bold">
+            {{ '+' if m.tipo=='Entrada' else '-' }}{{ m.cantidad }}
+          </td>
+          <td>{{ m.cantidad|cantidad_unidad(m.unidad_medida) }}</td>
+          <td>{{ m.fecha[:10] if m.fecha else '-' }}</td>
+          <td>{{ m.usuario or '-' }}</td>
+          <td>{{ m.no_factura or m.responsable or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="empty-state">Sin registros con los filtros aplicados.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,749 @@
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from routes.auth import login_required
+from database import get_db, next_folio, log_actividad, get_folio_diario, set_folio_diario
+from routes.inventario import construir_busqueda_dinamica
+from constantes import DEPARTAMENTOS
+from datetime import date, datetime
+import re
+
+entradas_bp = Blueprint('entradas', __name__, url_prefix='/entradas')
+
+CART_KEY = 'entrada_cart'
+DOC_KEY = 'entrada_doc'
+
+
+def _subtotal_real(entrada_row):
+    """Calcula el subtotal (sin IVA) confiable de una entrada.
+
+    Algunas entradas vienen de la importación masiva del Excel War Machine,
+    donde la columna 'Importe' del Excel a veces ya traía el IVA incluido
+    (el importe de la factura, no el subtotal). Si confiamos ciegamente en
+    el campo `importe` guardado y le volvemos a sumar 16% de IVA, el total
+    sale duplicado.
+
+    cantidad * precio_unitario SÍ es confiable como subtotal (precio_unitario
+    es el precio unitario antes de IVA), así que se usa como fuente principal.
+    Solo si no hay precio_unitario capturado (0 o nulo) se usa el `importe`
+    guardado como respaldo, para no perder el dato en esos casos.
+    """
+    cantidad = entrada_row['cantidad'] or 0
+    precio_unitario = entrada_row['precio_unitario'] or 0
+    if precio_unitario:
+        return round(cantidad * precio_unitario, 2)
+    return round(entrada_row['importe'] or 0, 2)
+
+
+def _normalizar_unidad(unidad):
+    """Normaliza nombres de unidades para que sean consistentes.
+    
+    Convierte:
+      - 'kilogramo', 'KILOGRAMO', 'kg', 'KG' → 'KILO'
+      - Mantiene otros valores sin cambios
+    """
+    if not unidad:
+        return unidad
+    
+    unidad_upper = str(unidad).upper().strip()
+    
+    # Mapeo de variaciones a estándar
+    normalizacion = {
+        'KILOGRAMO': 'KILO',
+        'KG': 'KILO',
+        'KILOGRAMOS': 'KILO',
+    }
+    
+    return normalizacion.get(unidad_upper, unidad)
+
+
+def _vincular_con_requisicion(conn, doc):
+    """Si el documento de la entrada trae un número de requisición (ej. '12' o 'AL-12'),
+    busca la requisición con ese folio y completa (sin sobreescribir lo ya capturado) sus
+    campos de seguimiento con la orden de compra / factura / remisión de esta entrada, para
+    que el estatus de la requisición se pueda rastrear desde ahí."""
+    texto = (doc.get('no_requisicion') or '').strip()
+    if not texto:
+        return
+    m = re.search(r'(\d+)', texto)
+    if not m:
+        return
+    folio_num = int(m.group(1))
+    req = conn.execute("SELECT * FROM requisiciones WHERE folio=?", (folio_num,)).fetchone()
+    if not req:
+        return
+    cambios = {}
+    if not req['orden_compra'] and doc.get('orden_compra'):
+        cambios['orden_compra'] = doc.get('orden_compra')
+    if not req['no_factura'] and doc.get('no_factura'):
+        cambios['no_factura'] = doc.get('no_factura')
+    if not req['no_remision'] and doc.get('no_remision'):
+        cambios['no_remision'] = doc.get('no_remision')
+    if cambios:
+        set_clause = ", ".join(f"{k}=?" for k in cambios)
+        conn.execute(f"UPDATE requisiciones SET {set_clause} WHERE id=?",
+                     (*cambios.values(), req['id']))
+        conn.commit()
+    flash(f'Esta entrada se vinculó con la requisición AL-{folio_num}.', 'info')
+
+
+@entradas_bp.route('/')
+@login_required
+def index():
+    fecha_ini = request.args.get('fecha_ini', '')
+    fecha_fin = request.args.get('fecha_fin', '')
+    q = request.args.get('q', '').strip()
+    q_doc = request.args.get('q_doc', '').strip()
+    q_doc_campo = request.args.get('q_doc_campo', '').strip()
+    q_prov = request.args.get('q_prov', '').strip()
+    pagina = request.args.get('pagina', 1, type=int)
+    registros_por_pagina = 50
+    
+    conn = get_db()
+    query = """
+        SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
+               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(p.unidad_medida, 'SERVICIO') as unidad_medida,
+               p.unidad_compra, p.factor_conversion,
+               u.nombre as usuario_nombre, COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
+        FROM entradas e
+        LEFT JOIN productos p ON e.producto_id=p.id
+        LEFT JOIN usuarios u ON e.usuario_id=u.id
+        LEFT JOIN proveedores pr ON e.proveedor_id=pr.id
+        WHERE 1=1
+    """
+    params = []
+    if fecha_ini:
+        query += " AND DATE(e.fecha) >= ?"; params.append(fecha_ini)
+    if fecha_fin:
+        query += " AND DATE(e.fecha) <= ?"; params.append(fecha_fin)
+    if q:
+        cond, cond_params = construir_busqueda_dinamica(q, ["p.codigo", "p.descripcion"])
+        if cond:
+            query += f" AND {cond}"
+            params += cond_params
+    if q_doc:
+        campos_doc = {
+            'factura': 'e.no_factura',
+            'remision': 'e.no_remision',
+            'requisicion': 'e.no_requisicion',
+            'oc': 'e.orden_compra',
+            'folio': 'e.folio',
+        }
+        if q_doc_campo in campos_doc:
+            # Campo específico elegido: búsqueda PARCIAL (LIKE)
+            # Permite encontrar "41" dentro de "OC-4140-B"
+            columna = campos_doc[q_doc_campo]
+            query += f" AND TRIM(UPPER({columna})) LIKE TRIM(UPPER(?))"
+            params.append(f"%{q_doc}%")
+        else:
+            # 'Todos': búsqueda flexible parcial en cualquiera de los campos
+            columnas_doc = ["e.no_factura", "e.no_remision", "e.no_requisicion", "e.orden_compra", "e.folio"]
+            cond, cond_params = construir_busqueda_dinamica(q_doc, columnas_doc)
+            if cond:
+                query += f" AND {cond}"
+                params += cond_params
+    if q_prov:
+        cond, cond_params = construir_busqueda_dinamica(q_prov, ["pr.nombre"])
+        if cond:
+            query += f" AND {cond}"
+            params += cond_params
+    query += " ORDER BY e.fecha DESC"
+    
+    entradas_completo = conn.execute(query, params).fetchall()
+    total_registros = len(entradas_completo)
+    total_paginas = (total_registros + registros_por_pagina - 1) // registros_por_pagina
+    
+    if pagina < 1:
+        pagina = 1
+    elif pagina > total_paginas and total_paginas > 0:
+        pagina = total_paginas
+    
+    offset = (pagina - 1) * registros_por_pagina
+    entradas_pagina = entradas_completo[offset:offset + registros_por_pagina]
+
+    entradas = []
+    for e in entradas_pagina:
+        fila = dict(e)
+        fila['subtotal_real'] = _subtotal_real(e)
+        fila['importe_con_iva'] = round(fila['subtotal_real'] * 1.16, 2)
+        fila['unidad_medida'] = _normalizar_unidad(fila.get('unidad_medida'))
+        entradas.append(fila)
+
+    total_importe = round(sum(_subtotal_real(e) for e in entradas_completo), 2)
+    total_iva = round(total_importe * 0.16, 2)
+    total_general = round(total_importe + total_iva, 2)
+    filtro_activo = bool(fecha_ini or fecha_fin or q or q_doc or q_prov)
+    conn.close()
+    return render_template('entradas/index.html', entradas=entradas,
+                           fecha_ini=fecha_ini, fecha_fin=fecha_fin,
+                           q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov,
+                           total_importe=total_importe, total_iva=total_iva,
+                           total_general=total_general, filtro_activo=filtro_activo,
+                           pagina_actual=pagina, total_paginas=total_paginas,
+                           total_registros=total_registros, registros_pagina=len(entradas))
+
+
+@entradas_bp.route('/api/buscar_documento')
+@login_required
+def api_buscar_documento():
+    """Autocompletado para el buscador de Factura/Remisión/Requisición/OC/Folio.
+    Devuelve valores EXACTOS que existen en la BD y contienen el texto escrito,
+    para que el usuario pueda escribir solo una parte y elegir el valor completo
+    con un clic (así el filtro sigue siendo una coincidencia exacta y no arrastra
+    documentos distintos que solo comparten dígitos)."""
+    campo = request.args.get('campo', '').strip()
+    q = request.args.get('q', '').strip()
+    if len(q) < 2:
+        return jsonify([])
+
+    campos_doc = {
+        'factura': ('no_factura', 'Factura'),
+        'remision': ('no_remision', 'Remisión'),
+        'requisicion': ('no_requisicion', 'Requisición'),
+        'oc': ('orden_compra', 'OC'),
+        'folio': ('folio', 'Folio'),
+    }
+    columnas = [campos_doc[campo]] if campo in campos_doc else list(campos_doc.values())
+
+    conn = get_db()
+    resultados = []
+    for columna, etiqueta in columnas:
+        filas = conn.execute(f"""
+            SELECT {columna} AS valor, MAX(e.fecha) AS fecha, COUNT(*) AS num_renglones
+            FROM entradas e
+            WHERE {columna} IS NOT NULL AND TRIM({columna}) != '' AND {columna} LIKE ?
+            GROUP BY {columna}
+            ORDER BY fecha DESC
+            LIMIT 10
+        """, (f'%{q}%',)).fetchall()
+        for f in filas:
+            resultados.append({
+                'valor': f['valor'],
+                'campo_label': etiqueta,
+                'campo_key': [k for k, v in campos_doc.items() if v[1] == etiqueta][0],
+                'fecha': (f['fecha'] or '')[:10],
+                'num_renglones': f['num_renglones'],
+            })
+    conn.close()
+
+    resultados = resultados[:15]
+    return jsonify(resultados)
+
+
+@entradas_bp.route('/nuevo', methods=['GET', 'POST'])
+@login_required
+def nuevo():
+    conn = get_db()
+    proveedores = conn.execute(
+        "SELECT * FROM proveedores WHERE activo=1 ORDER BY nombre").fetchall()
+
+    if request.method == 'POST':
+        accion = request.form.get('accion')
+
+        # Los datos del documento se guardan en sesión cada vez que se envía el formulario
+        session[DOC_KEY] = {
+            'no_requisicion': request.form.get('no_requisicion', ''),
+            'no_factura': request.form.get('no_factura', ''),
+            'orden_compra': request.form.get('orden_compra', ''),
+            'no_remision': request.form.get('no_remision', ''),
+            'solo_remision': bool(request.form.get('solo_remision')),
+            'proveedor_id': request.form.get('proveedor_id', ''),
+            'proveedor_texto': request.form.get('buscador_proveedor_valor') or session.get(DOC_KEY, {}).get('proveedor_texto', ''),
+            'observaciones': request.form.get('observaciones', ''),
+            'tipo_movimiento': request.form.get('tipo_movimiento', 'normal'),
+            'fecha_captura': request.form.get('fecha_captura') or session.get(DOC_KEY, {}).get('fecha_captura', ''),
+        }
+        session.modified = True
+
+        if accion == 'ir_nuevo_producto':
+            conn.close()
+            return redirect(url_for('inventario.nuevo', origen='entradas'))
+
+        elif accion == 'agregar_item':
+            pid = request.form.get('producto_id')
+            cantidad = request.form.get('cantidad')
+            precio = request.form.get('precio_unitario') or 0
+            departamento_item = request.form.get('departamento_item') or None
+            if not pid or not cantidad:
+                flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
+            else:
+                prod = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
+                if not prod:
+                    flash('El producto seleccionado no existe.', 'danger')
+                else:
+                    cantidad = float(cantidad)
+                    precio = float(precio)
+                    tiene_conversion = bool(prod['unidad_compra'] and prod['factor_conversion'])
+                    cantidad_piezas = round(cantidad / prod['factor_conversion'], 4) if tiene_conversion else cantidad
+                    cart = session.get(CART_KEY, [])
+                    cart.append({
+                        'producto_id': prod['id'], 'codigo': prod['codigo'],
+                        'descripcion': prod['descripcion'],
+                        'unidad_medida': prod['unidad_compra'] if tiene_conversion else prod['unidad_medida'],
+                        'cantidad': cantidad, 'precio_unitario': precio,
+                        'importe': round(cantidad * precio, 4),
+                        'departamento': departamento_item or prod['departamento'],
+                        'tiene_conversion': tiene_conversion,
+                        'cantidad_piezas': cantidad_piezas,
+                        'unidad_piezas': prod['unidad_medida'],
+                        'es_servicio': False,
+                    })
+                    session[CART_KEY] = cart
+                    session.modified = True
+                    if tiene_conversion:
+                        flash(f"{prod['codigo']} agregado a la lista ({cantidad} {prod['unidad_compra']} = {cantidad_piezas} {prod['unidad_medida']}).", 'success')
+                    else:
+                        flash(f"{prod['codigo']} agregado a la lista.", 'success')
+            conn.close()
+            return redirect(url_for('entradas.nuevo'))
+
+        elif accion == 'agregar_servicio':
+            # Cargos de la factura que NO son un producto de inventario
+            # (servicios, flete, instalación, etc.) — no afectan stock ni
+            # requieren dar de alta nada en el catálogo.
+            concepto = (request.form.get('concepto_servicio') or '').strip()
+            cantidad_raw = request.form.get('cantidad_servicio') or '1'
+            precio_raw = request.form.get('precio_servicio') or '0'
+            departamento_item = request.form.get('departamento_item_servicio') or None
+            if not concepto:
+                flash('Escribe una descripción para el servicio o cargo (ej. "Flete", "Servicio de instalación").', 'danger')
+            else:
+                try:
+                    cantidad = float(cantidad_raw)
+                    precio = float(precio_raw)
+                except ValueError:
+                    cantidad, precio = 1.0, 0.0
+                cart = session.get(CART_KEY, [])
+                cart.append({
+                    'producto_id': None, 'codigo': 'SERVICIO',
+                    'descripcion': concepto,
+                    'unidad_medida': 'SERVICIO',
+                    'cantidad': cantidad, 'precio_unitario': precio,
+                    'importe': round(cantidad * precio, 4),
+                    'departamento': departamento_item,
+                    'tiene_conversion': False,
+                    'cantidad_piezas': cantidad,
+                    'unidad_piezas': 'SERVICIO',
+                    'es_servicio': True,
+                    'concepto_servicio': concepto,
+                })
+                session[CART_KEY] = cart
+                session.modified = True
+                flash(f'"{concepto}" agregado a la lista como servicio/cargo (sin afectar stock).', 'success')
+            conn.close()
+            return redirect(url_for('entradas.nuevo'))
+
+        elif accion == 'quitar_item':
+            idx = int(request.form.get('idx', -1))
+            cart = session.get(CART_KEY, [])
+            if 0 <= idx < len(cart):
+                cart.pop(idx)
+                session[CART_KEY] = cart
+                session.modified = True
+            conn.close()
+            return redirect(url_for('entradas.nuevo'))
+
+        elif accion == 'guardar_todo':
+            cart = session.get(CART_KEY, [])
+            doc = session.get(DOC_KEY, {})
+            if not cart:
+                flash('Agrega al menos un producto a la lista antes de guardar.', 'danger')
+                conn.close()
+                return redirect(url_for('entradas.nuevo'))
+            if not doc.get('solo_remision') and not (doc.get('orden_compra') or '').strip():
+                flash('La orden de compra es obligatoria. Si esta captura es solo una remisión '
+                      '(todavía sin OC, factura ni requisición), marca la casilla correspondiente.', 'danger')
+                conn.close()
+                return redirect(url_for('entradas.nuevo'))
+            try:
+                prov_id = doc.get('proveedor_id') or None
+                tipo_mov = doc.get('tipo_movimiento') or 'normal'
+                fecha_captura = doc.get('fecha_captura') or datetime.now().strftime('%Y-%m-%dT%H:%M')
+                fecha_sql = fecha_captura.replace('T', ' ') + (':00' if fecha_captura.count(':') == 1 else '')
+                folios_generados = []
+                for item in cart:
+                    conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo = 'entrada'")
+                    num = conn.execute("SELECT ultimo FROM folios WHERE tipo = 'entrada'").fetchone()[0]
+                    folio = f"ENT-{str(num).zfill(6)}"
+                    conn.execute("""
+                        INSERT INTO entradas
+                        (folio, producto_id, es_servicio, concepto_servicio,
+                         cantidad, cantidad_piezas, precio_unitario, importe,
+                         no_requisicion, no_factura, orden_compra, no_remision,
+                         proveedor_id, departamento, tipo_movimiento, usuario_id, observaciones, fecha)
+                        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, (folio, item.get('producto_id'), int(item.get('es_servicio', False)),
+                          item.get('concepto_servicio'),
+                          item['cantidad'], item.get('cantidad_piezas', item['cantidad']),
+                          item['precio_unitario'],
+                          item['importe'], doc.get('no_requisicion'), doc.get('no_factura'),
+                          doc.get('orden_compra'), doc.get('no_remision'), prov_id,
+                          item.get('departamento'), tipo_mov,
+                          session['user_id'], doc.get('observaciones'), fecha_sql))
+                    if not item.get('es_servicio') and item.get('producto_id'):
+                        conn.execute(
+                            "UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
+                            (item.get('cantidad_piezas', item['cantidad']), item['producto_id']))
+                    folios_generados.append(folio)
+                conn.commit()
+                log_actividad(session['user_id'], 'ENTRADA',
+                              f"Folios: {', '.join(folios_generados)} | Factura: {doc.get('no_factura') or '-'} | Tipo: {tipo_mov}")
+                session.pop(CART_KEY, None)
+                session.pop(DOC_KEY, None)
+
+                # Vínculo automático con Requisiciones: si se capturó no_requisicion,
+                # se busca la requisición con ese folio y se completan (sin pisar) sus
+                # datos de seguimiento (OC/factura/remisión) con los de esta entrada.
+                _vincular_con_requisicion(conn, doc)
+
+                flash(f"{len(folios_generados)} entrada(s) registradas correctamente.", 'success')
+                conn.close()
+                return redirect(url_for('entradas.index'))
+            except Exception as e:
+                conn.rollback()
+                flash(f'Error: {str(e)}', 'danger')
+                conn.close()
+                return redirect(url_for('entradas.nuevo'))
+
+    doc = session.get(DOC_KEY, {})
+    cart = session.get(CART_KEY, [])
+    conn.close()
+    preseleccion_id = request.args.get('agregar')
+    ahora = datetime.now().strftime('%Y-%m-%dT%H:%M')
+    return render_template('entradas/form.html', proveedores=proveedores,
+                           doc=doc, cart=cart, preseleccion_id=preseleccion_id,
+                           departamentos=DEPARTAMENTOS, ahora=ahora)
+
+
+@entradas_bp.route('/cancelar_captura')
+@login_required
+def cancelar_captura():
+    session.pop(CART_KEY, None)
+    session.pop(DOC_KEY, None)
+    flash('Captura cancelada.', 'warning')
+    return redirect(url_for('entradas.index'))
+
+
+@entradas_bp.route('/detalle/<int:eid>')
+@login_required
+def detalle(eid):
+    conn = get_db()
+    entrada = conn.execute("""
+        SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
+               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
+               p.unidad_compra, p.factor_conversion,
+               u.nombre as usuario_nombre, COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
+        FROM entradas e
+        LEFT JOIN productos p ON e.producto_id=p.id
+        LEFT JOIN usuarios u ON e.usuario_id=u.id
+        LEFT JOIN proveedores pr ON e.proveedor_id=pr.id
+        WHERE e.id=?
+    """, (eid,)).fetchone()
+    requisicion_vinculada = None
+    if entrada:
+        m = re.search(r'(\d+)', entrada['no_requisicion'] or '')
+        if m:
+            requisicion_vinculada = conn.execute(
+                "SELECT id, folio FROM requisiciones WHERE folio=?", (int(m.group(1)),)).fetchone()
+    conn.close()
+    if not entrada:
+        flash('Registro no encontrado.', 'danger')
+        return redirect(url_for('entradas.index'))
+    subtotal = _subtotal_real(entrada)
+    iva = round(subtotal * 0.16, 2)
+    total_con_iva = round(subtotal + iva, 2)
+    volver = request.args.get('volver', '')
+    return render_template('entradas/detalle.html', entrada=entrada, requisicion_vinculada=requisicion_vinculada,
+                           subtotal=subtotal, iva=iva, total_con_iva=total_con_iva, volver=volver)
+
+
+@entradas_bp.route('/eliminar/<int:eid>', methods=['POST'])
+@login_required
+def eliminar(eid):
+    """Elimina una entrada capturada por error. Revierte su efecto en el stock del
+    producto (resta lo que esa entrada había sumado) y borra el registro."""
+    volver = request.values.get('volver', '')
+    conn = get_db()
+    entrada = conn.execute("SELECT * FROM entradas WHERE id=?", (eid,)).fetchone()
+    if not entrada:
+        flash('Registro no encontrado.', 'danger')
+        conn.close()
+        return redirect(f"{url_for('entradas.index')}?{volver}" if volver else url_for('entradas.index'))
+    try:
+        cantidad_piezas = entrada['cantidad_piezas'] if entrada['cantidad_piezas'] is not None else entrada['cantidad']
+        conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
+                    (cantidad_piezas, entrada['producto_id']))
+        conn.execute("DELETE FROM entradas WHERE id=?", (eid,))
+        conn.commit()
+        log_actividad(session['user_id'], 'ELIMINAR_ENTRADA', f"ID: {eid} | Folio: {entrada['folio']}")
+        flash(f"Entrada (folio {entrada['folio']}) eliminada y stock revertido.", 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'Error al eliminar: {str(e)}', 'danger')
+    conn.close()
+    return redirect(f"{url_for('entradas.index')}?{volver}" if volver else url_for('entradas.index'))
+
+
+@entradas_bp.route('/editar/<int:eid>', methods=['GET', 'POST'])
+@login_required
+def editar(eid):
+    """
+    Completar datos de una entrada capturada solo con remisión (sin factura todavía).
+    Aquí se puede agregar factura, OC, requisición, proveedor, departamento y corregir
+    la fecha para que la entrada aparezca en el reporte diario del día correcto.
+    """
+    conn = get_db()
+    entrada = conn.execute("""
+        SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
+               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
+               COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
+        FROM entradas e
+        LEFT JOIN productos p ON e.producto_id=p.id
+        LEFT JOIN proveedores pr ON e.proveedor_id=pr.id
+        WHERE e.id=?
+    """, (eid,)).fetchone()
+    if not entrada:
+        flash('Registro no encontrado.', 'danger')
+        conn.close()
+        return redirect(url_for('entradas.index'))
+
+    volver = request.values.get('volver', '')
+
+    if request.method == 'POST':
+        f = request.form
+        try:
+            es_servicio = bool(entrada['es_servicio'])
+
+            if es_servicio:
+                # ---- Editar un servicio/cargo (sin producto, sin stock) ----
+                concepto = (f.get('concepto_servicio') or '').strip()
+                cantidad_raw = f.get('cantidad')
+                precio_raw = f.get('precio_unitario') or 0
+                if not concepto or not cantidad_raw:
+                    flash('Escribe una descripción del servicio y la cantidad.', 'danger')
+                    conn.close()
+                    return render_template('entradas/editar.html', entrada=entrada, departamentos=DEPARTAMENTOS, volver=volver)
+
+                cantidad = float(cantidad_raw)
+                precio = float(precio_raw)
+                importe = round(cantidad * precio, 4)
+                pid = None
+                cantidad_piezas_nueva = cantidad
+            else:
+                # ---- Editar una entrada normal (producto de inventario) ----
+                pid = f.get('producto_id')
+                cantidad_raw = f.get('cantidad')
+                precio_raw = f.get('precio_unitario') or 0
+                if not pid or not cantidad_raw:
+                    flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
+                    conn.close()
+                    return render_template('entradas/editar.html', entrada=entrada, departamentos=DEPARTAMENTOS, volver=volver)
+
+                pid = int(pid)
+                cantidad = float(cantidad_raw)
+                precio = float(precio_raw)
+
+                prod_nuevo = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
+                if not prod_nuevo:
+                    flash('El producto seleccionado no existe.', 'danger')
+                    conn.close()
+                    return render_template('entradas/editar.html', entrada=entrada, departamentos=DEPARTAMENTOS, volver=volver)
+
+                tiene_conversion = bool(prod_nuevo['unidad_compra'] and prod_nuevo['factor_conversion'])
+                cantidad_piezas_nueva = round(cantidad / prod_nuevo['factor_conversion'], 4) if tiene_conversion else cantidad
+                importe = round(cantidad * precio, 4)
+                concepto = None
+
+                # Revertir el efecto en stock del producto/cantidad ORIGINAL de esta entrada
+                cantidad_piezas_original = entrada['cantidad_piezas'] if entrada['cantidad_piezas'] is not None else entrada['cantidad']
+                conn.execute("UPDATE productos SET stock_actual = stock_actual - ? WHERE id=?",
+                            (cantidad_piezas_original, entrada['producto_id']))
+
+                # Aplicar el efecto en stock del producto/cantidad NUEVO
+                conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
+                            (cantidad_piezas_nueva, pid))
+
+            fecha = f.get('fecha') or entrada['fecha'][:10]
+            hora = entrada['fecha'][11:] if len(entrada['fecha']) > 10 else '00:00:00'
+            proveedor_id = f.get('proveedor_id') or None
+            conn.execute("""
+                UPDATE entradas SET
+                    producto_id=?, concepto_servicio=?, cantidad=?, cantidad_piezas=?, precio_unitario=?, importe=?,
+                    no_requisicion=?, no_factura=?, orden_compra=?, no_remision=?,
+                    proveedor_id=?, departamento=?, observaciones=?, fecha=?
+                WHERE id=?
+            """, (pid, concepto, cantidad, cantidad_piezas_nueva, precio, importe,
+                  f.get('no_requisicion') or None, f.get('no_factura') or None,
+                  f.get('orden_compra') or None, f.get('no_remision') or None,
+                  proveedor_id, f.get('departamento') or None, f.get('observaciones') or None,
+                  f"{fecha} {hora}", eid))
+            conn.commit()
+            log_actividad(session['user_id'], 'EDITAR_ENTRADA', f"ID: {eid} | Folio: {entrada['folio']}")
+            flash('Entrada actualizada correctamente.', 'success')
+            conn.close()
+            if volver:
+                return redirect(f"{url_for('entradas.index')}?{volver}")
+            return redirect(url_for('entradas.detalle', eid=eid))
+        except Exception as e:
+            conn.rollback()
+            flash(f'Error: {str(e)}', 'danger')
+
+    conn.close()
+    return render_template('entradas/editar.html', entrada=entrada, departamentos=DEPARTAMENTOS, volver=volver)
+
+
+@entradas_bp.route('/carga_inicial', methods=['GET', 'POST'])
+@login_required
+def carga_inicial():
+    """
+    Alta rápida de material que YA está físicamente en el almacén (para completar
+    el catálogo/stock inicial), sin factura, proveedor, orden de compra ni precio.
+    No afecta reportes de costos ni el reporte diario de entradas con factura.
+    """
+    conn = get_db()
+    if request.method == 'POST':
+        f = request.form
+        pid = f.get('producto_id')
+        cantidad_raw = f.get('cantidad')
+        if not pid or not cantidad_raw:
+            flash('Selecciona un producto de la lista y captura la cantidad.', 'danger')
+            conn.close()
+            return render_template('entradas/carga_inicial.html',
+                                   ahora=datetime.now().strftime('%Y-%m-%dT%H:%M'))
+        pid = int(pid)
+        cantidad = float(cantidad_raw)
+        fecha_captura = f.get('fecha_captura') or datetime.now().strftime('%Y-%m-%dT%H:%M')
+        fecha_sql = fecha_captura.replace('T', ' ') + (':00' if fecha_captura.count(':') == 1 else '')
+        prod = conn.execute("SELECT * FROM productos WHERE id=?", (pid,)).fetchone()
+        if not prod:
+            flash('El producto seleccionado no existe.', 'danger')
+        else:
+            try:
+                conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo = 'entrada'")
+                num = conn.execute("SELECT ultimo FROM folios WHERE tipo = 'entrada'").fetchone()[0]
+                folio = f"ENT-{str(num).zfill(6)}"
+                # Cantidad se captura directo en la unidad de stock (piezas), sin conversión de kg.
+                conn.execute("""
+                    INSERT INTO entradas
+                    (folio, producto_id, cantidad, cantidad_piezas, precio_unitario, importe,
+                     tipo_movimiento, departamento, usuario_id, observaciones, fecha)
+                    VALUES (?,?,?,?,0,0,'carga_inicial',?,?,?,?)
+                """, (folio, pid, cantidad, cantidad, f.get('departamento') or None,
+                      session['user_id'], f.get('observaciones'), fecha_sql))
+                conn.execute("UPDATE productos SET stock_actual = stock_actual + ? WHERE id=?",
+                            (cantidad, pid))
+                conn.commit()
+                log_actividad(session['user_id'], 'CARGA_INICIAL',
+                              f"Folio: {folio} | {prod['codigo']} | Cantidad: {cantidad}")
+                flash(f'Material existente registrado ({folio}). No afecta costos ni reportes con factura.', 'success')
+                conn.close()
+                return redirect(url_for('entradas.carga_inicial'))
+            except Exception as e:
+                conn.rollback()
+                flash(f'Error: {str(e)}', 'danger')
+    conn.close()
+    return render_template('entradas/carga_inicial.html',
+                           ahora=datetime.now().strftime('%Y-%m-%dT%H:%M'),
+                           departamentos=DEPARTAMENTOS)
+
+
+@entradas_bp.route('/reporte_diario/folio', methods=['POST'])
+@login_required
+def editar_folio_diario():
+    """Corrige a mano el folio del reporte diario de una fecha (ej. para hacerlo coincidir
+    con el consecutivo real en papel cuando se empieza a usar el sistema)."""
+    fecha = request.form.get('fecha') or date.today().isoformat()
+    folio_nuevo = request.form.get('folio_nuevo')
+    if not folio_nuevo or not folio_nuevo.isdigit():
+        flash('El folio debe ser un número.', 'danger')
+        return redirect(url_for('entradas.reporte_diario', fecha=fecha))
+    set_folio_diario(fecha, int(folio_nuevo))
+    log_actividad(session['user_id'], 'EDITAR_FOLIO_DIARIO', f"Fecha: {fecha} | Folio: {folio_nuevo}")
+    flash(f'Folio del reporte de {fecha} actualizado a {folio_nuevo}.', 'success')
+    return redirect(url_for('entradas.reporte_diario', fecha=fecha))
+
+
+@entradas_bp.route('/reporte_diario')
+@login_required
+def reporte_diario():
+    fecha = request.args.get('fecha') or date.today().isoformat()
+    pagina = request.args.get('pagina', 1, type=int)
+    registros_por_pagina = 50
+    
+    conn = get_db()
+    filas = conn.execute("""
+        SELECT e.*, COALESCE(p.codigo, 'SERVICIO') as codigo,
+               COALESCE(p.descripcion, e.concepto_servicio) as descripcion,
+               COALESCE(p.unidad_compra, p.unidad_medida, 'SERVICIO') as unidad_medida,
+               p.departamento as depto_producto,
+               COALESCE(pr.nombre, e.proveedor_nombre_historico) as proveedor_nombre
+        FROM entradas e
+        LEFT JOIN productos p ON e.producto_id=p.id
+        LEFT JOIN proveedores pr ON e.proveedor_id=pr.id
+        WHERE DATE(e.fecha) = ? AND e.no_factura IS NOT NULL AND TRIM(e.no_factura) != ''
+        ORDER BY e.id
+    """, (fecha,)).fetchall()
+
+    total_importe = 0
+    total_iva = 0
+    total_general = 0
+    resumen_completo = []
+    
+    for e in filas:
+        importe = _subtotal_real(e)
+        iva = round(importe * 0.16, 2)
+        total = round(importe + iva, 2)
+        total_importe += importe
+        total_iva += iva
+        total_general += total
+        resumen_completo.append({
+            'descripcion': e['descripcion'],
+            'es_servicio': bool(e['es_servicio']),
+            'cantidad': e['cantidad'],
+            'unidad_medida': _normalizar_unidad(e['unidad_medida']),
+            'precio_unitario': e['precio_unitario'] or 0,
+            'iva': iva,
+            'importe_total': total,
+            'orden_compra': e['orden_compra'] or '—',
+            'no_factura': e['no_factura'] or '—',
+            'proveedor_nombre': e['proveedor_nombre'] or '—',
+            'departamento': e['departamento'] or e['depto_producto'] or '—',
+        })
+
+    total_registros = len(resumen_completo)
+    total_paginas = (total_registros + registros_por_pagina - 1) // registros_por_pagina
+    
+    if pagina < 1:
+        pagina = 1
+    elif pagina > total_paginas and total_paginas > 0:
+        pagina = total_paginas
+    
+    offset = (pagina - 1) * registros_por_pagina
+    resumen = resumen_completo[offset:offset + registros_por_pagina]
+    
+    # Determinar si es la última página
+    es_ultima_pagina = pagina == total_paginas
+
+    folio = get_folio_diario(fecha)
+    conn.close()
+
+    fecha_dt = datetime.strptime(fecha, '%Y-%m-%d')
+    meses_largo = ['', 'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+                   'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+    dias_largo = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo']
+    fecha_larga = f"{dias_largo[fecha_dt.weekday()]} {fecha_dt.day} de {meses_largo[fecha_dt.month]} de {fecha_dt.year}"
+
+    return render_template('entradas/reporte_diario.html',
+                           filas=resumen,
+                           fecha=fecha,
+                           fecha_larga=fecha_larga,
+                           folio=folio,
+                           total_importe=round(total_importe, 2),
+                           total_iva=round(total_iva, 2),
+                           total_general=round(total_general, 2),
+                           pagina_actual=pagina,
+                           total_paginas=total_paginas,
+                           total_registros=total_registros,
+                           registros_pagina=len(resumen),
+                           es_ultima_pagina=es_ultima_pagina)

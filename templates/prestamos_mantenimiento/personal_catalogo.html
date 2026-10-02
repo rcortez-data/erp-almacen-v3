@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Catálogo personal mantenimiento</title>
+  <style>
+    @page {
+      size: letter portrait;
+      margin: 10mm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #e5e7eb;
+      color: #111827;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      background: #fff;
+      border-bottom: 1px solid #d1d5db;
+      font-size: 14px;
+    }
+
+    .toolbar button,
+    .toolbar a {
+      border: 1px solid #9ca3af;
+      background: #fff;
+      color: #111827;
+      border-radius: 6px;
+      padding: 7px 11px;
+      text-decoration: none;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .toolbar button.primary {
+      border-color: #15803d;
+      background: #15803d;
+      color: #fff;
+      font-weight: 700;
+    }
+
+    .page {
+      width: 216mm;
+      min-height: 279mm;
+      margin: 12px auto;
+      padding: 10mm;
+      background: #fff;
+      box-shadow: 0 4px 18px rgba(15, 23, 42, .16);
+    }
+
+    .header {
+      display: grid;
+      grid-template-columns: 42mm 1fr 42mm;
+      align-items: center;
+      gap: 8mm;
+      border-bottom: 2px solid #111827;
+      padding-bottom: 5mm;
+      margin-bottom: 5mm;
+    }
+
+    .logo {
+      max-width: 38mm;
+      max-height: 18mm;
+      object-fit: contain;
+    }
+
+    h1 {
+      margin: 0;
+      text-align: center;
+      font-size: 22px;
+      line-height: 1.15;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #4b5563;
+      margin-top: 2mm;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .meta {
+      text-align: right;
+      font-size: 11px;
+      color: #4b5563;
+      line-height: 1.5;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    thead th {
+      background: #111827;
+      color: #fff;
+      text-transform: uppercase;
+      letter-spacing: .35px;
+      font-size: 10.5px;
+      padding: 6px 7px;
+      border: 1px solid #111827;
+    }
+
+    tbody td {
+      border: 1px solid #9ca3af;
+      padding: 5px 7px;
+      vertical-align: middle;
+      font-weight: 700;
+    }
+
+    tbody tr:nth-child(even) {
+      background: #f9fafb;
+    }
+
+    .col-num {
+      width: 8mm;
+      text-align: center;
+    }
+
+    .col-nomina {
+      width: 24mm;
+      font-family: Consolas, Monaco, monospace;
+      text-align: center;
+    }
+
+    .col-area {
+      width: 38mm;
+    }
+
+    .col-barcode {
+      width: 60mm;
+      text-align: center;
+    }
+
+    .barcode-img {
+      max-width: 54mm;
+      height: 12mm;
+      display: block;
+      margin: 0 auto;
+    }
+
+    .barcode-text {
+      display: block;
+      margin-top: 1mm;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 9.5px;
+      color: #111827;
+    }
+
+    .empty {
+      border: 1px dashed #9ca3af;
+      text-align: center;
+      padding: 18mm;
+      color: #6b7280;
+      font-weight: 700;
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .toolbar {
+        display: none;
+      }
+
+      .page {
+        width: auto;
+        min-height: auto;
+        margin: 0;
+        padding: 0;
+        box-shadow: none;
+      }
+
+      thead {
+        display: table-header-group;
+      }
+
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div><strong>{{ registros|length }}</strong> persona(s) en catálogo</div>
+    <div>
+      <a href="{{ url_for('prestamos_mantenimiento.personal') }}">Regresar</a>
+      <button type="button" class="primary" onclick="window.print()">Imprimir carta</button>
+    </div>
+  </div>
+
+  <main class="page">
+    <div class="header">
+      <div>
+        <img src="{{ url_for('static', filename='img/grupo-tensa-logo.png') }}" alt="Grupo Tensa" class="logo">
+      </div>
+      <div>
+        <h1>Catálogo de personal de mantenimiento</h1>
+        <div class="subtitle">Identificación para préstamos de material y herramientas</div>
+      </div>
+      <div class="meta">
+        <div>Fecha: {{ '%s'|format(now|default('')) if now is defined else '' }}</div>
+        <div>Filtro: {{ q or 'Todos' }}</div>
+      </div>
+    </div>
+
+    {% if registros %}
+    <table>
+      <thead>
+        <tr>
+          <th class="col-num">#</th>
+          <th class="col-nomina">Nómina</th>
+          <th>Nombre</th>
+          <th class="col-area">Área</th>
+          <th class="col-barcode">Código de barras</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in registros %}
+        <tr>
+          <td class="col-num">{{ loop.index }}</td>
+          <td class="col-nomina">{{ r.codigo }}</td>
+          <td>{{ r.nombre }}</td>
+          <td>{{ r.area or '-' }}</td>
+          <td class="col-barcode">
+            <img class="barcode-img" src="{{ url_for('prestamos_mantenimiento.personal_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}">
+            <span class="barcode-text">{{ r.codigo_barras }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty">No hay personal activo de mantenimiento para imprimir.</div>
+    {% endif %}
+  </main>
+</body>
+</html>

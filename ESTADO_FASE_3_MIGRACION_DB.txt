@@ -1,0 +1,153 @@
+ERP ALMACEN V3 LAB - ESTADO FASE 3 MIGRACION DB
+================================================
+
+NOTA ACTUAL DE ACCESOS (2026-08-07)
+-----------------------------------
+Los BAT antiguos de diagnostico, exportacion, preparacion y respaldo manual
+se retiraron para evitar confusion. Sus herramientas Python siguen disponibles
+en scripts. Para trabajar normalmente usar INICIAR_LAB_V3.bat.
+
+Fecha: 2026-08-06
+Carpeta de trabajo:
+C:\Users\Almacen\Desktop\ERP\erp_almacen_v3_lab
+
+Objetivo de la fase:
+Preparar el sistema para una futura migracion de SQLite a una base mas robusta
+sin cambiar todavia el motor ni romper el uso actual del lab.
+
+
+AVANCE FASE 3A - CONFIGURACION DE BASE DE DATOS
+-----------------------------------------------
+- Se actualizo database.py:
+  - La ruta de la base ahora puede venir de ERP_DATABASE_PATH.
+  - Tambien acepta DATABASE_PATH por compatibilidad con configuraciones viejas.
+  - Si no hay variable, sigue usando almacen.db como antes.
+  - Se agrego ERP_DB_BACKEND, por ahora soportando solo sqlite.
+  - Si se configura otro motor antes de terminar la capa de migracion, el
+    sistema muestra un error claro en vez de fallar a medias.
+- Se actualizo app.py:
+  - La inicializacion usa DB_PATH desde database.py.
+  - Ya no vuelve a quemar almacen.db directamente.
+- Se actualizo .env.example:
+  - ERP_DB_BACKEND=sqlite
+  - ERP_DATABASE_PATH=./almacen.db
+- Se creo docs\MIGRACION_BASE_DATOS_FASE_3.md:
+  - objetivo
+  - tablas principales
+  - riesgos de migracion
+  - ruta recomendada por subfases
+- Se agrego RESPALDAR_BD_LAB.bat:
+  - Crea respaldos manuales de almacen.db dentro de backups_db.
+  - Sirve antes de probar migraciones o cambios de estructura.
+
+Regla de seguridad:
+- No se cambio la base productiva.
+- No se migro a PostgreSQL todavia.
+- No se toco el ERP v2 real.
+- El lab v3 sigue funcionando con SQLite por defecto.
+- El respaldo manual no se ejecuto automaticamente para no generar archivos
+  innecesarios; queda listo para usarse cuando se requiera.
+
+Pruebas:
+- python -m py_compile app.py database.py routes\requisiciones.py routes\reportes.py routes\balance.py
+  Resultado: sin errores.
+- python -m pytest -q
+  Resultado: 13 pruebas pasaron.
+- Render con usuario admin:
+  /dashboard
+  /reportes/
+  /balance/
+  Resultado: 200 OK.
+
+
+AVANCE FASE 3B - PREPARACION OPERATIVA PARA POSTGRESQL
+------------------------------------------------------
+- Se agrego carga de archivo .env en app.py.
+- Se normalizo requirements.txt para que pip lo lea mejor.
+- Se agrego dependencia futura:
+  psycopg[binary]>=3.2.0
+- Se agrego migrations\postgres_schema_v1.sql:
+  primer esquema PostgreSQL de laboratorio.
+- Se agrego scripts\db_preflight.py:
+  revision de integridad, conteos, fechas vacias, duplicados y llaves foraneas.
+- Se agrego scripts\export_sqlite_csv.py:
+  exporta todas las tablas de SQLite a CSV y crea manifest.json.
+- Se agrego scripts\db_cleanup_orphans.py:
+  diagnostica huerfanos que bloquearian una migracion estricta.
+  Por defecto NO borra nada. Solo aplica cambios con --apply y antes crea respaldo.
+- Se agregaron accesos .bat:
+  REVISAR_BD_ANTES_DE_MIGRAR.bat
+  EXPORTAR_BD_SQLITE_A_CSV.bat
+  DIAGNOSTICAR_LIMPIEZA_MIGRACION.bat
+- Se agrego docs\RUNBOOK_MIGRAR_A_POSTGRESQL.md:
+  pasos de respaldo, preflight, exportacion, schema, carga y validacion.
+
+Hallazgos reales del preflight:
+- Integridad SQLite: ok.
+- Tablas detectadas: 18.
+- Entradas con fecha vacia: 94.
+- Salidas con fecha vacia: 23.
+- bloque_productos con producto_id inexistente: 29.
+- Estos hallazgos no impiden usar SQLite hoy, pero PostgreSQL seria mas
+  estricto y no conviene migrar sin decidir como limpiarlos.
+
+Pruebas:
+- python -m py_compile app.py database.py scripts\db_preflight.py scripts\export_sqlite_csv.py scripts\db_cleanup_orphans.py
+  Resultado: sin errores.
+- python -m pytest -q
+  Resultado: 13 pruebas pasaron.
+- python scripts\db_cleanup_orphans.py
+  Resultado: diagnostico correcto, no modifico datos.
+- python scripts\db_preflight.py
+  Resultado: integridad ok, estado amarillo por hallazgos de datos indicados arriba.
+- Render con usuario admin despues de cargar .env:
+  /dashboard
+  /inventario/
+  /entradas/
+  /salidas/
+  /requisiciones/
+  /reportes/
+  /balance/
+  Resultado: 200 OK.
+
+
+AVANCE FASE 3C - LIMPIEZA DE DATOS PARA PREFLIGHT VERDE
+-------------------------------------------------------
+Fecha: 2026-08-06
+- El preflight del usuario mostro:
+  - Integridad SQLite: ok.
+  - Entradas con fecha vacia: 94.
+  - Salidas con fecha vacia: 23.
+  - bloque_productos huerfanos: 29.
+- Se agrego scripts\db_prepare_for_postgres.py:
+  - En modo diagnostico no modifica nada.
+  - Con --apply crea respaldo automatico antes de tocar almacen.db.
+  - Corrige fechas vacias con fecha tecnica 1900-01-01 00:00:00.
+  - Agrega marca en observaciones:
+    [MIGRACION_DB: fecha original vacia; se asigno fecha tecnica 1900-01-01]
+  - Elimina solo registros huerfanos de bloque_productos.
+  - No elimina productos, entradas, salidas ni movimientos.
+- Se agrego PREPARAR_BD_LAB_PARA_POSTGRES.bat:
+  - Pide confirmacion escrita "SI".
+  - Ejecuta preparacion.
+  - Ejecuta preflight despues.
+
+Cambios aplicados en LAB:
+- Respaldo creado:
+  C:\Users\Almacen\Desktop\ERP\erp_almacen_v3_lab\backups_db\almacen_pre_postgres_prepare_20260806_050926.db
+- Entradas reparadas: 94.
+- Salidas reparadas: 23.
+- Registros huerfanos eliminados de bloque_productos: 29.
+
+Resultado posterior:
+- python scripts\db_preflight.py
+  Resultado: base lista para una prueba de exportacion/migracion.
+- python -m pytest -q
+  Resultado: 13 pruebas pasaron.
+- Render con usuario admin:
+  /dashboard
+  /entradas/
+  /salidas/
+  /reportes/
+  /balance/
+  Resultado: 200 OK.

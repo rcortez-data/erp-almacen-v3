@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% block title %}Administración de bloques{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-puzzle-fill text-primary"></i> Administración de bloques predefinidos</h1>
+</div>
+
+<div class="alert alert-info">
+  <i class="bi bi-info-circle"></i> 
+  Desde aquí puedes agregar o quitar productos de los bloques predefinidos. 
+  Estos bloques se utilizan en el Balance mensual para cargar rápidamente grupos de productos.
+</div>
+
+{% for item in bloques_con_productos %}
+<div class="card mb-4">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center">
+    <h5 class="mb-0">
+      {% if item.bloque.id == 1 %}
+        <i class="bi bi-box2"></i> Bloque 1: {{ item.bloque.nombre }}
+      {% else %}
+        <i class="bi bi-gear"></i> Bloque 2: {{ item.bloque.nombre }}
+      {% endif %}
+    </h5>
+    <span class="badge bg-secondary">{{ item.productos|length }} productos</span>
+  </div>
+
+  <div class="card-body">
+    <!-- TABLA DE PRODUCTOS ACTUALES -->
+    {% if item.productos %}
+    <div class="table-responsive mb-4">
+      <table class="table table-sm table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th style="width: 80px">Orden</th>
+            <th style="width: 120px">Código</th>
+            <th>Descripción</th>
+            <th style="width: 100px">Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for prod in item.productos %}
+          <tr>
+            <td>
+              <form method="POST" class="d-inline" style="width: 70px">
+                <input type="hidden" name="accion" value="cambiar_orden">
+                <input type="hidden" name="bp_id" value="{{ prod.id }}">
+                <input type="number" name="nueva_orden" value="{{ prod.orden }}" 
+                       class="form-control form-control-sm" min="1" max="99"
+                       onchange="this.form.submit()">
+              </form>
+            </td>
+            <td class="font-monospace small">{{ prod.codigo }}</td>
+            <td>{{ prod.descripcion }}</td>
+            <td>
+              <form method="POST" class="d-inline">
+                <input type="hidden" name="accion" value="quitar_producto">
+                <input type="hidden" name="bp_id" value="{{ prod.id }}">
+                <button type="submit" class="btn btn-sm btn-outline-danger" 
+                        onclick="return confirm('¿Quitar este producto del bloque?')">
+                  <i class="bi bi-trash"></i> Quitar
+                </button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning">
+      <i class="bi bi-exclamation-triangle"></i> Este bloque no tiene productos asignados.
+    </div>
+    {% endif %}
+
+    <!-- FORMULARIO PARA AGREGAR PRODUCTO -->
+    <div class="card bg-light border-0">
+      <div class="card-body">
+        <h6 class="card-title mb-3"><i class="bi bi-plus-lg"></i> Agregar producto al bloque</h6>
+        <form method="POST" id="form-agregar-{{ item.bloque.id }}">
+          <input type="hidden" name="accion" value="agregar_producto">
+          <input type="hidden" name="bloque_id" value="{{ item.bloque.id }}">
+          <div class="row g-2">
+            <div class="col-md-8 position-relative">
+              <input type="text" id="buscador-{{ item.bloque.id }}" class="form-control"
+                     placeholder="Busca por código o descripción..."
+                     autocomplete="off" data-bloque="{{ item.bloque.id }}">
+              <input type="hidden" name="producto_id" id="producto_id_{{ item.bloque.id }}">
+              <div id="resultados-{{ item.bloque.id }}" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+                   style="z-index:10; max-height:250px; overflow-y:auto; display:none; top:38px;"></div>
+            </div>
+            <div class="col-md-4">
+              <button type="submit" id="btn-agregar-{{ item.bloque.id }}" class="btn btn-primary w-100"
+                      disabled>
+                <i class="bi bi-plus-lg"></i> Agregar
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+<script>
+// Búsqueda de productos con autocomplete
+document.querySelectorAll('[id^="buscador-"]').forEach(input => {
+  input.addEventListener('input', async function() {
+    const bloque = this.getAttribute('data-bloque');
+    const q = this.value.trim();
+    const resultados = document.getElementById(`resultados-${bloque}`);
+    const btnAgregar = document.getElementById(`btn-agregar-${bloque}`);
+    const inputProducto = document.getElementById(`producto_id_${bloque}`);
+
+    if (q.length < 2) {
+      resultados.style.display = 'none';
+      btnAgregar.disabled = true;
+      return;
+    }
+
+    try {
+      const response = await fetch(`/balance/bloques/buscar_producto?q=${encodeURIComponent(q)}`);
+      const data = await response.json();
+
+      resultados.innerHTML = '';
+      if (data.resultados.length === 0) {
+        resultados.innerHTML = '<div class="list-group-item disabled">No se encontraron productos</div>';
+      } else {
+        data.resultados.forEach(prod => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'list-group-item list-group-item-action';
+          item.innerHTML = `
+            <div class="d-flex w-100 justify-content-between">
+              <strong>${prod.codigo}</strong>
+              <small class="text-muted">${prod.descripcion}</small>
+            </div>
+          `;
+          item.onclick = () => {
+            inputProducto.value = prod.id;
+            document.getElementById(`buscador-${bloque}`).value = prod.descripcion;
+            resultados.style.display = 'none';
+            btnAgregar.disabled = false;
+          };
+          resultados.appendChild(item);
+        });
+      }
+      resultados.style.display = 'block';
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  });
+
+  // Ocultar dropdown al hacer click fuera
+  document.addEventListener('click', function(e) {
+    const bloque = input.getAttribute('data-bloque');
+    const resultados = document.getElementById(`resultados-${bloque}`);
+    if (!input.contains(e.target) && !resultados.contains(e.target)) {
+      resultados.style.display = 'none';
+    }
+  });
+});
+
+// Deshabilitar botón si no hay producto seleccionado
+document.querySelectorAll('[id^="buscador-"]').forEach(input => {
+  input.addEventListener('focus', function() {
+    const bloque = this.getAttribute('data-bloque');
+    const btnAgregar = document.getElementById(`btn-agregar-${bloque}`);
+    const inputProducto = document.getElementById(`producto_id_${bloque}`);
+    if (inputProducto.value === '') {
+      btnAgregar.disabled = true;
+    }
+  });
+});
+</script>
+
+<style>
+.list-group-item {
+  cursor: pointer;
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid #dee2e6;
+}
+.list-group-item:last-child {
+  border-bottom: none;
+}
+.list-group-item:hover {
+  background-color: #f8f9fa;
+}
+.list-group-item.disabled {
+  cursor: default;
+  color: #6c757d;
+}
+.card-header {
+  border-bottom: 2px solid #dee2e6;
+}
+</style>
+{% endblock %}

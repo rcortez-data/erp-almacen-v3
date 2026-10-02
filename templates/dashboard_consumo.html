@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block title %}Consumo de produccion y caldera{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div><h1 class="page-title"><i class="bi bi-graph-up-arrow"></i> Consumo de Produccion y Caldera</h1><div class="text-muted">Entradas, salidas y costo mensual del año seleccionado.</div></div>
+  <div class="d-flex gap-2"><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('dashboard.departamentos') }}"><i class="bi bi-diagram-3"></i> Por departamento</a><a class="btn btn-sm btn-outline-primary" href="{{ url_for('dashboard.index') }}"><i class="bi bi-speedometer2"></i> Dashboard</a></div>
+</div>
+<div class="card mb-3"><div class="card-body">
+  <div class="d-flex gap-2 flex-wrap mb-3">
+    <a class="btn {{ 'btn-primary' if grupo == 'produccion' else 'btn-outline-primary' }}" href="{{ url_for('dashboard.consumo', grupo='produccion', anio=anio) }}"><i class="bi bi-box-seam"></i> Produccion</a>
+    <a class="btn {{ 'btn-success' if grupo == 'caldera' else 'btn-outline-success' }}" href="{{ url_for('dashboard.consumo', grupo='caldera', anio=anio) }}"><i class="bi bi-fire"></i> Caldera</a>
+    <form method="post" class="ms-auto"><input type="hidden" name="accion" value="sincronizar"><input type="hidden" name="grupo" value="{{ grupo }}"><input type="hidden" name="anio" value="{{ anio }}"><button class="btn btn-outline-secondary"><i class="bi bi-arrow-repeat"></i> Tomar productos de Balance</button></form>
+  </div>
+  <form method="get" class="row g-2 align-items-end mb-3"><input type="hidden" name="grupo" value="{{ grupo }}"><div class="col-md-2"><label class="form-label">Año</label><input class="form-control" type="number" name="anio" value="{{ anio }}" min="2020" max="2100"></div><div class="col-md-6"><label class="form-label">Agregar producto manualmente</label><input class="form-control" name="q" value="{{ request.args.get('q','') }}" placeholder="Codigo o descripcion"></div><div class="col-md-2"><button class="btn btn-outline-primary w-100"><i class="bi bi-search"></i> Buscar</button></div></form>
+  {% if resultados %}<div class="table-responsive mb-3"><table class="table table-sm"><thead><tr><th>Codigo</th><th>Descripcion</th><th></th></tr></thead><tbody>{% for p in resultados %}<tr><td class="font-monospace">{{ p.codigo }}</td><td>{{ p.descripcion }}</td><td><form method="post"><input type="hidden" name="accion" value="agregar"><input type="hidden" name="grupo" value="{{ grupo }}"><input type="hidden" name="anio" value="{{ anio }}"><input type="hidden" name="producto_id" value="{{ p.id }}"><button class="btn btn-sm btn-primary"><i class="bi bi-plus"></i> Agregar</button></form></td></tr>{% endfor %}</tbody></table></div>{% endif %}
+  <div class="d-flex justify-content-between"><strong>Productos monitoreados: {{ seleccionados|length }}</strong><span class="text-muted">{{ 'Produccion' if grupo == 'produccion' else 'Caldera' }}</span></div>
+  <div class="d-flex flex-wrap gap-2 mt-2">{% for p in seleccionados %}<span class="badge text-bg-light border font-monospace">{{ p.codigo }} <form method="post" class="d-inline"><input type="hidden" name="accion" value="quitar"><input type="hidden" name="grupo" value="{{ grupo }}"><input type="hidden" name="registro_id" value="{{ p.id }}"><button class="btn btn-link btn-sm p-0 text-danger" title="Quitar"><i class="bi bi-x"></i></button></form></span>{% else %}<span class="text-muted">Aun no hay productos seleccionados.</span>{% endfor %}</div>
+</div></div>
+<div class="card"><div class="card-header"><strong><i class="bi bi-bar-chart"></i> Comparativo mensual por producto {{ anio }}</strong></div><div class="card-body"><div class="row g-3">{% for p in seleccionados %}<div class="col-xl-4 col-lg-6"><div class="border rounded p-2"><div class="small fw-semibold text-truncate" title="{{ p.descripcion }}">{{ p.codigo }} - {{ p.descripcion }}</div><canvas id="graficaProducto{{ loop.index }}" height="150"></canvas></div></div>{% else %}<div class="col-12 text-muted">Agrega productos para ver sus comparativos.</div>{% endfor %}</div></div></div>
+<div class="card mt-3"><div class="card-header"><strong><i class="bi bi-cash-stack"></i> Detalle mensual en pesos mexicanos</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Mes</th><th>Entradas</th><th>Salidas / consumo</th><th class="text-end">Costo de entradas</th></tr></thead><tbody>{% for mes in meses %}<tr><td>{{ nombres_meses[loop.index0] }}</td><td>{{ mensual[mes].entradas|moneda }}</td><td>{{ mensual[mes].salidas|moneda }}</td><td class="text-end fw-semibold">${{ mensual[mes].costo|moneda }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card mt-3"><div class="card-header"><strong><i class="bi bi-box-arrow-in-down"></i> Existencia inicial del año por producto</strong></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Código</th><th>Descripción</th><th class="text-end">Cantidad inicial {{ anio }}</th></tr></thead><tbody>{% for p in seleccionados %}<tr><td class="font-monospace">{{ p.codigo }}</td><td>{{ p.descripcion }}</td><td class="text-end">{{ inicios_anio.get(p.producto_id, 0)|moneda }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="card mt-3"><div class="card-header"><strong><i class="bi bi-calculator"></i> Existencia mensual</strong><small class="text-muted ms-2">Inicio + entradas - salidas</small></div><div class="table-responsive"><table class="table table-sm mb-0"><thead><tr><th>Producto</th>{% for nombre in nombres_meses %}<th class="text-end">{{ nombre }}</th>{% endfor %}</tr></thead><tbody>{% for p in seleccionados %}<tr><td class="font-monospace">{{ p.codigo }}</td>{% for mes in meses %}<td class="text-end">{{ existencias_mensuales.get(p.producto_id, {}).get(mes, 0)|moneda }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div></div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const nombres={{ nombres_meses|tojson }};
+const productos={{ producto_mensual|tojson }};
+const colores=['#2563eb','#16a34a','#f59e0b','#dc2626','#7c3aed','#0891b2','#ea580c','#4f46e5','#65a30d','#be123c','#0f766e','#9333ea'];
+Object.values(productos).forEach((p,i)=>{
+  const canvas=document.getElementById('graficaProducto'+(i+1));
+  if(!canvas)return;
+  const color=colores[i%colores.length];
+  new Chart(canvas,{type:'line',data:{labels:nombres,datasets:[{label:'Entrada',data:Object.values(p.entradas),borderColor:'#16a34a',backgroundColor:'#16a34a',tension:.25,fill:false},{label:'Salida',data:Object.values(p.salidas),borderColor:'#f59e0b',backgroundColor:'#f59e0b',tension:.25,fill:false}]},options:{responsive:true,plugins:{legend:{display:true,position:'bottom'}},scales:{y:{beginAtZero:true,title:{display:true,text:'Cantidad'}}}}});
+});
+</script>
+{% endblock %}

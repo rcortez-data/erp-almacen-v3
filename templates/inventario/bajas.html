@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% block title %}Bajas de productos{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-archive text-danger"></i> Historial de bajas</h1>
+  <a href="{{ url_for('inventario.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar a Inventario
+  </a>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-sm table-hover mb-0">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Descripción</th>
+            <th>Dado de baja por</th>
+            <th>Fecha</th>
+            <th>Folio / Motivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in productos %}
+          <tr>
+            <td>{{ p.codigo }}</td>
+            <td>{{ p.descripcion }}</td>
+            <td>{{ p.baja_por or '—' }}</td>
+            <td>{{ p.baja_fecha or '—' }}</td>
+            <td>{{ p.baja_folio or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-4">No hay productos dados de baja.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

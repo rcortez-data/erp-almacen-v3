@@ -1,0 +1,286 @@
+{% extends 'base.html' %}
+{% block title %}Balance mensual{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-calculator"></i> Balance</span>
+    <h1 class="page-title mb-1">Stock mensual de productos</h1>
+    <div class="text-muted" style="font-size:.88rem">Vista de consulta para revisar e imprimir el balance del mes.</div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('balance.todos_productos', anio=anio, mes=mes) }}" class="btn btn-sm btn-primary">
+      <i class="bi bi-boxes"></i> Todos los productos
+    </a>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" id="form-periodo" class="row g-3 mb-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Mes</label>
+        <select name="mes" class="form-select" onchange="this.form.submit()">
+          {% for i in range(1,13) %}
+          <option value="{{ i }}" {{ 'selected' if i == mes }}>{{ meses[i] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label fw-semibold">Año</label>
+        <select name="anio" class="form-select" onchange="this.form.submit()">
+          {% for a in range(anio_actual-3, anio_actual+1) %}
+          <option value="{{ a }}" {{ 'selected' if a == anio }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <div class="alert alert-secondary py-2 mb-0" style="font-size:.82rem">
+          <i class="bi bi-info-circle"></i> Esta pagina es solo informativa. Las capturas se hacen desde Insumos Produccion o Insumos Caldera y despues en Todos los productos.
+        </div>
+      </div>
+    </form>
+
+    <hr>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <label class="form-label fw-semibold mb-0"><i class="bi bi-collection"></i> Cargar bloques predefinidos</label>
+    </div>
+    <div class="row g-2">
+      <div class="col-md-6">
+        <form method="POST" action="{{ url_for('balance.cargar_bloque', bloque_id=1) }}">
+          <input type="hidden" name="anio" value="{{ anio }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <button type="submit" class="btn btn-outline-primary w-100" title="Carga los insumos de fabricacion">
+            <i class="bi bi-box2"></i> Insumos Produccion ({{ conteos_bloques.get(1, 0) }} art.)
+          </button>
+        </form>
+      </div>
+      <div class="col-md-6">
+        <form method="POST" action="{{ url_for('balance.cargar_bloque', bloque_id=2) }}">
+          <input type="hidden" name="anio" value="{{ anio }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <button type="submit" class="btn btn-outline-success w-100" title="Carga los insumos de caldera">
+            <i class="bi bi-gear"></i> Insumos Caldera ({{ conteos_bloques.get(2, 0) }} art.)
+          </button>
+        </form>
+      </div>
+      {% if filas %}
+      <div class="col-md-12">
+        <form method="POST">
+          <input type="hidden" name="anio" value="{{ anio }}">
+          <input type="hidden" name="mes" value="{{ mes }}">
+          <button type="submit" name="accion" value="limpiar_seleccion" class="btn btn-outline-danger w-100"
+                  onclick="return confirm('¿Quitar la selección actual del balance?')">
+            <i class="bi bi-x-lg"></i> Limpiar seleccion
+          </button>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if filas %}
+<div class="card">
+  <div class="card-header py-3 d-flex justify-content-between align-items-center">
+    <h2 class="panel-title mb-0">Balance de {{ meses[mes] }} {{ anio }}</h2>
+    <div class="d-flex gap-2 flex-wrap">
+      <button type="button" class="btn btn-sm btn-outline-primary" id="btn-marcar-etiquetas">
+        <i class="bi bi-check2-square"></i> Marcar etiquetas
+      </button>
+      <button type="button" class="btn btn-sm btn-outline-dark" id="btn-vista-etiquetas-marcadas">
+        <i class="bi bi-tags"></i> Vista marcadas
+      </button>
+      <form method="POST" action="{{ url_for('balance.imprimir_etiquetas_tsc') }}" class="d-inline" id="form-etiquetas-marcadas">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="anio" value="{{ anio }}">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="productos" id="productos-etiquetas-marcadas" value="">
+        <input type="hidden" name="volver" value="{{ url_for('balance.index', anio=anio, mes=mes) }}">
+        <button type="submit" class="btn btn-sm btn-success">
+          <i class="bi bi-printer-fill"></i> Imprimir marcadas
+        </button>
+      </form>
+      <a href="{{ url_for('balance.etiquetas', anio=anio, mes=mes, productos=filas|map(attribute='producto_id')|join(',')) }}" target="_blank" class="btn btn-sm btn-outline-dark">
+        <i class="bi bi-tags"></i> Vista todas
+      </a>
+      <form method="POST" action="{{ url_for('balance.imprimir_etiquetas_tsc') }}" class="d-inline">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="anio" value="{{ anio }}">
+        <input type="hidden" name="mes" value="{{ mes }}">
+        <input type="hidden" name="productos" value="{{ filas|map(attribute='producto_id')|join(',') }}">
+        <input type="hidden" name="volver" value="{{ url_for('balance.index', anio=anio, mes=mes) }}">
+        <button type="submit" class="btn btn-sm btn-success">
+          <i class="bi bi-printer-fill"></i> Imprimir todas
+        </button>
+      </form>
+      <a href="{{ url_for('balance.imprimir', anio=anio, mes=mes, tipo=tipo_reporte, productos=filas|map(attribute='producto_id')|join(',')) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-printer"></i> Imprimir reporte
+      </a>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm mb-0 align-middle reports-table">
+      <thead>
+        <tr>
+          <th style="width:44px;text-align:center">
+            <input type="checkbox" id="check-etiquetas-todas" class="form-check-input" title="Marcar todas">
+          </th>
+          <th class="col-code">Codigo</th>
+          <th class="col-desc">Descripcion</th>
+          <th>Conversion</th>
+          <th>Cierre anterior</th>
+          <th>Entradas del mes</th>
+          <th>Salidas registradas</th>
+          <th>Salidas calculadas</th>
+          <th>Existencia final</th>
+          <th>Diferencia vs salidas ERP</th>
+          <th>Estado</th>
+          <th>Etiqueta</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in filas %}
+        <tr>
+          <td class="text-center">
+            <input type="checkbox" class="form-check-input etiqueta-check" value="{{ f.producto_id }}" title="Imprimir etiqueta de {{ f.codigo }}">
+          </td>
+          <td class="font-monospace">{{ f.codigo }}</td>
+          <td>{{ f.descripcion }}</td>
+          <td class="text-muted" style="white-space:nowrap;font-size:.78rem">
+            {% if f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+              {% if f.tipo_conversion == 'compra_a_uso' %}
+              1 {{ f.unidad_compra|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_medida) }}
+              {% else %}
+              1 {{ f.unidad_medida|upper }} = {{ f.factor_conversion|cantidad_unidad(f.unidad_compra) }}
+              {% endif %}
+            {% else %}-{% endif %}
+          </td>
+          <td style="min-width:135px">
+            {{ f.existencia_inicio|cantidad_unidad(f.unidad_medida) }}
+            {% if f.existencia_inicio_compra is not none and f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+            <br><span class="text-muted" style="font-size:.72rem">= {{ f.existencia_inicio_compra|cantidad_unidad(f.unidad_compra) }}</span>
+            {% endif %}
+            {% if f.inicio_guardado %}
+            <br><span class="badge bg-success" style="font-size:.65rem">punto guardado</span>
+            {% elif f.inicio_es_estimado %}
+            <br><span class="badge bg-warning text-dark" style="font-size:.65rem">estimado</span>
+            {% else %}
+            <br><span class="badge bg-info text-dark" style="font-size:.65rem">cierre anterior</span>
+            {% endif %}
+          </td>
+          <td class="text-success">
+            +{{ f.entradas_mes|cantidad_unidad(f.unidad_medida) }}
+            {% if f.unidad_compra and f.entradas_mes_compra is not none and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+            <br><span class="text-muted" style="font-size:.72rem">= {{ f.entradas_mes_compra|cantidad_unidad(f.unidad_compra) }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ f.salidas_registradas|cantidad_unidad(f.unidad_medida) }}
+            {% if f.unidad_compra and f.salidas_registradas_compra is not none and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+            <br><span class="text-muted" style="font-size:.72rem">= {{ f.salidas_registradas_compra|cantidad_unidad(f.unidad_compra) }}</span>
+            {% endif %}
+          </td>
+          <td class="text-danger">
+            {{ f.salidas_manual|cantidad_unidad(f.unidad_medida) if f.salidas_manual is not none else '-' }}
+            {% if f.salidas_manual_compra is not none and f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+            <br><span class="text-muted" style="font-size:.72rem">= {{ f.salidas_manual_compra|cantidad_unidad(f.unidad_compra) }}</span>
+            {% endif %}
+          </td>
+          <td class="fw-bold text-primary">
+            {{ f.existencia_final|cantidad_unidad(f.unidad_medida) }}
+            {% if f.existencia_final_compra is not none and f.unidad_compra and f.factor_conversion and f.factor_conversion != 1 and f.unidad_medida|upper != f.unidad_compra|upper %}
+            <br><span class="fw-normal" style="font-size:.72rem">= {{ f.existencia_final_compra|cantidad_unidad(f.unidad_compra) }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if f.diferencia_salidas is not none %}
+            <span class="{{ 'text-danger' if f.diferencia_salidas != 0 else 'text-success' }}">
+              {{ f.diferencia_salidas|cantidad_unidad(f.unidad_medida) }}
+            </span>
+            {% else %}-{% endif %}
+          </td>
+          <td>{% if f.salidas_manual is not none %}<span class="badge bg-success">Cerrado</span>{% else %}<span class="badge bg-warning text-dark">Pendiente</span>{% endif %}</td>
+          <td>
+            <form method="POST" action="{{ url_for('balance.imprimir_etiquetas_tsc') }}" class="d-inline">
+              <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="anio" value="{{ anio }}">
+              <input type="hidden" name="mes" value="{{ mes }}">
+              <input type="hidden" name="productos" value="{{ f.producto_id }}">
+              <input type="hidden" name="volver" value="{{ url_for('balance.index', anio=anio, mes=mes) }}">
+              <button type="submit" class="btn btn-sm btn-outline-success" title="Imprimir una etiqueta">
+                <i class="bi bi-printer"></i> 1
+              </button>
+            </form>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer">
+    <span class="text-muted" style="font-size:.85rem">Reporte visual. Para corregir datos entra por el bloque correspondiente y usa Todos los productos.</span>
+  </div>
+</div>
+{% else %}
+<div class="card"><div class="card-body text-center text-muted py-5">
+  Carga Insumos Produccion o Insumos Caldera para ver el balance de {{ meses[mes] }} {{ anio }}.
+</div></div>
+{% endif %}
+
+<script>
+  const checksEtiquetas = Array.from(document.querySelectorAll('.etiqueta-check'));
+  const checkTodasEtiquetas = document.getElementById('check-etiquetas-todas');
+  const btnMarcarEtiquetas = document.getElementById('btn-marcar-etiquetas');
+  const btnVistaMarcadas = document.getElementById('btn-vista-etiquetas-marcadas');
+  const formEtiquetasMarcadas = document.getElementById('form-etiquetas-marcadas');
+  const inputProductosMarcados = document.getElementById('productos-etiquetas-marcadas');
+
+  function idsEtiquetasMarcadas() {
+    return checksEtiquetas.filter(chk => chk.checked).map(chk => chk.value);
+  }
+
+  function actualizarMarcadas() {
+    const ids = idsEtiquetasMarcadas();
+    if (inputProductosMarcados) inputProductosMarcados.value = ids.join(',');
+    if (checkTodasEtiquetas) {
+      checkTodasEtiquetas.checked = checksEtiquetas.length > 0 && ids.length === checksEtiquetas.length;
+      checkTodasEtiquetas.indeterminate = ids.length > 0 && ids.length < checksEtiquetas.length;
+    }
+  }
+
+  checksEtiquetas.forEach(chk => chk.addEventListener('change', actualizarMarcadas));
+  checkTodasEtiquetas?.addEventListener('change', () => {
+    checksEtiquetas.forEach(chk => chk.checked = checkTodasEtiquetas.checked);
+    actualizarMarcadas();
+  });
+
+  btnMarcarEtiquetas?.addEventListener('click', () => {
+    const marcar = idsEtiquetasMarcadas().length !== checksEtiquetas.length;
+    checksEtiquetas.forEach(chk => chk.checked = marcar);
+    actualizarMarcadas();
+  });
+
+  btnVistaMarcadas?.addEventListener('click', () => {
+    const ids = idsEtiquetasMarcadas();
+    if (!ids.length) {
+      alert('Marca al menos un producto para ver sus etiquetas.');
+      return;
+    }
+    const url = new URL("{{ url_for('balance.etiquetas', _external=True) }}");
+    url.searchParams.set('anio', '{{ anio }}');
+    url.searchParams.set('mes', '{{ mes }}');
+    url.searchParams.set('productos', ids.join(','));
+    window.open(url.toString(), '_blank');
+  });
+
+  formEtiquetasMarcadas?.addEventListener('submit', (e) => {
+    actualizarMarcadas();
+    if (!inputProductosMarcados.value) {
+      e.preventDefault();
+      alert('Marca al menos un producto para imprimir etiquetas.');
+    }
+  });
+
+  actualizarMarcadas();
+</script>
+{% endblock %}

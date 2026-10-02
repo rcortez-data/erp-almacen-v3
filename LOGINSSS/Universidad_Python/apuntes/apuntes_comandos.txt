@@ -1,0 +1,9 @@
+PowerShel      				Linux                      
+pwd      				pwd   
+dir      				ls
+cd carpeta      			cd carpeta
+cd..      				cd..
+new-item archivo.txt      		touch archivo.txt
+new-item carpeta -itemtype directory    mkdir carpeta
+get-content archivo.txt      		cat archivo.txt
+clear-host      			clear

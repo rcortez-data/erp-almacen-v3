@@ -1,0 +1,229 @@
+{% extends 'base.html' %}
+{% block title %}Requisición AL-{{ requisicion.folio }}{% endblock %}
+{% block content %}
+<style>
+  /* Quita las flechitas de incrementar/decrementar del campo "cantidad que llega" */
+  .input-sin-flechas::-webkit-inner-spin-button,
+  .input-sin-flechas::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .input-sin-flechas {
+    -moz-appearance: textfield;
+  }
+</style>
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-file-earmark-text text-primary"></i> Requisición AL-{{ requisicion.folio }}</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('requisiciones.imprimir_hoja', rid=requisicion.id, auto=1) }}" class="btn btn-sm btn-danger" target="_blank" rel="noopener">
+      <i class="bi bi-printer"></i> Imprimir requisición
+    </a>
+    <a href="{{ url_for('requisiciones.editar', rid=requisicion.id) }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil-square"></i> Editar
+    </a>
+    <form method="POST" action="{{ url_for('requisiciones.eliminar', rid=requisicion.id) }}" class="d-inline"
+          onsubmit="return confirm('Se eliminará la información permanentemente, ¿estás seguro de eliminar esta requisición?');">
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash"></i> Eliminar
+      </button>
+    </form>
+    <a href="{{ url_for('requisiciones.index') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Regresar
+    </a>
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card mb-3">
+      <div class="card-header">Datos generales</div>
+      <div class="card-body">
+        <dl class="row mb-0">
+          <dt class="col-sm-5">Estado</dt>
+          <dd class="col-sm-7">
+            {% if estado == 'completa' %}<span class="badge bg-success" style="font-size:.9rem;">COMPLETA</span>
+            {% elif estado == 'revision' %}<span class="badge bg-warning text-dark" style="font-size:.9rem;">⚡ REVISIÓN</span>
+            {% elif estado == 'parcial' %}<span class="badge bg-info text-white" style="font-size:.9rem;">PARCIAL</span>
+            {% else %}<span class="badge bg-secondary" style="font-size:.9rem;">⏳ PENDIENTE</span>{% endif %}
+          </dd>
+          <dt class="col-sm-5">Área que solicita</dt>
+          <dd class="col-sm-7">{{ requisicion.departamento or '—' }}</dd>
+          <dt class="col-sm-5">Solicito</dt>
+          <dd class="col-sm-7">{{ requisicion.solicitante or '—' }}</dd>
+          <dt class="col-sm-5">Detalle / motivo</dt>
+          <dd class="col-sm-7">{{ requisicion.asunto or '—' }}</dd>
+          <dt class="col-sm-5">Fecha de requisición</dt>
+          <dd class="col-sm-7">{{ requisicion.fecha_requisicion or '—' }}</dd>
+          <dt class="col-sm-5">Fecha en que se necesita</dt>
+          <dd class="col-sm-7">{{ requisicion.fecha_necesita or '—' }}</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">Seguimiento de orden de compra / factura</div>
+      <div class="card-body">
+        <form method="POST">
+          <input type="hidden" name="accion" value="actualizar_seguimiento">
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Orden de compra</label>
+            <input type="text" name="orden_compra" class="form-control" value="{{ requisicion.orden_compra or '' }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Nº de factura</label>
+            <input type="text" name="no_factura" class="form-control" value="{{ requisicion.no_factura or '' }}">
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Remisión</label>
+            <input type="text" name="no_remision" class="form-control" value="{{ requisicion.no_remision or '' }}">
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Guardar seguimiento</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header bg-light">
+        <strong>📋 Partidas — Marca lo que ya llegó</strong>
+        <small class="text-muted d-block" style="font-size:.75rem">Lo ligado a productos se calcula por entradas; si no se vinculó bien, puedes capturar un total manual.</small>
+      </div>
+      <div class="card-body p-0">
+        <form method="POST">
+          <input type="hidden" name="accion" value="actualizar_recepcion">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+              <thead>
+                <tr>
+                  <th class="col-desc">Descripción</th>
+                  <th class="col-compact" style="text-align: center">Solicitado</th>
+                  <th class="col-compact" style="text-align: center">Recibido</th>
+                  <th class="col-compact" style="text-align: center">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for it in items %}
+                <tr class="{{ '' if it.informativo else ('table-success' if it.recibido_calc >= it.cantidad else ('table-warning' if it.recibido_calc > 0 else '')) }}">
+                  <td>
+                    <strong>{{ it.descripcion }}</strong>
+                    {% if it.informativo %}<span class="badge bg-secondary ms-1">Informativo</span>{% endif %}
+                    {% if it.auto %}<span class="badge bg-info text-dark ms-1" title="Se calcula automático desde entradas vinculadas"><i class="bi bi-link-45deg"></i></span>{% endif %}
+                    {% if it.manual %}<span class="badge bg-primary ms-1" title="Recibido capturado manualmente">Manual</span>{% endif %}
+                    {% if recepciones_por_item.get(it.id) %}
+                    <div class="mt-1 text-muted" style="font-size:.72rem">
+                      {% for r in recepciones_por_item.get(it.id) %}
+                      <div><i class="bi bi-truck"></i> {{ "%g"|format(r.cantidad) }} — {{ r.fecha[:16] }}</div>
+                      {% endfor %}
+                    </div>
+                    {% endif %}
+                  </td>
+                  <td style="text-align: center">
+                    {% if it.informativo %}
+                    <span class="text-muted">—</span>
+                    {% else %}
+                    <span class="fw-semibold">{{ "%g"|format(it.cantidad) }}</span> {{ unidad_para_cantidad(it.unidad, it.cantidad) }}
+                    {% endif %}
+                  </td>
+                  <td>
+                    {% if it.informativo %}
+                    <div class="text-center text-muted">No requiere recepción</div>
+                    {% elif it.auto %}
+                    <span class="fw-semibold d-block text-center">{{ "%g"|format(it.recibido_calc) }}</span>
+                    <div class="form-text mb-0 text-center" style="font-size:.68rem">automático</div>
+                    {% elif not it.producto_id %}
+                    <div class="text-center fw-semibold mb-1" style="font-size:.8rem">
+                      Recibido: {{ "%g"|format(it.recibido_calc) }} / {{ "%g"|format(it.cantidad) }}
+                    </div>
+                    <input type="number" step="0.001" min="0" name="recibido_{{ it.id }}"
+                           class="form-control form-control-sm input-sin-flechas"
+                           placeholder="Cantidad que llega ahora">
+                    {% else %}
+                    <span class="fw-semibold d-block text-center">{{ "%g"|format(it.recibido_calc) }}</span>
+                    <div class="form-text mb-0 text-center" style="font-size:.68rem">manual</div>
+                    {% endif %}
+                    {% if not it.informativo %}
+                    <div class="mt-2">
+                      <input type="number" step="0.001" min="0" name="recibido_manual_{{ it.id }}"
+                             class="form-control form-control-sm input-sin-flechas"
+                             value="{{ '%g'|format(it.cantidad_recibida) if it.manual else '' }}"
+                             placeholder="Total manual recibido">
+                      {% if it.manual %}
+                      <label class="form-check form-check-sm mt-1" style="font-size:.72rem">
+                        <input type="checkbox" class="form-check-input" name="quitar_manual_{{ it.id }}" value="1">
+                        Quitar manual y volver al automático
+                      </label>
+                      {% endif %}
+                    </div>
+                    {% endif %}
+                  </td>
+                  <td style="text-align: center">
+                    {% if it.informativo %}
+                      <span class="badge bg-secondary" title="Renglón informativo">
+                        <i class="bi bi-info-circle"></i>
+                      </span>
+                    {% elif it.recibido_calc >= it.cantidad %}
+                      <span class="badge bg-success" title="Completo">
+                        <i class="bi bi-check-circle-fill"></i>
+                      </span>
+                    {% elif it.recibido_calc > 0 %}
+                      <span class="badge bg-warning text-dark" title="Parcialmente recibido">
+                        <i class="bi bi-exclamation-circle-fill"></i>
+                      </span>
+                    {% else %}
+                      <span class="badge bg-danger" title="Pendiente de recibir">
+                        <i class="bi bi-x-circle-fill"></i>
+                      </span>
+                    {% endif %}
+                  </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-center text-muted py-3">Sin partidas.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="p-3 d-flex gap-2 flex-wrap">
+            <button type="submit" class="btn btn-sm btn-primary"><i class="bi bi-check-lg"></i> Guardar recibido</button>
+          </div>
+        </form>
+        <form method="POST" class="px-3 pb-3" onsubmit="return confirm('¿Marcar como recibidas al 100% las partidas de texto libre?');">
+          <input type="hidden" name="accion" value="recibir_todo">
+          <button type="submit" class="btn btn-sm btn-outline-success">
+            <i class="bi bi-check2-all"></i> Marcar texto libre como recibido
+          </button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header bg-light">
+        <strong>📦 Entradas vinculadas</strong>
+        <small class="text-muted d-block" style="font-size:.75rem">Solo por el Nº de requisición capturado al registrar la entrada</small>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm mb-0 align-middle">
+          <thead class="table-light">
+            <tr><th class="col-fecha">Fecha</th><th class="col-desc">Producto</th><th class="col-compact">Cantidad</th><th class="col-compact">Factura</th></tr>
+          </thead>
+          <tbody>
+            {% for e in entradas_relacionadas %}
+            <tr class="table-info">
+              <td class="text-nowrap"><small>{{ e.fecha[:10] }}</small></td>
+              <td><small>{{ e.codigo }} — {{ e.descripcion }}</small></td>
+              <td><small>{{ "%g"|format(e.cantidad) }} {{ e.unidad_medida }}</small></td>
+              <td><small>{{ e.no_factura or '—' }}</small></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted py-3" style="font-size:.9rem">
+              <i class="bi bi-info-circle"></i> Sin entradas vinculadas aún.<br>
+              <small>Captura una entrada con Nº de requisición AL-{{ requisicion.folio }} para vincularla automáticamente.</small>
+            </td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

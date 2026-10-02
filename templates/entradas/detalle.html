@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Detalle entrada {{ entrada.folio }}{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-arrow-down-circle text-success"></i> Detalle de entrada</h1>
+  <div class="d-flex gap-2">
+    {% if not entrada.es_servicio %}
+    <a href="{{ url_for('entradas.etiquetas', ids=entrada.id) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark">
+      <i class="bi bi-tags"></i> Etiqueta
+    </a>
+    {% endif %}
+    <a href="{{ url_for('entradas.editar', eid=entrada.id, volver=volver) }}" class="btn btn-sm btn-outline-primary">
+      <i class="bi bi-pencil"></i> Editar / completar
+    </a>
+    <form method="POST" action="{{ url_for('entradas.eliminar', eid=entrada.id) }}" class="d-inline"
+          onsubmit="return confirm('¿Eliminar esta entrada? Se revertirá el stock que sumó. Esta acción no se puede deshacer.');">
+      <input type="hidden" name="volver" value="{{ volver }}">
+      <button type="submit" class="btn btn-sm btn-outline-danger">
+        <i class="bi bi-trash"></i> Eliminar
+      </button>
+    </form>
+    <a href="{{ (url_for('entradas.index') + '?' + volver) if volver else url_for('entradas.index') }}" class="btn btn-sm btn-outline-secondary">
+      <i class="bi bi-arrow-left"></i> Regresar
+    </a>
+  </div>
+</div>
+<div class="card" style="max-width:600px">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Folio: <span class="badge bg-success">{{ entrada.folio }}</span></strong>
+    <small class="text-muted">Vale: {{ (entrada.fecha_vale or entrada.fecha[:10])|fecha_vale }}</small>
+  </div>
+  <div class="card-body">
+    <dl class="row mb-0">
+      <dt class="col-sm-4">{{ 'Servicio / cargo' if entrada.es_servicio else 'Producto' }}</dt>
+      <dd class="col-sm-8">
+        {% if entrada.es_servicio %}<span class="badge bg-warning text-dark me-1">Servicio</span>{{ entrada.descripcion }}
+        {% else %}{{ entrada.codigo }} — {{ entrada.descripcion }}{% endif %}
+      </dd>
+      <dt class="col-sm-4">Cantidad</dt>
+      <dd class="col-sm-8 fw-bold text-success">
+        {% if (entrada.unidad_compra_movimiento and entrada.factor_conversion_movimiento) or (entrada.unidad_compra and entrada.cantidad_piezas is not none and entrada.cantidad_piezas != entrada.cantidad) %}
+          {{ entrada.cantidad_piezas|cantidad_unidad(entrada.unidad_medida) }}
+          <small class="text-muted fw-normal">(= {{ entrada.cantidad }} {{ entrada.unidad_compra_movimiento or entrada.unidad_compra }})</small>
+        {% else %}
+          {{ entrada.cantidad|cantidad_unidad(entrada.unidad_medida) }}
+        {% endif %}
+      </dd>
+      <dt class="col-sm-4">Precio unitario</dt>
+      <dd class="col-sm-8">${{ (entrada.precio_unitario or 0)|moneda }}
+        {% if es_dolar %}<span class="badge bg-info text-dark">USD</span>{% else %}<span class="badge bg-secondary">MXN</span>{% endif %}
+      </dd>
+      <dt class="col-sm-4">Importe (subtotal)</dt>
+      <dd class="col-sm-8">${{ subtotal|moneda }} {{ 'USD' if es_dolar else 'MXN' }}</dd>
+      <dt class="col-sm-4">IVA (16%)</dt>
+      <dd class="col-sm-8">${{ iva|moneda }}{% if es_dolar %} <span class="text-muted">(no aplica IVA en USD)</span>{% endif %}</dd>
+      <dt class="col-sm-4">Total</dt>
+      <dd class="col-sm-8 fw-bold">${{ total_con_iva|moneda }} {{ 'USD' if es_dolar else 'MXN' }}</dd>
+      <dt class="col-sm-4">Proveedor</dt>
+      <dd class="col-sm-8">{{ entrada.proveedor_nombre or '—' }}
+        {% if entrada.proveedor_nombre and not entrada.proveedor_id %}<span class="badge bg-secondary" style="font-size:.65rem" title="El proveedor ya no existe en el catálogo; se conserva el nombre solo como referencia histórica.">archivado</span>{% endif %}
+      </dd>
+      <dt class="col-sm-4">Nº Requisición</dt>
+      <dd class="col-sm-8">
+        {{ entrada.no_requisicion or '—' }}
+        {% if requisiciones_vinculadas %}
+          {% for req in requisiciones_vinculadas %}
+          <a href="{{ url_for('requisiciones.detalle', rid=req.id) }}" class="badge bg-primary text-decoration-none ms-1">
+            Ver requisición AL-{{ req.folio }}
+          </a>
+          {% endfor %}
+        {% elif requisicion_vinculada %}
+          <a href="{{ url_for('requisiciones.detalle', rid=requisicion_vinculada.id) }}" class="badge bg-primary text-decoration-none ms-1">
+            Ver requisición AL-{{ requisicion_vinculada.folio }}
+          </a>
+        {% endif %}
+      </dd>
+      <dt class="col-sm-4">Nº Factura</dt>
+      <dd class="col-sm-8">{{ entrada.no_factura or '—' }}</dd>
+      <dt class="col-sm-4">Remisión</dt>
+      <dd class="col-sm-8">{{ entrada.no_remision or '—' }}</dd>
+      <dt class="col-sm-4">Orden de compra</dt>
+      <dd class="col-sm-8">
+        {% if oc_pdf_url %}
+        <a href="{{ oc_pdf_url }}" class="oc-pdf-link" title="Abrir PDF de la orden de compra en Adobe">
+          <i class="bi bi-file-earmark-pdf"></i> {{ entrada.orden_compra }}
+        </a>
+        {% else %}
+        {{ entrada.orden_compra or '—' }}
+        {% endif %}
+        {% if entrada.recuperacion_almacen %}
+        <span class="badge bg-success ms-1"><i class="bi bi-arrow-counterclockwise"></i> Recuperación almacén</span>
+        {% endif %}
+      </dd>
+      <dt class="col-sm-4">Ubicación</dt>
+      <dd class="col-sm-8">{{ entrada.ubicacion or '—' }}</dd>
+      <dt class="col-sm-4">Uso</dt>
+      <dd class="col-sm-8">{{ entrada.uso or '—' }}</dd>
+      <dt class="col-sm-4">Registró</dt>
+      <dd class="col-sm-8">{{ entrada.usuario_nombre or '—' }}</dd>
+      <dt class="col-sm-4">Observaciones</dt>
+      <dd class="col-sm-8">{{ entrada.observaciones or '—' }}</dd>
+    </dl>
+  </div>
+</div>
+{% endblock %}

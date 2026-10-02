@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Personal Mantenimiento{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-person-badge"></i> Personal Mantenimiento</h1>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('prestamos_mantenimiento.index') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-left"></i> Módulo</a>
+    <button type="button" id="btn-etiquetas-personal" class="btn btn-outline-dark btn-sm"><i class="bi bi-tags"></i> Etiquetas seleccionadas</button>
+    <a href="{{ url_for('prestamos_mantenimiento.personal_catalogo', q=q) }}" target="_blank" class="btn btn-outline-success btn-sm"><i class="bi bi-printer"></i> Catálogo carta</a>
+    <a href="{{ url_for('prestamos_mantenimiento.personal_nuevo') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> Nuevo personal</a>
+  </div>
+</div>
+<div class="card mb-3"><div class="card-body py-2">
+  <form method="GET" class="row g-2 align-items-end">
+    <div class="col-md-6"><input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Buscar por nómina, nombre, área..."></div>
+    <input type="hidden" name="ver" value="{{ ver }}">
+    <div class="col-auto"><button class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button><a href="{{ url_for('prestamos_mantenimiento.personal') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a></div>
+    <div class="col-auto ms-auto btn-group btn-group-sm">
+      <a href="{{ url_for('prestamos_mantenimiento.personal', ver='activos', q=q) }}" class="btn {{ 'btn-primary' if ver=='activos' else 'btn-outline-primary' }}">Activos</a>
+      <a href="{{ url_for('prestamos_mantenimiento.personal', ver='inactivos', q=q) }}" class="btn {{ 'btn-primary' if ver=='inactivos' else 'btn-outline-primary' }}">Inactivos</a>
+      <a href="{{ url_for('prestamos_mantenimiento.personal', ver='todos', q=q) }}" class="btn {{ 'btn-primary' if ver=='todos' else 'btn-outline-primary' }}">Todos</a>
+    </div>
+  </form>
+</div></div>
+<div class="card"><div class="table-responsive"><table class="table table-hover mb-0">
+  <thead><tr><th style="width:42px"><input type="checkbox" class="form-check-input" id="check-todos-personal"></th><th>Nómina</th><th>Nombre</th><th>Área</th><th>Código de barras</th><th>Estado</th><th></th></tr></thead>
+  <tbody>
+  {% for r in registros %}
+    <tr class="{{ '' if r.activo else 'table-secondary text-muted' }}">
+      <td><input type="checkbox" class="form-check-input check-etiqueta-personal" value="{{ r.id }}"></td>
+      <td class="font-monospace">{{ r.codigo }}</td>
+      <td class="fw-semibold">{{ r.nombre }}</td>
+      <td>{{ r.area or '-' }}</td>
+      <td><img src="{{ url_for('prestamos_mantenimiento.personal_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}" style="max-width:220px;height:58px"><br><small class="font-monospace text-success">{{ r.codigo_barras }}</small></td>
+      <td>{% if r.activo %}<span class="badge bg-success">Activo</span>{% else %}<span class="badge bg-secondary">Inactivo</span>{% endif %}</td>
+      <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('prestamos_mantenimiento.personal_editar', item_id=r.id) }}"><i class="bi bi-pencil"></i> Editar</a></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="text-center text-muted py-4">No hay personal registrado.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+<script>
+(() => {
+  const checks = Array.from(document.querySelectorAll('.check-etiqueta-personal'));
+  const checkTodos = document.getElementById('check-todos-personal');
+  const btn = document.getElementById('btn-etiquetas-personal');
+  checkTodos?.addEventListener('change', () => checks.forEach(ch => ch.checked = checkTodos.checked));
+  btn?.addEventListener('click', () => {
+    const ids = checks.filter(ch => ch.checked).map(ch => ch.value);
+    if (!ids.length) {
+      alert('Selecciona al menos una persona.');
+      return;
+    }
+    const url = new URL("{{ url_for('prestamos_mantenimiento.etiquetas', _external=True) }}");
+    url.searchParams.set('tipo', 'personal');
+    url.searchParams.set('ids', ids.join(','));
+    window.open(url.toString(), '_blank');
+  });
+})();
+</script>
+{% endblock %}

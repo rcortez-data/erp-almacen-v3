@@ -1,0 +1,342 @@
+{% extends 'base.html' %}
+{% block title %}Editar salida{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-pencil-square text-warning"></i> Editar salida</h1>
+  <a href="{{ return_to }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="alert alert-info py-2" style="font-size:.85rem">
+  <i class="bi bi-info-circle"></i> Folio <strong>{{ salida.folio }}</strong>. Puedes corregir el producto, la
+  cantidad, quién recibió y los demás datos. Si cambias el producto o la cantidad, el stock se ajusta
+  automáticamente (se regresa la cantidad original y se descuenta la nueva).
+</div>
+
+<div class="card" style="max-width:640px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="return_to" value="{{ return_to }}">
+      <div class="mb-3 position-relative">
+        <label class="form-label fw-semibold">Producto <span class="text-danger">*</span></label>
+        <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
+               placeholder="Busca por código o descripción"
+               value="{{ salida.codigo }} — {{ salida.descripcion }}">
+        <input type="hidden" name="producto_id" id="producto_id" value="{{ salida.producto_id }}">
+        <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+             style="z-index:20; max-height:280px; overflow-y:auto; display:none;"></div>
+        <div id="info-stock" class="form-text"></div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Cantidad <span class="text-danger">*</span></label>
+        <div class="input-group" style="max-width:220px">
+          <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.001" step="0.001"
+                 value="{{ ((salida.cantidad * salida.factor_conversion) if salida.tipo_conversion == 'compra_a_uso' else (salida.cantidad / salida.factor_conversion))|round(2) if salida.unidad_compra and salida.factor_conversion else salida.cantidad }}">
+          <span class="input-group-text" id="lbl-unidad">{{ salida.unidad_medida }}</span>
+        </div>
+        <div class="input-group input-group-sm mt-2" id="fila-cantidad-stock" style="max-width:220px; {{ '' if salida.unidad_compra and salida.factor_conversion else 'display:none' }}">
+          <input type="number" name="cantidad_compra" id="cantidad-compra" class="form-control" min="0.001" step="0.001"
+                 value="{{ salida.cantidad if salida.unidad_compra and salida.factor_conversion else '' }}">
+          <span class="input-group-text" id="lbl-unidad-stock">{{ salida.unidad_compra or '-' }}</span>
+        </div>
+        <div class="form-text fw-semibold text-danger" id="conversion-salida" style="{{ '' if salida.unidad_compra and salida.factor_conversion else 'display:none' }}">
+          {% if salida.unidad_compra and salida.factor_conversion %}
+          {{ ((salida.cantidad * salida.factor_conversion) if salida.tipo_conversion == 'compra_a_uso' else (salida.cantidad / salida.factor_conversion))|cantidad_unidad(salida.unidad_medida) }} = {{ salida.cantidad|cantidad_unidad(salida.unidad_compra) }}
+          {% endif %}
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Tipo de movimiento</label>
+          <select name="tipo_movimiento" class="form-select">
+            <option value="normal" {{ 'selected' if salida.tipo_movimiento != 'ajuste' }}>Salida normal</option>
+            <option value="ajuste" {{ 'selected' if salida.tipo_movimiento == 'ajuste' }}>Ajuste de inventario (no cuadró el conteo)</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Fecha del vale</label>
+          <input type="date" name="fecha_vale" class="form-control" value="{{ salida.fecha_vale or salida.fecha[:10] }}">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Área a la que sale el material</label>
+        <select name="area" id="area" class="form-select">
+          <option value="">Sin área</option>
+          {% for area in areas_lista %}
+          <option value="{{ area.nombre }}" {{ 'selected' if salida.area == area.nombre }}>{{ area.nombre }}</option>
+          {% endfor %}
+          {% if salida.area and salida.area not in areas_lista|map(attribute='nombre')|list %}
+          <option value="{{ salida.area }}" selected>{{ salida.area }} (actual)</option>
+          {% endif %}
+        </select>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Tipo de vale</label>
+          <select name="tipo_vale" id="tipo_vale" class="form-select">
+            <option value="normal" {{ 'selected' if not salida.tipo_vale or salida.tipo_vale == 'normal' }}>Normal</option>
+            <option value="mantenimiento" {{ 'selected' if salida.tipo_vale == 'mantenimiento' }}>Mantenimiento (M-)</option>
+            <option value="maquinados" {{ 'selected' if salida.tipo_vale == 'maquinados' }}>Maquinados (M-)</option>
+          </select>
+        </div>
+        <div class="col-md-6" id="fila_maquina" style="display:none">
+          <label class="form-label fw-semibold">Máquina</label>
+          <select name="maquina" id="maquina" class="form-select">
+            <option value="">Selecciona máquina</option>
+            {% for m in maquinas %}
+            <option value="{{ m }}" {{ 'selected' if salida.maquina == m }}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-6" id="fila_maquina_otro" style="display:none">
+          <label class="form-label fw-semibold">¿Cuál máquina? (Otros)</label>
+          <input type="text" name="maquina_otro" id="maquina_otro" class="form-control"
+                 value="{{ salida.maquina_otro or '' }}" placeholder="Especifica la máquina">
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Recibió <span class="text-danger">*</span></label>
+        <input type="text" name="responsable" class="form-control" required value="{{ salida.responsable }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Proveedor</label>
+        <input type="text" name="proveedor" class="form-control" value="{{ salida.proveedor or '' }}"
+               placeholder="Escribe el nombre del proveedor">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Folio de vale <span class="text-danger">*</span></label>
+        <input type="text" name="no_vale" id="no_vale" class="form-control" required minlength="1" value="{{ salida.no_vale or '' }}">
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Factura</label>
+          <input type="text" name="no_factura" class="form-control" value="{{ salida.no_factura or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Remisión</label>
+          <input type="text" name="no_remision" class="form-control" value="{{ salida.no_remision or '' }}">
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">Observaciones</label>
+        <textarea name="observaciones" class="form-control" rows="2">{{ salida.observaciones or '' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+        <a href="{{ return_to }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoIdInput = document.getElementById('producto_id');
+  const lblUnidad = document.getElementById('lbl-unidad');
+  const infoStock = document.getElementById('info-stock');
+  const cantidadInput = document.getElementById('cantidad');
+  const cantidadCompraInput = document.getElementById('cantidad-compra');
+  const filaCantidadStock = document.getElementById('fila-cantidad-stock');
+  const lblUnidadStock = document.getElementById('lbl-unidad-stock');
+  const tipoVale = document.getElementById('tipo_vale');
+  const maquinaInput = document.getElementById('maquina');
+  const maquinaOtroInput = document.getElementById('maquina_otro');
+  const filaMaquinaOtro = document.getElementById('fila_maquina_otro');
+  const areaInput = document.getElementById('area');
+  const filaMaquina = document.getElementById('fila_maquina');
+  const valeInput = document.getElementById('no_vale');
+  const conversionSalida = document.getElementById('conversion-salida');
+  let productoSeleccionado = {
+    unidad_medida: {{ salida.unidad_medida|tojson }},
+    unidad_compra: {{ salida.unidad_compra|tojson }},
+    factor_conversion: {{ salida.factor_conversion|tojson }},
+    tipo_conversion: {{ (salida.tipo_conversion or 'uso_a_compra')|tojson }}
+  };
+  let debounceTimer = null;
+
+  function actualizarMaquinaOtro() {
+    const visible = tipoVale.value === 'maquinados' && maquinaInput.value === 'Otros';
+    filaMaquinaOtro.style.display = visible ? '' : 'none';
+    if (!visible) maquinaOtroInput.value = '';
+  }
+  tipoVale.addEventListener('change', actualizarMaquinaOtro);
+  maquinaInput.addEventListener('change', actualizarMaquinaOtro);
+  actualizarMaquinaOtro();
+
+  function fijarArea(nombre) {
+    const buscado = (nombre || '').trim().toUpperCase();
+    let encontrada = false;
+    Array.from(areaInput.options).forEach((opt) => {
+      if (opt.value.trim().toUpperCase() === buscado) {
+        areaInput.value = opt.value;
+        encontrada = true;
+      }
+    });
+    if (!encontrada && nombre) {
+      const opt = document.createElement('option');
+      opt.value = nombre;
+      opt.textContent = `${nombre} (actual)`;
+      areaInput.appendChild(opt);
+      areaInput.value = nombre;
+    }
+  }
+
+  function aplicarTipoVale() {
+    const tipo = tipoVale.value;
+    if (tipo === 'mantenimiento') {
+      filaMaquina.style.display = 'none';
+      maquinaInput.value = '';
+      fijarArea('Mantenimiento');
+      valeInput.value = `M-${limpiarNumeroVale(valeInput.value, 'M-')}`;
+    } else if (tipo === 'maquinados') {
+      filaMaquina.style.display = '';
+      fijarArea('Maquinados');
+      valeInput.value = `M-${limpiarNumeroVale(valeInput.value, 'M-')}`;
+    } else {
+      filaMaquina.style.display = 'none';
+      maquinaInput.value = '';
+    }
+    protegerPrefijoVale();
+  }
+
+  function prefijoValeActual() {
+    if (tipoVale.value === 'mantenimiento') return 'M-';
+    if (tipoVale.value === 'maquinados') return 'M-';
+    return '';
+  }
+
+  function limpiarNumeroVale(valor, prefijo) {
+    let texto = String(valor || '').trim();
+    if (prefijo === 'M-') {
+      texto = texto.replace(/^M\s*-?/i, '').replace(/^MAQ\s*-?/i, '');
+    }
+    return texto;
+  }
+
+  function protegerPrefijoVale() {
+    const prefijo = prefijoValeActual();
+    if (!prefijo) return;
+    if (!valeInput.value.toUpperCase().startsWith(prefijo)) {
+      valeInput.value = prefijo + limpiarNumeroVale(valeInput.value, prefijo);
+    }
+    if (valeInput.selectionStart < prefijo.length) {
+      valeInput.setSelectionRange(prefijo.length, prefijo.length);
+    }
+  }
+
+  valeInput.addEventListener('keydown', (e) => {
+    const prefijo = prefijoValeActual();
+    if (!prefijo) return;
+    const inicio = valeInput.selectionStart;
+    const fin = valeInput.selectionEnd;
+    if ((e.key === 'Backspace' && inicio <= prefijo.length && fin <= prefijo.length) ||
+        (e.key === 'Delete' && inicio < prefijo.length)) {
+      e.preventDefault();
+      valeInput.setSelectionRange(prefijo.length, prefijo.length);
+    }
+  });
+  valeInput.addEventListener('input', protegerPrefijoVale);
+  valeInput.addEventListener('click', protegerPrefijoVale);
+  valeInput.addEventListener('focus', protegerPrefijoVale);
+
+  tipoVale.addEventListener('change', aplicarTipoVale);
+  aplicarTipoVale();
+
+  buscador.addEventListener('input', function() {
+    productoIdInput.value = '';
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { resultados.style.display = 'none'; return; }
+    debounceTimer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          if (data.length === 0) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              const barras = p.codigo_barras ? `<div class="text-success font-monospace" style="font-size:.76rem">${p.codigo_barras}</div>` : '';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}${barras}
+                <div class="text-muted" style="font-size:.78rem">Stock: ${p.stock_actual} ${p.unidad_medida}</div>`;
+              item.addEventListener('click', () => seleccionarProducto(p));
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!resultados.contains(e.target) && e.target !== buscador) resultados.style.display = 'none';
+  });
+
+  function seleccionarProducto(p) {
+    buscador.value = `${p.codigo} — ${p.descripcion}`;
+    productoIdInput.value = p.id;
+    productoSeleccionado = p;
+    lblUnidad.textContent = p.unidad_medida || '—';
+    lblUnidadStock.textContent = (p.unidad_compra && p.factor_conversion) ? p.unidad_compra : '—';
+    filaCantidadStock.style.display = (p.unidad_compra && p.factor_conversion) ? 'flex' : 'none';
+    cantidadInput.value = '';
+    cantidadCompraInput.value = '';
+    const conversion = (p.unidad_compra && p.factor_conversion)
+      ? ` = ${stockACompra(Number(p.stock_actual || 0), p).toFixed(2)} ${p.unidad_compra}`
+      : '';
+    infoStock.textContent = `Stock actual: ${p.stock_actual} ${p.unidad_medida}${conversion}`;
+    actualizarConversionSalida();
+    resultados.style.display = 'none';
+    cantidadInput.focus();
+  }
+
+  function actualizarConversionSalida(origen = 'stock') {
+    if (!productoSeleccionado || !productoSeleccionado.unidad_compra || !productoSeleccionado.factor_conversion) {
+      conversionSalida.style.display = 'none';
+      conversionSalida.textContent = '';
+      return;
+    }
+    const factor = Number(productoSeleccionado.factor_conversion || 0);
+    if (!factor) {
+      conversionSalida.style.display = 'none';
+      return;
+    }
+    if (origen === 'stock') {
+      if (!cantidadInput.value) return;
+      cantidadCompraInput.value = stockACompra(Number(cantidadInput.value), productoSeleccionado).toFixed(2);
+    } else {
+      if (!cantidadCompraInput.value) return;
+      cantidadInput.value = compraAStock(Number(cantidadCompraInput.value), productoSeleccionado).toFixed(2);
+    }
+    conversionSalida.textContent = `${cantidadInput.value} ${productoSeleccionado.unidad_medida} = ${cantidadCompraInput.value} ${productoSeleccionado.unidad_compra}`;
+    conversionSalida.style.display = 'block';
+  }
+  function stockACompra(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad / factor : cantidad * factor;
+  }
+  function compraAStock(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad * factor : cantidad / factor;
+  }
+  cantidadInput.addEventListener('input', () => actualizarConversionSalida('stock'));
+  cantidadCompraInput.addEventListener('input', () => actualizarConversionSalida('compra'));
+</script>
+{% endblock %}

@@ -1,20 +1,410 @@
-{% load static %}<!doctype html>
-<html lang="es-MX"><head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}Web Price Shoes{% endblock %}</title><meta name="description" content="{% block description %}Catálogo de calzado de un distribuidor independiente.{% endblock %}">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous"><link rel="stylesheet" href="{% static 'css/site.css' %}">
-  {% block extra_head %}{% endblock %}
-</head><body>
-<a class="skip-link" href="#main">Saltar al contenido</a>
-<div class="announcement text-center py-2">Distribuidor independiente · Existencias sujetas a confirmación</div>
-<nav class="navbar navbar-expand-lg bg-white sticky-top border-bottom" aria-label="Navegación principal"><div class="container">
- <a class="navbar-brand fw-black" href="{% url 'core:home' %}"><span>WPS</span> Calzado</a><button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"><span class="navbar-toggler-icon"></span></button>
- <div class="collapse navbar-collapse" id="nav"><ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="{% url 'catalog:list' %}">Catálogo</a></li><li class="nav-item"><a class="nav-link" href="{% url 'core:legal' 'envios' %}">Envíos</a></li><li class="nav-item"><a class="nav-link" href="{% url 'core:legal' 'contacto' %}">Contacto</a></li></ul>
- <form class="d-flex me-3" action="{% url 'catalog:list' %}"><label class="visually-hidden" for="nav-search">Buscar</label><input id="nav-search" class="form-control" name="q" placeholder="Buscar calzado"><button class="btn btn-dark ms-1">Buscar</button></form>
- <a class="btn btn-outline-dark me-2" href="{% url 'cart:detail' %}">Carrito <span class="badge text-bg-danger">{{ cart|length }}</span></a>{% if user.is_authenticated %}<a class="btn btn-link" href="{% url 'accounts:profile' %}">Mi cuenta</a>{% else %}<a class="btn btn-link" href="{% url 'login' %}">Ingresar</a>{% endif %}</div>
-</div></nav>
-{% if messages %}<div class="container mt-3" aria-live="polite">{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show">{{ message }}<button class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button></div>{% endfor %}</div>{% endif %}
-<main id="main">{% block content %}{% endblock %}</main>
-<footer class="footer mt-5 py-5"><div class="container"><div class="row g-4"><div class="col-md-5"><h2 class="h5">WPS Calzado</h2><p>Catálogo operado por un distribuidor independiente. Este sitio no afirma ser la tienda oficial de ninguna marca.</p></div><div class="col"><a href="{% url 'core:legal' 'privacidad' %}">Privacidad</a><br><a href="{% url 'core:legal' 'terminos' %}">Términos</a></div><div class="col"><a href="{% url 'core:legal' 'envios' %}">Envíos</a><br><a href="{% url 'core:legal' 'devoluciones' %}">Devoluciones</a></div></div></div></footer>
-<a class="whatsapp" href="https://wa.me/{{ WHATSAPP_NUMBER }}" target="_blank" rel="noopener" aria-label="Contactar por WhatsApp">WhatsApp</a>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script><script src="{% static 'js/site.js' %}"></script>{% block scripts %}{% endblock %}</body></html>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<title>{% block title %}ERP ALMACEN GENERAL{% endblock %}</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --sidebar-w: 250px;
+    --brand: #4f46e5;
+    --brand-dark: #4338ca;
+    --brand-light: #eef2ff;
+    --ink: #1e2230;
+    --ink-soft: #6b7280;
+    --bg: #f4f5f9;
+    --border-soft: #e9eaf0;
+    --radius: .75rem;
+    --shadow-sm: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.05);
+    --shadow-md: 0 4px 12px rgba(16,24,40,.08);
+  }
+  * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+  body { background: var(--bg); min-height: 100vh; color: var(--ink); }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    width: var(--sidebar-w); position: fixed; top: 0; left: 0; bottom: 0;
+    background: linear-gradient(180deg, #171a24 0%, #12141c 100%);
+    color: #cdd0d4; display: flex; flex-direction: column;
+    z-index: 100; overflow-y: auto;
+  }
+  #sidebar::-webkit-scrollbar { width: 6px; }
+  #sidebar::-webkit-scrollbar-thumb { background: #2e323b; border-radius: 3px; }
+  #sidebar .brand {
+    padding: 1.4rem 1.3rem 1.1rem;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    font-weight: 800; font-size: 1.05rem; color: #fff; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: .6rem;
+  }
+  #sidebar .brand i {
+    background: linear-gradient(135deg, var(--brand), #818cf8);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-size: 1.4rem;
+  }
+  #sidebar .nav-section {
+    font-size: .66rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .1em; color: #565b68; padding: 1.1rem 1.3rem .4rem;
+  }
+  #sidebar a.nav-link {
+    color: #a6abb6; padding: .55rem 1.3rem; margin: .05rem .6rem; border-radius: .5rem;
+    font-size: .87rem; font-weight: 500; display: flex; align-items: center; gap: .65rem;
+    transition: background .15s ease, color .15s ease, transform .1s ease;
+    position: relative;
+  }
+  #sidebar a.nav-link:hover { background: rgba(255,255,255,.06); color: #fff; }
+  #sidebar a.nav-link.active {
+    background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+    color: #fff; box-shadow: 0 2px 8px rgba(79,70,229,.35);
+  }
+  #sidebar a.nav-link i { font-size: 1.02rem; width: 1.1rem; text-align: center; }
+  #sidebar .nav-toggle {
+    width: calc(100% - 1.2rem);
+    color: #a6abb6; padding: .55rem 1.3rem; margin: .05rem .6rem; border-radius: .5rem;
+    font-size: .87rem; font-weight: 600; display: flex; align-items: center; gap: .65rem;
+    background: transparent; border: 0; text-align: left;
+    transition: background .15s ease, color .15s ease;
+  }
+  #sidebar .nav-toggle:hover, #sidebar .nav-toggle.active { background: rgba(255,255,255,.06); color: #fff; }
+  #sidebar .nav-toggle i:first-child { font-size: 1.02rem; width: 1.1rem; text-align: center; }
+  #sidebar .nav-toggle .toggle-chevron { margin-left: auto; transition: transform .15s ease; }
+  #sidebar .nav-toggle[aria-expanded="true"] .toggle-chevron { transform: rotate(180deg); }
+  #sidebar .nav-submenu { display: none; padding: .1rem 0 .25rem; }
+  #sidebar .nav-submenu.show { display: block; }
+  #sidebar .nav-submenu a.nav-link { margin-left: 1.25rem; padding-left: .9rem; font-size: .82rem; }
+  #sidebar .sidebar-footer {
+    margin-top: auto; padding: 1rem 1.3rem;
+    border-top: 1px solid rgba(255,255,255,.06); font-size: .78rem; color: #6b7280;
+  }
+  #sidebar .sidebar-footer .fw-semibold { color: #e5e7eb; }
+
+  /* ---------- Layout general ---------- */
+  #main { margin-left: var(--sidebar-w); padding: 1.75rem 2.25rem; min-height: 100vh; overflow-x: hidden; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.6rem; flex-wrap: wrap; gap: .75rem; }
+  .page-title { font-size: 1.4rem; font-weight: 800; color: var(--ink); margin: 0; letter-spacing: -.01em; }
+  .page-title i { color: var(--brand); }
+
+  /* ---------- Tarjetas ---------- */
+  .card { border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); border-radius: var(--radius); }
+  .card-header { border-bottom: 1px solid var(--border-soft); background: #fff; font-weight: 600; color: var(--ink); }
+  .card-footer { border-top: 1px solid var(--border-soft); background: #fbfbfd; }
+  .stat-card { border-radius: var(--radius); padding: 1.3rem 1.5rem; color: #fff; box-shadow: var(--shadow-md); }
+
+  /* ---------- Botones ---------- */
+  .btn { border-radius: .55rem; font-weight: 600; letter-spacing: -.01em; }
+  .btn-sm { border-radius: .5rem; }
+  .btn-primary { background: var(--brand); border-color: var(--brand); }
+  .btn-primary:hover, .btn-primary:focus { background: var(--brand-dark); border-color: var(--brand-dark); }
+  .btn-outline-primary { color: var(--brand); border-color: var(--brand); }
+  .btn-outline-primary:hover { background: var(--brand); border-color: var(--brand); }
+  .btn:disabled { opacity: .55; }
+
+  /* ---------- Formularios ---------- */
+  .form-control, .form-select {
+    border-radius: .55rem; border-color: #d9dbe3; font-size: .92rem;
+  }
+  .form-control:focus, .form-select:focus {
+    border-color: var(--brand); box-shadow: 0 0 0 .2rem rgba(79,70,229,.15);
+  }
+  .form-label { font-size: .84rem; font-weight: 600; color: #374151; }
+
+  /* ---------- Tablas ---------- */
+  .table thead th {
+    font-size: .74rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--ink-soft); background: #fafafc;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .table tbody tr:hover { background: #f8f9ff; }
+  .table td, .table th { vertical-align: middle; }
+
+  /* ---------- Badges ---------- */
+  .badge { font-weight: 600; letter-spacing: .01em; border-radius: .4rem; }
+  .badge-rol-admin { background: #dc3545; }
+  .badge-rol-supervisor { background: #fd7e14; }
+  .badge-rol-operador { background: #198754; }
+  .badge-rol-almacen { background: #198754; }
+  .badge-rol-compras { background: #0d6efd; }
+  .badge-rol-produccion { background: #6f42c1; }
+  .badge-rol-mantenimiento { background: #fd7e14; }
+  .badge-rol-consulta { background: #6c757d; }
+  .alert-stock { background: #fff8e6; border-left: 3px solid #f5b301; }
+  .alert { border-radius: .6rem; border: none; }
+  body.modo-solo-lectura form[method="post"] button[type="submit"],
+  body.modo-solo-lectura form[method="POST"] button[type="submit"],
+  body.modo-solo-lectura a[href*="/nuevo"],
+  body.modo-solo-lectura a[href*="/editar"],
+  body.modo-solo-lectura a[href*="/baja/"] { display: none !important; }
+  body.modo-solo-lectura form[method="post"] input:not([type="hidden"]),
+  body.modo-solo-lectura form[method="post"] select,
+  body.modo-solo-lectura form[method="post"] textarea {
+    pointer-events: none; background-color: #f1f3f5; opacity: .8;
+  }
+
+  /* ---------- Utilidades de tabla ---------- */
+  .table-responsive { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-responsive::-webkit-scrollbar { height: 10px; }
+  .table-responsive::-webkit-scrollbar-thumb { background: #d3d5dd; border-radius: 6px; }
+  .table-responsive::-webkit-scrollbar-track { background: var(--bg); }
+  .table-scroll-hint { font-size: .75rem; color: var(--ink-soft); margin-bottom: .4rem; display: none; }
+  @media (max-width: 1200px) { .table-scroll-hint { display: block; } }
+  .table-sticky-col th:first-child, .table-sticky-col td:first-child {
+    position: sticky; left: 0; background: #fff; z-index: 2;
+    box-shadow: 2px 0 4px rgba(0,0,0,.05);
+  }
+  .table-sticky-col thead th:first-child { background: #fafafc; }
+  .col-compact { width: 70px; white-space: nowrap; }
+  .col-truncate { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .col-wrap { white-space: normal; word-break: break-word; }
+  .col-desc { min-width: 280px; max-width: 460px; white-space: normal; word-break: break-word; }
+  .col-code { width: 120px; white-space: nowrap; }
+  .col-fecha { width: 100px; white-space: nowrap; }
+  .col-medium { width: 150px; }
+  .col-acciones { width: 115px; white-space: nowrap; }
+
+  @media print {
+    @page { 
+      margin: 0; 
+      size: auto;
+    }
+    body, html {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100%;
+      height: 100%;
+    }
+    #sidebar { display: none !important; }
+    #main { margin-left: 0 !important; padding: 1.75rem 2.25rem; }
+    .topbar { display: none !important; }
+    .no-print { display: none !important; }
+    .btn { display: none !important; }
+    .btn-group { display: none !important; }
+    .card-footer { display: none !important; }
+    .col-code { text-align: center; }
+    .font-monospace { text-align: center; }
+    * { 
+      -webkit-print-color-adjust: exact !important; 
+      print-color-adjust: exact !important;
+      color-adjust: exact !important;
+    }
+  }
+
+  @media (max-width: 768px) {
+    #sidebar { display: none; }
+    #main { margin-left: 0; padding: 1.1rem; }
+  }
+</style>
+<link href="{{ url_for('static', filename='css/erp-v3.css') }}?v=20260819_tensa" rel="stylesheet">
+{% block extra_css %}{% endblock %}
+</head>
+<body class="{{ 'modo-solo-lectura' if session.get('user_id') and not puede_modificar(request.blueprint) else '' }}">
+{% if session.get('user_id') %}
+<nav id="sidebar">
+  <div class="brand">
+    <img src="{{ url_for('static', filename='img/grupo-tensa-logo.png') }}" alt="Grupo Tensa" class="brand-logo">
+    <span class="brand-text">
+      <span class="brand-title">ERP ALMACEN GENERAL</span>
+      <span class="brand-subtitle">GRUPO TENSA</span>
+    </span>
+  </div>
+
+  <div class="nav-section">Principal</div>
+  <a href="{{ url_for('dashboard.index') }}" class="nav-link {{ 'active' if request.endpoint == 'dashboard.index' }}">
+    <i class="bi bi-speedometer2"></i> Dashboard
+  </a>
+  <a href="{{ url_for('inventario.movil') }}" class="nav-link {{ 'active' if request.endpoint == 'inventario.movil' }}">
+    <i class="bi bi-phone"></i> Móvil
+  </a>
+
+  <div class="nav-section">Inventario</div>
+  <a href="{{ url_for('inventario.index') }}" class="nav-link {{ 'active' if request.blueprint == 'inventario' }}">
+    <i class="bi bi-box-seam"></i> Productos
+  </a>
+  <a href="{{ url_for('entradas.index') }}" class="nav-link {{ 'active' if request.blueprint == 'entradas' }}">
+    <i class="bi bi-arrow-down-circle"></i> Entradas
+  </a>
+  <a href="{{ url_for('salidas.index') }}" class="nav-link {{ 'active' if request.blueprint == 'salidas' }}">
+    <i class="bi bi-arrow-up-circle"></i> Salidas
+  </a>
+  <a href="{{ url_for('requisiciones.index') }}" class="nav-link {{ 'active' if request.blueprint == 'requisiciones' }}">
+    <i class="bi bi-file-earmark-text"></i> Requisiciones
+  </a>
+  <a href="{{ url_for('vales_montacargas.index') }}" class="nav-link {{ 'active' if request.blueprint == 'vales_montacargas' }}">
+    <i class="bi bi-clipboard-check"></i> Vales de Montacargas
+  </a>
+  <a href="{{ url_for('material_por_pedir.index') }}" class="nav-link {{ 'active' if request.blueprint == 'material_por_pedir' }}">
+    <i class="bi bi-clipboard2-plus"></i> Material por pedir
+  </a>
+  <a href="{{ url_for('prestamos_mantenimiento.index') }}" class="nav-link {{ 'active' if request.blueprint == 'prestamos_mantenimiento' }}">
+    <i class="bi bi-tools"></i> Préstamos Mantenimiento
+  </a>
+  <a href="{{ url_for('etiquetas_produccion.index') }}" class="nav-link {{ 'active' if request.blueprint == 'etiquetas_produccion' }}">
+    <i class="bi bi-tags"></i> Etiquetas Producción
+  </a>
+
+  {% set listados_activo = request.blueprint in ['proveedores', 'montacargas', 'areas', 'listados'] %}
+  <div class="nav-section">Listados</div>
+  <button type="button" id="btn-listados-menu" class="nav-toggle {{ 'active' if listados_activo }}" aria-expanded="{{ 'true' if listados_activo else 'false' }}" aria-controls="listados-menu">
+    <i class="bi bi-list-check"></i>
+    <span>Listados</span>
+    <i class="bi bi-chevron-down toggle-chevron"></i>
+  </button>
+  <div id="listados-menu" class="nav-submenu {{ 'show' if listados_activo }}">
+    <a href="{{ url_for('proveedores.index') }}" class="nav-link {{ 'active' if request.blueprint == 'proveedores' }}">
+      <i class="bi bi-truck"></i> Proveedores
+    </a>
+    <a href="{{ url_for('montacargas.index') }}" class="nav-link {{ 'active' if request.blueprint == 'montacargas' }}">
+      <i class="bi bi-truck-front"></i> Montacargas
+    </a>
+    <a href="{{ url_for('areas.index') }}" class="nav-link {{ 'active' if request.blueprint == 'areas' }}">
+      <i class="bi bi-diagram-3"></i> Áreas
+    </a>
+    <a href="{{ url_for('listados.unidades') }}" class="nav-link {{ 'active' if request.endpoint == 'listados.unidades' }}">
+      <i class="bi bi-rulers"></i> Unidades
+    </a>
+  </div>
+
+  <div class="nav-section">Reportes</div>
+  <a href="{{ url_for('balance.index') }}" class="nav-link {{ 'active' if request.endpoint == 'balance.index' }}">
+    <i class="bi bi-calculator"></i> Balance Mensual
+  </a>
+
+  <div class="nav-section">Administración</div>
+  <a href="{{ url_for('usuarios.index') }}" class="nav-link {{ 'active' if request.blueprint == 'usuarios' }}">
+    <i class="bi bi-people"></i> Usuarios
+  </a>
+  <a href="{{ url_for('usuarios.actividad') }}" class="nav-link">
+    <i class="bi bi-journal-text"></i> Actividad
+  </a>
+  <div class="sidebar-footer">
+    <span class="lab-pill"><i class="bi bi-building"></i> GRUPO TENSA</span>
+    <div class="fw-semibold text-white">{{ session.get('nombre') }}</div>
+    <div>Acceso libre</div>
+    <a href="{{ url_for('auth.logout') }}" class="text-danger text-decoration-none d-block mt-2">
+      <i class="bi bi-box-arrow-left"></i> Cerrar sesión
+    </a>
+  </div>
+</nav>
+{% endif %}
+
+<div id="main">
+  {% if session.get('user_id') %}
+  <div class="app-shell-header no-print">
+    <div class="mobile-brand">
+      <img src="{{ url_for('static', filename='img/grupo-tensa-logo.png') }}" alt="Grupo Tensa">
+      ERP ALMACEN GENERAL
+    </div>
+    <div class="app-context">
+      <span class="lab-pill"><i class="bi bi-building"></i> GRUPO TENSA</span>
+      <span>{{ request.blueprint|default('dashboard', true)|replace('_', ' ')|title }}</span>
+    </div>
+    <div class="quick-actions">
+      {% if usuarios_selector %}
+      <form method="POST" action="{{ url_for('auth.seleccionar_usuario') }}" class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0 text-muted" for="selector-usuario-activo" style="font-size:.78rem">Usuario</label>
+        <select name="user_id" id="selector-usuario-activo" class="form-select form-select-sm" onchange="this.form.submit()" style="min-width:180px">
+          {% for u in usuarios_selector %}
+          <option value="{{ u.id }}" {{ 'selected' if session.get('user_id') == u.id }}>{{ u.nombre }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% endif %}
+      <a href="{{ url_for('entradas.nuevo') }}" class="btn btn-sm btn-success"><i class="bi bi-plus-lg"></i> Entrada</a>
+      <a href="{{ url_for('salidas.nuevo') }}" class="btn btn-sm btn-warning"><i class="bi bi-dash-lg"></i> Salida</a>
+      <a href="{{ url_for('inventario.movil') }}" class="btn btn-sm btn-outline-success"><i class="bi bi-phone"></i> Móvil</a>
+      <a href="{{ url_for('inventario.index') }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-search"></i> Inventario</a>
+    </div>
+  </div>
+  {% endif %}
+  {% if session.get('user_id') and not puede_modificar(request.blueprint) and request.blueprint not in ('auth', none) %}
+  <div class="alert alert-info py-2 mb-3 no-print" role="status">
+    <i class="bi bi-eye"></i> Modo solo lectura: tu perfil puede consultar este modulo, pero no modificar informacion.
+  </div>
+  {% endif %}
+  {% with msgs = get_flashed_messages(with_categories=True) %}
+    {% for cat, msg in msgs %}
+    <div class="alert alert-{{ cat }} alert-dismissible fade show py-2 mb-3" role="alert">
+      {{ msg }}
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+(() => {
+  const token = document.querySelector('meta[name="csrf-token"]')?.content;
+  if (!token) return;
+
+  document.querySelectorAll('form').forEach(form => {
+    if ((form.method || 'get').toLowerCase() !== 'post' || form.querySelector('input[name="_csrf_token"]')) return;
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = '_csrf_token';
+    input.value = token;
+    form.appendChild(input);
+  });
+
+  const originalFetch = window.fetch.bind(window);
+  window.fetch = (input, options = {}) => {
+    const method = (options.method || 'GET').toUpperCase();
+    const url = typeof input === 'string' ? input : input.url;
+    const sameOrigin = new URL(url, window.location.href).origin === window.location.origin;
+    if (sameOrigin && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
+      const headers = new Headers(options.headers || {});
+      headers.set('X-CSRFToken', token);
+      options = {...options, headers};
+    }
+    return originalFetch(input, options);
+  };
+})();
+
+(() => {
+  const btn = document.getElementById('btn-listados-menu');
+  const menu = document.getElementById('listados-menu');
+  if (!btn || !menu) return;
+
+  const storageKey = 'erp_listados_menu_abierto';
+  const aplicar = abierto => {
+    btn.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+    menu.classList.toggle('show', abierto);
+  };
+
+  const guardado = localStorage.getItem(storageKey);
+  if (guardado !== null && !btn.classList.contains('active')) {
+    aplicar(guardado === '1');
+  }
+
+  btn.addEventListener('click', () => {
+    const abierto = btn.getAttribute('aria-expanded') !== 'true';
+    localStorage.setItem(storageKey, abierto ? '1' : '0');
+    aplicar(abierto);
+  });
+})();
+
+document.addEventListener('click', event => {
+  const link = event.target.closest('a.oc-pdf-link');
+  if (!link) return;
+
+  event.preventDefault();
+  fetch(link.href, {headers: {'X-Requested-With': 'XMLHttpRequest'}})
+    .then(async response => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) {
+        throw new Error(data.error || 'No se pudo abrir la orden de compra.');
+      }
+    })
+    .catch(error => {
+      alert(error.message || 'No se pudo abrir la orden de compra.');
+    });
+});
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

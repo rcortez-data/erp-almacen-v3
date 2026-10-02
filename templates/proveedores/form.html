@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Editar' if proveedor else 'Nuevo' }} proveedor{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title">
+    <i class="bi bi-truck text-primary"></i>
+    {{ 'Editar proveedor' if proveedor else 'Nuevo proveedor' }}
+  </h1>
+  <a href="{{ url_for('proveedores.index') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="card" style="max-width:480px">
+  <div class="card-body">
+    <form method="POST">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Nombre fiscal <span class="text-danger">*</span></label>
+        <input type="text" name="nombre" id="input-nombre" class="form-control" required
+               autocomplete="off"
+               value="{{ proveedor.nombre if proveedor else '' }}"
+               placeholder="Ej: JOEL GUERREZO PEREZ">
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Nombre comercial</label>
+        <input type="text" name="nombre_comercial" id="input-nombre-comercial" class="form-control"
+               autocomplete="off"
+               value="{{ proveedor.nombre_comercial if proveedor else '' }}"
+               placeholder="Ej: HIPRO">
+      </div>
+      <div id="posibles-duplicados" class="mb-3" style="display:none">
+        <div class="alert alert-warning py-2 mb-1" style="font-size:.85rem">
+          <i class="bi bi-exclamation-triangle"></i> Ya existen proveedores parecidos. Revisa que no sea un duplicado:
+        </div>
+        <div id="lista-duplicados" class="list-group" style="font-size:.85rem"></div>
+      </div>
+      {% if proveedor %}
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Estado</label>
+        <select name="activo" class="form-select">
+          <option value="1" {{ 'selected' if proveedor.activo }}>Activo</option>
+          <option value="0" {{ 'selected' if not proveedor.activo }}>Inactivo</option>
+        </select>
+      </div>
+      {% endif %}
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check-lg"></i> {{ 'Guardar cambios' if proveedor else 'Registrar proveedor' }}
+        </button>
+        <a href="{{ url_for('proveedores.index') }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const inputNombre = document.getElementById('input-nombre');
+  const inputComercial = document.getElementById('input-nombre-comercial');
+  const contenedorDup = document.getElementById('posibles-duplicados');
+  const listaDup = document.getElementById('lista-duplicados');
+  const idPropio = {{ proveedor.id if proveedor else 'null' }};
+  let debounceDup = null;
+
+  function buscarDuplicados() {
+    const q = (inputNombre.value.trim() || inputComercial.value.trim());
+    clearTimeout(debounceDup);
+    if (q.length < 2) { contenedorDup.style.display = 'none'; return; }
+    debounceDup = setTimeout(() => {
+      fetch(`{{ url_for('proveedores.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          const resultados = data.filter(p => p.id !== idPropio);
+          if (resultados.length === 0) {
+            contenedorDup.style.display = 'none';
+            return;
+          }
+          listaDup.innerHTML = '';
+          resultados.forEach(p => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item py-1';
+            item.innerHTML = `<strong>${p.nombre}</strong>` + (p.nombre_comercial ? ` <span class="text-muted">(${p.nombre_comercial})</span>` : '');
+            listaDup.appendChild(item);
+          });
+          contenedorDup.style.display = 'block';
+        });
+    }, 250);
+  }
+
+  inputNombre.addEventListener('input', buscarDuplicados);
+  inputComercial.addEventListener('input', buscarDuplicados);
+</script>
+{% endblock %}

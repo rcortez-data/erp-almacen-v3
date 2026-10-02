@@ -1,0 +1,364 @@
+{% extends 'base.html' %}
+{% block title %}Editar entrada{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-pencil-square text-success"></i> Completar / editar entrada</h1>
+  <a href="{{ (url_for('entradas.index') + '?' + volver) if volver else url_for('entradas.detalle', eid=entrada.id) }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar
+  </a>
+</div>
+
+<div class="alert alert-info py-2" style="font-size:.85rem">
+  <i class="bi bi-info-circle"></i> Folio <strong>{{ entrada.folio }}</strong>. Puedes corregir el producto, la
+  cantidad, el precio y los datos del documento. Si cambias el producto o la cantidad, el stock se ajusta
+  automáticamente (se revierte el efecto anterior y se aplica el nuevo).
+</div>
+
+<div class="card" style="max-width:720px">
+  <div class="card-body">
+    <form method="POST">
+      <input type="hidden" name="volver" value="{{ volver }}">
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Tipo de registro</label>
+        <select name="tipo_registro" id="tipo_registro" class="form-select" style="max-width:280px">
+          <option value="producto" {{ 'selected' if not entrada.es_servicio }}>Producto de inventario</option>
+          <option value="servicio" {{ 'selected' if entrada.es_servicio }}>Servicio / cargo</option>
+        </select>
+        <div class="form-text">
+          Si cambias de servicio a producto se creará un producto nuevo y se sumará al stock. Si cambias de producto a servicio se revierte del stock y queda solo como servicio.
+        </div>
+      </div>
+
+      <div id="bloque-servicio" class="mb-3" style="{{ '' if entrada.es_servicio else 'display:none' }}">
+        <label class="form-label fw-semibold">Descripción del servicio/cargo</label>
+        <input type="text" name="concepto_servicio" class="form-control" value="{{ entrada.descripcion }}">
+        <div class="form-text"><span class="badge bg-warning text-dark">Servicio</span> Esta entrada no está ligada a un producto de inventario y no afecta stock.</div>
+      </div>
+
+      <div id="bloque-producto-existente" class="mb-3 position-relative" style="{{ 'display:none' if entrada.es_servicio else '' }}">
+        <label class="form-label fw-semibold">Producto</label>
+        <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
+               placeholder="Busca por código o descripción"
+               value="{{ entrada.codigo }} — {{ entrada.descripcion }}">
+        <input type="hidden" name="producto_id" id="producto_id" value="{{ entrada.producto_id }}">
+        <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+             style="z-index:20; max-height:280px; overflow-y:auto; display:none;"></div>
+        <div id="info-stock" class="form-text"></div>
+      </div>
+
+      <div id="bloque-producto-nuevo" class="mb-3" style="{{ '' if entrada.es_servicio else 'display:none' }}">
+        <label class="form-label fw-semibold">Datos del producto nuevo</label>
+        <input type="text" name="descripcion_producto" class="form-control mb-2"
+               value="{{ entrada.descripcion }}" placeholder="Descripción del producto">
+        <div class="row g-2">
+          <div class="col-md-6">
+            <label class="form-label">Unidad de inventario</label>
+            <select name="unidad_medida_producto" class="form-select">
+              <option value="">Selecciona unidad</option>
+              {% for unidad in unidades %}
+              <option value="{{ unidad }}" {{ 'selected' if unidad|upper == 'PIEZA' }}> {{ unidad }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="form-text">
+          Se generará un código automático. Si la orden de compra es H, el producto se creará como material OC H independiente.
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Cantidad</label>
+          <div class="input-group">
+            <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.001" step="0.001"
+                   value="{{ entrada.cantidad }}">
+            <span class="input-group-text" id="lbl-unidad">{{ entrada.unidad_medida }}</span>
+          </div>
+          <div id="info-conversion" class="form-text text-primary" style="display:none"></div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Precio unitario</label>
+          <div class="input-group">
+            <span class="input-group-text">$</span>
+            <input type="number" name="precio_unitario" id="precio_unitario" class="form-control" min="0" step="0.00001"
+                   value="{{ entrada.precio_unitario }}">
+          </div>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label fw-semibold">Moneda</label>
+          <select name="moneda" id="moneda" class="form-select">
+            <option value="MXN" {{ 'selected' if entrada.moneda == 'MXN' }}>MXN - Peso mexicano</option>
+            <option value="USD" {{ 'selected' if entrada.moneda == 'USD' }}>USD - Dolar</option>
+          </select>
+          <div class="form-check mt-2">
+            <input type="hidden" name="aplica_iva_present" value="1">
+            <input class="form-check-input" type="checkbox" name="aplica_iva" id="aplica_iva"
+                   {{ 'checked' if entrada.aplica_iva }}>
+            <label class="form-check-label" for="aplica_iva" style="font-size:.85rem">Aplica IVA (16%)</label>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-3 bg-light border-0">
+        <div class="card-body py-2">
+          <div class="d-flex justify-content-between" style="font-size:.9rem">
+            <span>Subtotal</span><strong id="resumen-subtotal">$0.00</strong>
+          </div>
+          <div class="d-flex justify-content-between text-muted" style="font-size:.9rem">
+            <span>IVA (16%)</span><strong id="resumen-iva">$0.00</strong>
+          </div>
+          <hr class="my-1">
+          <div class="d-flex justify-content-between">
+            <span class="fw-semibold">Total</span><strong id="resumen-total" class="text-success">$0.00</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label class="form-label">Nº de requisición</label>
+          <input type="text" name="no_requisicion" class="form-control" value="{{ entrada.no_requisicion or '' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Nº de factura</label>
+          <input type="text" name="no_factura" class="form-control" value="{{ entrada.no_factura or '' }}">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Orden de compra</label>
+          <input type="text" name="orden_compra" class="form-control" value="{{ entrada.orden_compra or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Remisión</label>
+          <input type="text" name="no_remision" class="form-control" value="{{ entrada.no_remision or '' }}">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Departamento</label>
+          <select name="departamento" class="form-select">
+            <option value="">Sin departamento</option>
+            {% for d in departamentos %}
+            <option value="{{ d }}" {{ 'selected' if entrada.departamento == d }}>{{ d }}</option>
+            {% endfor %}
+            {% if entrada.departamento and entrada.departamento not in departamentos %}
+            <option value="{{ entrada.departamento }}" selected>{{ entrada.departamento }} (actual)</option>
+            {% endif %}
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Ubicación</label>
+          <input type="text" name="ubicacion" class="form-control" value="{{ entrada.ubicacion or '' }}">
+        </div>
+      </div>
+
+      <div class="mb-3 position-relative">
+        <label class="form-label fw-semibold">Proveedor</label>
+        <input type="text" id="buscador-proveedor" class="form-control" autocomplete="off"
+               placeholder="Busca por nombre fiscal o comercial"
+               value="{{ entrada.proveedor_nombre or '' }}">
+        <input type="hidden" name="proveedor_id" id="proveedor_id" value="{{ entrada.proveedor_id or '' }}">
+        <div id="resultados-proveedor" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+             style="z-index:20; max-height:220px; overflow-y:auto; display:none;"></div>
+        <div class="form-check mt-2">
+          <input class="form-check-input" type="checkbox" id="incluir-proveedores-archivados">
+          <label class="form-check-label" for="incluir-proveedores-archivados" style="font-size:.85rem">
+            Incluir proveedores archivados
+          </label>
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Fecha del vale/documento</label>
+        <input type="date" name="fecha_vale" class="form-control" style="max-width:220px" value="{{ entrada.fecha_vale or entrada.fecha[:10] }}">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Uso</label>
+        <textarea name="uso" class="form-control" rows="2"
+                  placeholder="En qué se va a usar este material">{{ entrada.uso or '' }}</textarea>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label">Observaciones</label>
+        <textarea name="observaciones" class="form-control" rows="2">{{ entrada.observaciones or '' }}</textarea>
+      </div>
+
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+        <a href="{{ (url_for('entradas.index') + '?' + volver) if volver else url_for('entradas.detalle', eid=entrada.id) }}" class="btn btn-outline-secondary">Cancelar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoIdInput = document.getElementById('producto_id');
+  const lblUnidad = document.getElementById('lbl-unidad');
+  const infoStock = document.getElementById('info-stock');
+  const precioInput = document.getElementById('precio_unitario');
+  const cantidadInput = document.getElementById('cantidad');
+  const monedaInput = document.getElementById('moneda');
+  const aplicaIvaInput = document.getElementById('aplica_iva');
+  const infoConversion = document.getElementById('info-conversion');
+  const tipoRegistro = document.getElementById('tipo_registro');
+  const bloqueServicio = document.getElementById('bloque-servicio');
+  const bloqueProductoExistente = document.getElementById('bloque-producto-existente');
+  const bloqueProductoNuevo = document.getElementById('bloque-producto-nuevo');
+  let productoActual = null;
+  let debounceTimer = null;
+
+  function actualizarTipoRegistro() {
+    const esServicio = tipoRegistro.value === 'servicio';
+    bloqueServicio.style.display = esServicio ? '' : 'none';
+    if ({{ 'true' if entrada.es_servicio else 'false' }}) {
+      bloqueProductoNuevo.style.display = esServicio ? 'none' : '';
+      bloqueProductoExistente.style.display = 'none';
+    } else {
+      bloqueProductoExistente.style.display = esServicio ? 'none' : '';
+      bloqueProductoNuevo.style.display = 'none';
+    }
+    if (esServicio) {
+      infoConversion.style.display = 'none';
+    }
+  }
+  tipoRegistro.addEventListener('change', actualizarTipoRegistro);
+  actualizarTipoRegistro();
+
+  buscador?.addEventListener('input', function() {
+    productoIdInput.value = '';
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { resultados.style.display = 'none'; return; }
+    debounceTimer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          if (data.length === 0) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              const barras = p.codigo_barras ? `<div class="text-success font-monospace" style="font-size:.76rem">${p.codigo_barras}</div>` : '';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}${barras}
+                <div class="text-muted" style="font-size:.78rem">Stock: ${p.stock_actual} ${p.unidad_medida} | Precio ref: $${p.precio_unitario}</div>`;
+              item.addEventListener('click', () => seleccionarProducto(p));
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (resultados && !resultados.contains(e.target) && e.target !== buscador) resultados.style.display = 'none';
+  });
+
+  function seleccionarProducto(p) {
+    buscador.value = `${p.codigo} — ${p.descripcion}`;
+    productoIdInput.value = p.id;
+    productoActual = p;
+    lblUnidad.textContent = (p.unidad_compra || p.unidad_medida) || '—';
+    infoStock.textContent = `Stock actual: ${p.stock_actual} ${p.unidad_medida}`;
+    precioInput.value = p.precio_unitario || 0;
+    resultados.style.display = 'none';
+    actualizarConversion();
+    actualizarResumenIva();
+  }
+
+  function actualizarConversion() {
+    if (productoActual && productoActual.unidad_compra && productoActual.factor_conversion) {
+      const cant = parseFloat(cantidadInput.value) || 0;
+      const factor = Number(productoActual.factor_conversion || 0);
+      const tipo = productoActual.tipo_conversion || 'uso_a_compra';
+      const piezas = tipo === 'compra_a_uso'
+        ? (cant * factor).toFixed(2)
+        : (cant / factor).toFixed(2);
+      const regla = tipo === 'compra_a_uso'
+        ? `1 ${productoActual.unidad_compra.toLowerCase()} = ${factor} ${productoActual.unidad_medida.toLowerCase()}`
+        : `1 ${productoActual.unidad_medida.toLowerCase()} = ${factor} ${productoActual.unidad_compra.toLowerCase()}`;
+      infoConversion.style.display = 'block';
+      infoConversion.textContent = `= ${piezas} ${productoActual.unidad_medida} (${regla})`;
+    } else {
+      infoConversion.style.display = 'none';
+    }
+  }
+
+  const resumenSubtotal = document.getElementById('resumen-subtotal');
+  const resumenIva = document.getElementById('resumen-iva');
+  const resumenTotal = document.getElementById('resumen-total');
+
+  function formatoMoneda(valor) {
+    return '$' + valor.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function actualizarResumenIva() {
+    const cantidad = parseFloat(cantidadInput.value) || 0;
+    const precio = parseFloat(precioInput.value) || 0;
+    const subtotal = cantidad * precio;
+    const iva = aplicaIvaInput.checked ? subtotal * 0.16 : 0;
+    const total = subtotal + iva;
+    resumenSubtotal.textContent = formatoMoneda(subtotal);
+    resumenIva.textContent = formatoMoneda(iva);
+    resumenTotal.textContent = formatoMoneda(total) + (monedaInput.value === 'USD' ? ' USD' : '');
+  }
+
+  cantidadInput.addEventListener('input', actualizarConversion);
+  cantidadInput.addEventListener('input', actualizarResumenIva);
+  precioInput.addEventListener('input', actualizarResumenIva);
+  monedaInput.addEventListener('change', actualizarResumenIva);
+  aplicaIvaInput.addEventListener('change', actualizarResumenIva);
+  actualizarResumenIva();
+
+  const buscadorProv = document.getElementById('buscador-proveedor');
+  const resultadosProv = document.getElementById('resultados-proveedor');
+  const proveedorIdInput = document.getElementById('proveedor_id');
+  const incluirArchivadosProv = document.getElementById('incluir-proveedores-archivados');
+  let debounceProv = null;
+
+  function buscarProveedores() {
+    proveedorIdInput.value = '';
+    const q = buscadorProv.value.trim();
+    clearTimeout(debounceProv);
+    if (q.length < 1) { resultadosProv.style.display = 'none'; return; }
+    debounceProv = setTimeout(() => {
+      const incluir = incluirArchivadosProv && incluirArchivadosProv.checked ? '&incluir_archivados=1' : '';
+      fetch(`{{ url_for('proveedores.api_buscar') }}?q=${encodeURIComponent(q)}${incluir}`)
+        .then(r => r.json())
+        .then(data => {
+          resultadosProv.innerHTML = '';
+          if (data.length === 0) {
+            resultadosProv.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              const archivado = Number(p.activo) === 0 ? ' <span class="badge bg-secondary ms-1">archivado</span>' : '';
+              item.innerHTML = `<strong>${p.nombre}</strong>` + (p.nombre_comercial ? ` <span class="text-muted">(${p.nombre_comercial})</span>` : '') + archivado;
+              item.addEventListener('click', () => {
+                buscadorProv.value = p.nombre_comercial ? `${p.nombre} (${p.nombre_comercial})` : p.nombre;
+                proveedorIdInput.value = p.id;
+                resultadosProv.style.display = 'none';
+              });
+              resultadosProv.appendChild(item);
+            });
+          }
+          resultadosProv.style.display = 'block';
+        });
+    }, 200);
+  }
+
+  buscadorProv.addEventListener('input', function() {
+    buscarProveedores();
+  });
+  if (incluirArchivadosProv) incluirArchivadosProv.addEventListener('change', buscarProveedores);
+  document.addEventListener('click', function(e) {
+    if (!resultadosProv.contains(e.target) && e.target !== buscadorProv) resultadosProv.style.display = 'none';
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,430 @@
+{% extends 'base.html' %}
+{% block title %}Material por pedir{% endblock %}
+{% block content %}
+<div class="topbar">
+  <div>
+    <h1 class="page-title"><i class="bi bi-clipboard2-plus text-warning"></i> Material por pedir</h1>
+    <div class="text-muted" style="font-size:.88rem">Registro de material agotado o por agotarse. No mueve inventario.</div>
+  </div>
+</div>
+
+<style>
+  .mini-stat-link {
+    color: inherit;
+    text-decoration: none;
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .mini-stat-link:hover {
+    color: inherit;
+    transform: translateY(-1px);
+    box-shadow: 0 .35rem 1rem rgba(15, 23, 42, .12);
+  }
+  .mini-stat-link.active {
+    outline: 2px solid rgba(13, 110, 253, .28);
+  }
+</style>
+
+<div class="module-stats mb-3">
+  <a class="mini-stat mini-stat-link {{ 'active' if estado == 'todos' }}"
+     href="{{ url_for('material_por_pedir.index', estado='todos', q=q, prioridad=prioridad) }}">
+    <span class="mini-stat-label">Todos</span>
+    <strong>{{ resumen.total or 0 }}</strong>
+    <small>ver lista completa</small>
+  </a>
+  <a class="mini-stat mini-stat-link {{ 'active' if estado == 'pendiente' }}"
+     href="{{ url_for('material_por_pedir.index', estado='pendiente', q=q, prioridad=prioridad) }}">
+    <span class="mini-stat-label">Pendientes</span>
+    <strong>{{ resumen.pendientes or 0 }}</strong>
+    <small>faltan por pedir</small>
+  </a>
+  <a class="mini-stat mini-stat-link {{ 'active' if estado == 'urgente' }}"
+     href="{{ url_for('material_por_pedir.index', estado='urgente', q=q) }}">
+    <span class="mini-stat-label">Urgentes</span>
+    <strong class="text-danger">{{ resumen.urgentes or 0 }}</strong>
+    <small>atender primero</small>
+  </a>
+  <a class="mini-stat mini-stat-link {{ 'active' if estado == 'normal' }}"
+     href="{{ url_for('material_por_pedir.index', estado='normal', q=q) }}">
+    <span class="mini-stat-label">Normal</span>
+    <strong class="text-primary">{{ resumen.normales or 0 }}</strong>
+    <small>pendientes normales</small>
+  </a>
+  <a class="mini-stat mini-stat-link {{ 'active' if estado == 'pedido' }}"
+     href="{{ url_for('material_por_pedir.index', estado='pedido', q=q, prioridad=prioridad) }}">
+    <span class="mini-stat-label">Ya pedidos</span>
+    <strong class="text-success">{{ resumen.pedidos or 0 }}</strong>
+    <small>con seguimiento</small>
+  </a>
+</div>
+
+<div class="alert alert-secondary py-2 mb-3" style="font-size:.85rem">
+  <i class="bi bi-info-circle"></i>
+  Usa esta sección como libreta de pendientes: puedes elegir un producto del inventario o escribir uno manualmente.
+  Al marcar “Ya se pidió” no se afecta el stock.
+</div>
+
+<form method="POST" id="form-crear-requisicion">
+  <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="accion" value="crear_requisicion">
+</form>
+
+<div class="card mb-3">
+  <div class="card-header"><strong><i class="bi bi-plus-lg"></i> Agregar material pendiente</strong></div>
+  <div class="card-body">
+    <form method="POST" class="row g-2 align-items-end">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="accion" value="agregar">
+      <input type="hidden" name="producto_id" id="producto_id">
+      <input type="hidden" name="codigo" id="codigo">
+
+      <div class="col-lg-4 position-relative">
+        <label class="form-label">Producto existente</label>
+        <input type="text" id="buscador-producto" class="form-control" autocomplete="off"
+               placeholder="Buscar por código o descripción">
+        <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+             style="z-index:20; max-height:260px; overflow-y:auto; display:none;"></div>
+        <div class="form-text">Opcional. Si no existe, escribe la descripción abajo.</div>
+      </div>
+
+      <div class="col-lg-4">
+        <label class="form-label">Último proveedor</label>
+        <div id="ultimo-proveedor-producto" class="form-control-plaintext border rounded px-2 bg-light text-muted"
+             style="min-height:38px">
+          Selecciona un producto del catálogo
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <label class="form-label">Descripción / material</label>
+        <input type="text" name="descripcion" id="descripcion" class="form-control" required
+               placeholder="Ej. ALAMBRE COBRIZADO 0.30">
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label">Cantidad</label>
+        <input type="number" name="cantidad" class="form-control" min="0" step="0.001" value="1">
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label">Unidad</label>
+        <select name="unidad" id="unidad" class="form-select">
+          <option value="">Sin unidad</option>
+          {% for unidad in unidades %}
+          <option value="{{ unidad }}">{{ unidad }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-md-2">
+        <label class="form-label">Prioridad</label>
+        <select name="prioridad" class="form-select">
+          <option value="normal">Normal</option>
+          <option value="urgente">Urgente</option>
+        </select>
+      </div>
+
+      <div class="col-lg-8">
+        <label class="form-label">Motivo / notas</label>
+        <input type="text" name="motivo" class="form-control"
+               placeholder="Ej. Se terminó en producción / está bajo mínimo / pedir con proveedor...">
+      </div>
+
+      <div class="col-md-2">
+        <button class="btn btn-warning w-100"><i class="bi bi-save"></i> Agregar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body py-2">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-4">
+        <label class="form-label mb-0" style="font-size:.75rem">Buscar</label>
+        <input type="text" name="q" class="form-control form-control-sm" value="{{ q }}"
+               placeholder="Código, producto, motivo u OC">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-0" style="font-size:.75rem">Estado</label>
+        <select name="estado" class="form-select form-select-sm">
+          <option value="todos" {{ 'selected' if estado == 'todos' }}>Todos</option>
+          <option value="pendiente" {{ 'selected' if estado == 'pendiente' }}>Pendientes</option>
+          <option value="urgente" {{ 'selected' if estado == 'urgente' }}>Urgentes pendientes</option>
+          <option value="normal" {{ 'selected' if estado == 'normal' }}>Normales pendientes</option>
+          <option value="pedido" {{ 'selected' if estado == 'pedido' }}>Ya pedidos</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label mb-0" style="font-size:.75rem">Prioridad</label>
+        <select name="prioridad" class="form-select form-select-sm">
+          <option value="">Todas</option>
+          <option value="urgente" {{ 'selected' if prioridad == 'urgente' }}>Urgente</option>
+          <option value="normal" {{ 'selected' if prioridad == 'normal' }}>Normal</option>
+        </select>
+      </div>
+      <div class="col-md-2 d-flex gap-2">
+        <button class="btn btn-sm btn-secondary w-100"><i class="bi bi-search"></i> Buscar</button>
+        <a href="{{ url_for('material_por_pedir.index') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <strong><i class="bi bi-list-check"></i> Lista de materiales</strong>
+      <span class="text-muted ms-2" style="font-size:.82rem">Selecciona hasta 10 pendientes para crear una requisición.</span>
+    </div>
+    <button type="submit" form="form-crear-requisicion" id="btn-crear-requisicion" class="btn btn-sm btn-primary" disabled>
+      <i class="bi bi-file-earmark-plus"></i> Crear requisición
+      <span class="badge bg-light text-primary ms-1" id="contador-seleccion">0</span>
+    </button>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th style="width:42px" class="text-center">
+            <input type="checkbox" class="form-check-input" id="seleccionar-todos-pendientes" title="Seleccionar visibles">
+          </th>
+          <th>Material</th>
+          <th>Cantidad</th>
+          <th>Último proveedor</th>
+          <th>Prioridad</th>
+          <th>Motivo</th>
+          <th>Estado</th>
+          <th>Fecha</th>
+          <th class="text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in registros %}
+        <tr class="{{ 'table-success' if r.solicitado else ('table-warning' if r.prioridad == 'urgente' else '') }}">
+          <td class="text-center">
+            {% if not r.solicitado %}
+            <input type="checkbox" class="form-check-input material-requisicion-check"
+                   form="form-crear-requisicion" name="seleccionados" value="{{ r.id }}"
+                   title="Agregar a requisición">
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.codigo %}<div class="font-monospace fw-bold">{{ r.codigo }}</div>{% endif %}
+            <div>{{ r.descripcion }}</div>
+            <small class="text-muted">{{ r.usuario_nombre or '—' }}</small>
+          </td>
+          <td class="fw-semibold">{{ r.cantidad|cantidad_unidad(r.unidad) }}</td>
+          <td>
+            {% if r.producto_id %}
+              {% if r.ultimo_proveedor %}
+                <div class="fw-semibold">{{ r.ultimo_proveedor }}</div>
+                {% if r.ultima_entrada_fecha %}
+                  <small class="text-muted">{{ r.ultima_entrada_fecha[:10]|fecha_vale }}</small>
+                {% endif %}
+              {% else %}
+                <span class="text-muted">Sin entradas previas</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">No ligado</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.prioridad == 'urgente' %}
+              <span class="badge bg-danger">Urgente</span>
+            {% else %}
+              <span class="badge bg-primary">Normal</span>
+            {% endif %}
+          </td>
+          <td style="min-width:220px">{{ r.motivo or '—' }}</td>
+          <td>
+            {% if r.solicitado %}
+              <span class="badge bg-success">Ya se pidió</span>
+              {% if r.requisicion_folio %}
+                <br><small class="text-primary">Auto: {{ r.requisicion_folio }}</small>
+              {% endif %}
+              {% if r.pedido_por_nombre %}<br><small>{{ r.pedido_por_nombre }}</small>{% endif %}
+            {% else %}
+              <span class="badge bg-light text-dark border">Pendiente</span>
+            {% endif %}
+          </td>
+          <td>{{ (r.fecha or '')[:10]|fecha_vale }}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm">
+              <a href="{{ url_for('material_por_pedir.editar', item_id=r.id) }}" class="btn btn-outline-primary">
+                <i class="bi bi-pencil"></i>
+              </a>
+              {% if not r.solicitado %}
+              <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#modal-pedido-{{ r.id }}">
+                <i class="bi bi-check2-circle"></i> Pedido
+              </button>
+              {% else %}
+              <form method="POST" class="d-inline">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="accion" value="reabrir">
+                <input type="hidden" name="id" value="{{ r.id }}">
+                <button class="btn btn-outline-warning" onclick="return confirm('¿Regresar este material a pendientes?')">
+                  <i class="bi bi-arrow-counterclockwise"></i>
+                </button>
+              </form>
+              {% endif %}
+              <form method="POST" class="d-inline" onsubmit="return confirm('¿Eliminar este registro?')">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="accion" value="eliminar">
+                <input type="hidden" name="id" value="{{ r.id }}">
+                <button class="btn btn-outline-danger"><i class="bi bi-trash"></i></button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="text-center text-muted py-4">Sin registros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(() => {
+  const maxSeleccion = 10;
+  const checks = Array.from(document.querySelectorAll('.material-requisicion-check'));
+  const btn = document.getElementById('btn-crear-requisicion');
+  const contador = document.getElementById('contador-seleccion');
+  const seleccionarTodos = document.getElementById('seleccionar-todos-pendientes');
+
+  function seleccionados() {
+    return checks.filter(ch => ch.checked);
+  }
+
+  function actualizarSeleccion() {
+    const total = seleccionados().length;
+    contador.textContent = total;
+    btn.disabled = total === 0;
+    checks.forEach(ch => {
+      ch.disabled = !ch.checked && total >= maxSeleccion;
+    });
+    if (seleccionarTodos) {
+      seleccionarTodos.checked = total > 0 && total === Math.min(checks.length, maxSeleccion);
+      seleccionarTodos.indeterminate = total > 0 && !seleccionarTodos.checked;
+    }
+  }
+
+  checks.forEach(ch => ch.addEventListener('change', actualizarSeleccion));
+  if (seleccionarTodos) {
+    seleccionarTodos.addEventListener('change', () => {
+      const marcar = seleccionarTodos.checked;
+      checks.forEach((ch, idx) => {
+        ch.checked = marcar && idx < maxSeleccion;
+      });
+      actualizarSeleccion();
+    });
+  }
+
+  document.getElementById('form-crear-requisicion')?.addEventListener('submit', (event) => {
+    const total = seleccionados().length;
+    if (total === 0) {
+      event.preventDefault();
+      alert('Selecciona al menos un material pendiente.');
+    } else if (total > maxSeleccion) {
+      event.preventDefault();
+      alert(`Sólo puedes seleccionar máximo ${maxSeleccion} materiales.`);
+    }
+  });
+})();
+</script>
+
+{% for r in registros if not r.solicitado %}
+<div class="modal fade" id="modal-pedido-{{ r.id }}" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" class="modal-content">
+      <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="accion" value="marcar_pedido">
+      <input type="hidden" name="id" value="{{ r.id }}">
+      <div class="modal-header">
+        <h5 class="modal-title">Marcar como pedido</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-2"><strong>{{ r.codigo or '' }}</strong> {{ r.descripcion }}</div>
+        <label class="form-label">Orden de compra</label>
+        <input type="text" name="orden_compra" class="form-control mb-3" placeholder="Opcional">
+        <label class="form-label">Notas</label>
+        <textarea name="notas_pedido" class="form-control" rows="2" placeholder="Proveedor, fecha estimada, comentario..."></textarea>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-success"><i class="bi bi-check2-circle"></i> Ya se pidió</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endfor %}
+
+<script>
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoId = document.getElementById('producto_id');
+  const codigo = document.getElementById('codigo');
+  const descripcion = document.getElementById('descripcion');
+  const unidad = document.getElementById('unidad');
+  const ultimoProveedor = document.getElementById('ultimo-proveedor-producto');
+  let debounceTimer = null;
+
+  function textoUltimoProveedor(producto) {
+    if (!producto || !producto.ultimo_proveedor) return 'Sin entradas previas registradas';
+    const fecha = producto.ultima_entrada_fecha ? ` (${String(producto.ultima_entrada_fecha).slice(0, 10)})` : '';
+    return `${producto.ultimo_proveedor}${fecha}`;
+  }
+
+  buscador?.addEventListener('input', function() {
+    productoId.value = '';
+    codigo.value = '';
+    if (ultimoProveedor) ultimoProveedor.textContent = 'Selecciona un producto del catálogo';
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) {
+      resultados.style.display = 'none';
+      return;
+    }
+    debounceTimer = setTimeout(() => {
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          if (!data.length) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.className = 'list-group-item list-group-item-action';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span> — ${p.descripcion}
+                <div class="text-muted" style="font-size:.78rem">Stock: ${p.stock_actual} ${p.unidad_medida}</div>
+                <div class="text-primary" style="font-size:.78rem">Último proveedor: ${textoUltimoProveedor(p)}</div>`;
+              item.addEventListener('click', () => {
+                productoId.value = p.id;
+                codigo.value = p.codigo;
+                descripcion.value = p.descripcion;
+                unidad.value = p.unidad_medida || '';
+                buscador.value = `${p.codigo} — ${p.descripcion}`;
+                if (ultimoProveedor) ultimoProveedor.textContent = textoUltimoProveedor(p);
+                resultados.style.display = 'none';
+              });
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (resultados && !resultados.contains(e.target) && e.target !== buscador) {
+      resultados.style.display = 'none';
+    }
+  });
+</script>
+{% endblock %}

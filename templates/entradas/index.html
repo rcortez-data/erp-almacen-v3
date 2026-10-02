@@ -1,0 +1,375 @@
+{% extends 'base.html' %}
+{% block title %}Entradas de material{% endblock %}
+{% block extra_css %}
+<style>
+  @media print {
+    .col-code { text-align: center !important; }
+    .font-monospace { text-align: center !important; }
+  }
+</style>
+{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-arrow-down-circle"></i> Entradas</span>
+    <h1 class="page-title mb-1">Entradas de material</h1>
+    <div class="text-muted" style="font-size:.88rem">
+      Consulta recepciones, documentos, proveedores e importes con IVA.
+    </div>
+  </div>
+  <div class="quick-actions">
+    <a href="{{ url_for('entradas.reporte_diario') }}" class="btn btn-sm btn-outline-danger">
+      <i class="bi bi-printer"></i> Reporte diario
+    </a>
+    <a href="{{ url_for('entradas.carga_inicial') }}" class="btn btn-sm btn-outline-info">
+      <i class="bi bi-box-seam"></i> Material existente
+    </a>
+    <a href="{{ url_for('entradas.nuevo') }}" class="btn btn-sm btn-success">
+      <i class="bi bi-plus-lg"></i> Registrar entrada
+    </a>
+  </div>
+</div>
+
+<div class="module-stats mb-3">
+  <div class="mini-stat">
+    <span class="mini-stat-label">Registros</span>
+    <strong>{{ total_registros }}</strong>
+    <small>{{ registros_pagina }} en esta pagina</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Subtotal MXN</span>
+    <strong>${{ total_importe_mxn|moneda }}</strong>
+    <small>{{ 'filtrado' if filtro_activo else 'total de consulta' }}</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">IVA</span>
+    <strong class="text-success">${{ total_iva|moneda }}</strong>
+    <small>calculado al 16%</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Total MXN</span>
+    <strong class="text-success">${{ total_general_mxn|moneda }}</strong>
+    <small>subtotal + IVA</small>
+  </div>
+  <div class="mini-stat">
+    <span class="mini-stat-label">Total USD</span>
+    <strong class="text-info">${{ total_importe_usd|moneda }}</strong>
+    <small>si aplica</small>
+  </div>
+</div>
+
+<div class="card filter-card mb-3">
+  <div class="card-body">
+    <form method="GET" class="row g-3 align-items-end">
+      <div class="col-xl-3 col-md-6">
+        <label class="form-label">Producto</label>
+        <div class="input-group">
+          <span class="input-group-text"><i class="bi bi-search"></i></span>
+          <input type="text" name="q" class="form-control" placeholder="Codigo o descripcion" value="{{ q }}">
+        </div>
+      </div>
+      <div class="col-xl-2 col-md-6">
+        <label class="form-label">Buscar documento en</label>
+        <select name="q_doc_campo" id="q_doc_campo" class="form-select">
+          <option value="" {{ 'selected' if not q_doc_campo }}>Todos</option>
+          <option value="factura" {{ 'selected' if q_doc_campo == 'factura' }}>Factura</option>
+          <option value="remision" {{ 'selected' if q_doc_campo == 'remision' }}>Remision</option>
+          <option value="requisicion" {{ 'selected' if q_doc_campo == 'requisicion' }}>Requisicion</option>
+          <option value="oc" {{ 'selected' if q_doc_campo == 'oc' }}>OC</option>
+          <option value="folio" {{ 'selected' if q_doc_campo == 'folio' }}>Folio</option>
+        </select>
+      </div>
+      <div class="col-xl-2 col-md-6 position-relative">
+        <label class="form-label">Documento</label>
+        <input type="text" name="q_doc" id="q_doc" class="form-control" autocomplete="off"
+               placeholder="Ej: 4140, factura, OC" value="{{ q_doc }}">
+        <div id="resultados-doc" class="list-group position-absolute shadow-sm autocomplete-menu"
+             style="z-index:30; max-height:260px; overflow-y:auto; display:none; min-width:300px;"></div>
+      </div>
+      <div class="col-xl-2 col-md-6">
+        <label class="form-label">Proveedor</label>
+        <input type="text" name="q_prov" class="form-control" placeholder="Nombre proveedor" value="{{ q_prov }}">
+        <div class="form-check mt-1">
+          <input class="form-check-input" type="checkbox" name="q_prov_archivados" value="1" id="q_prov_archivados"
+                 {{ 'checked' if q_prov_archivados }}>
+          <label class="form-check-label" for="q_prov_archivados" style="font-size:.78rem">
+            Incluir archivados
+          </label>
+        </div>
+      </div>
+      <div class="col-xl-1 col-md-6">
+        <label class="form-label">Desde</label>
+        <input type="date" name="fecha_ini" class="form-control" value="{{ fecha_ini }}">
+      </div>
+      <div class="col-xl-1 col-md-6">
+        <label class="form-label">Hasta</label>
+        <input type="date" name="fecha_fin" class="form-control" value="{{ fecha_fin }}">
+      </div>
+      <div class="col-xl-1 col-md-12 d-flex gap-2">
+        <button type="submit" class="btn btn-primary w-100" title="Buscar">
+          <i class="bi bi-search"></i>
+        </button>
+        <a href="{{ url_for('entradas.index') }}" class="btn btn-outline-secondary" title="Limpiar">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card entries-table-card">
+  <div class="table-toolbar">
+    <div>
+      <strong>Recepciones registradas</strong>
+      <span class="text-muted" style="font-size:.82rem">Pagina {{ pagina_actual }} de {{ total_paginas or 1 }}</span>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-wrap">
+      {% if filtro_activo %}
+      <span class="lab-pill"><i class="bi bi-funnel"></i> Filtro activo</span>
+      <a href="{{ url_for('entradas.etiquetas') }}?{{ request.query_string.decode() }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark">
+        <i class="bi bi-tags"></i> Vista etiquetas
+      </a>
+      <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}" class="d-inline">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        {% for key, value in request.args.items() %}
+        <input type="hidden" name="{{ key }}" value="{{ value }}">
+        {% endfor %}
+        <input type="hidden" name="volver" value="{{ request.full_path }}">
+        <button type="submit" class="btn btn-sm btn-dark">
+          <i class="bi bi-printer-fill"></i> Imprimir TSC
+        </button>
+      </form>
+      {% endif %}
+      <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
+    </div>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 entries-table">
+      <thead>
+        <tr>
+          <th class="col-code">Folio</th>
+          <th class="col-code">Codigo</th>
+          <th class="col-desc">Descripcion</th>
+          <th class="col-medium">Ubicacion</th>
+          <th class="col-compact text-end">Cantidad</th>
+          <th class="col-compact text-end">Precio</th>
+          <th class="col-compact text-end">Importe</th>
+          <th class="col-medium">Proveedor</th>
+          <th class="col-compact">Factura</th>
+          <th class="col-compact">Remision</th>
+          <th class="col-compact">Req.</th>
+          <th class="col-compact">OC</th>
+          <th class="col-fecha">Fecha vale</th>
+          <th class="col-acciones text-end">Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in entradas %}
+        <tr>
+          <td>
+            <span class="badge bg-success">{{ e.folio }}</span>
+            {% if e.tipo_movimiento == 'ajuste' %}<span class="badge bg-dark">Ajuste</span>{% endif %}
+            {% if e.tipo_movimiento == 'carga_inicial' %}<span class="badge bg-info text-dark">Material existente</span>{% endif %}
+          </td>
+          <td class="font-monospace">
+            {% if e.es_servicio %}
+            <span class="badge bg-warning text-dark">Servicio</span>
+            {% else %}
+            {{ e.codigo }}
+            {% endif %}
+          </td>
+          <td class="col-wrap">
+            <div class="fw-semibold">{{ e.descripcion }}</div>
+            {% if e.es_dolar %}<span class="badge bg-info text-dark">USD</span>{% endif %}
+            {% if e.recuperacion_almacen %}
+            <span class="badge bg-success"><i class="bi bi-arrow-counterclockwise"></i> Recuperación almacén</span>
+            {% endif %}
+          </td>
+          <td class="col-wrap" style="max-width:160px">{{ e.ubicacion or '-' }}</td>
+          <td class="text-end fw-semibold">
+            {% if (e.unidad_compra_movimiento and e.factor_conversion_movimiento) or (e.unidad_compra and e.cantidad_piezas is not none and e.cantidad_piezas != e.cantidad) %}
+              {{ e.cantidad_piezas|cantidad_unidad(e.unidad_medida) }}
+              <br><span class="text-muted fw-normal" style="font-size:.72rem">= {{ e.cantidad }} {{ e.unidad_compra_movimiento or e.unidad_compra }}</span>
+            {% else %}
+              {{ e.cantidad|cantidad_unidad(e.unidad_medida) }}
+            {% endif %}
+          </td>
+          <td class="text-end">${{ (e.precio_unitario or 0)|moneda }}</td>
+          <td class="text-end fw-bold text-success">
+            ${{ e.importe_con_iva|moneda }}
+            {% if e.es_dolar %}<span class="text-muted" style="font-size:.65rem"> USD</span>{% endif %}
+          </td>
+          <td class="col-wrap" style="max-width:170px">
+            <div class="fw-semibold">{{ e.proveedor_nombre or '-' }}</div>
+            {% if e.proveedor_nombre_comercial %}
+            <div class="text-muted" style="font-size:.78rem">{{ e.proveedor_nombre_comercial }}</div>
+            {% endif %}
+            {% if e.proveedor_nombre and not e.proveedor_id %}
+            <span class="badge bg-secondary" style="font-size:.6rem" title="Proveedor historico">archivado</span>
+            {% endif %}
+          </td>
+          <td>
+            {{ e.no_factura or '-' }}
+            {% if not e.no_factura %}<span class="badge bg-warning text-dark" style="font-size:.65rem">pendiente</span>{% endif %}
+          </td>
+          <td>{{ e.no_remision or '-' }}</td>
+          <td>{{ e.no_requisicion or '-' }}</td>
+          <td>
+            {% if e.oc_pdf_url %}
+            <a href="{{ e.oc_pdf_url }}" class="oc-pdf-link" title="Abrir PDF de la orden de compra en Adobe">
+              <i class="bi bi-file-earmark-pdf"></i> {{ e.orden_compra }}
+            </a>
+            {% else %}
+            {{ e.orden_compra or '-' }}
+            {% endif %}
+          </td>
+          <td>{{ (e.fecha_vale or e.fecha[:10])|fecha_vale }}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Acciones">
+              <a href="{{ url_for('entradas.detalle', eid=e.id, volver=request.query_string.decode()) }}" class="btn btn-outline-secondary" title="Detalle">
+                <i class="bi bi-eye"></i>
+              </a>
+              <a href="{{ url_for('entradas.editar', eid=e.id, volver=request.query_string.decode()) }}" class="btn btn-outline-primary" title="Editar">
+                <i class="bi bi-pencil"></i>
+              </a>
+              {% if not e.es_servicio %}
+              <a href="{{ url_for('entradas.etiquetas', ids=e.id) }}" target="_blank" rel="noopener" class="btn btn-outline-dark" title="Imprimir etiqueta">
+                <i class="bi bi-tags"></i>
+              </a>
+              <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}" class="d-inline">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="ids" value="{{ e.id }}">
+                <input type="hidden" name="volver" value="{{ request.full_path }}">
+                <button type="submit" class="btn btn-dark" title="Imprimir directo en TSC TE200">
+                  <i class="bi bi-printer-fill"></i>
+                </button>
+              </form>
+              {% endif %}
+              <form method="POST" action="{{ url_for('entradas.eliminar', eid=e.id) }}" class="d-inline"
+                    onsubmit="return confirm('Eliminar esta entrada? Se revertira el stock que sumo. Esta accion no se puede deshacer.');">
+                <input type="hidden" name="volver" value="{{ request.query_string.decode() }}">
+                <button type="submit" class="btn btn-outline-danger" title="Eliminar">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="14" class="empty-state">No se encontraron registros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.82rem">
+    <div class="d-flex justify-content-between flex-wrap gap-2">
+      <span>{{ entradas|length }} registro(s) en esta pagina</span>
+      {% if filtro_activo %}
+      <span>
+        Subtotal MXN: <strong>${{ total_importe_mxn|moneda }}</strong>
+        &nbsp;|&nbsp; IVA: <strong>${{ total_iva|moneda }}</strong>
+        &nbsp;|&nbsp; Total MXN: <strong class="text-success">${{ total_general_mxn|moneda }}</strong>
+        {% if total_importe_usd %}
+        &nbsp;|&nbsp; USD: <strong class="text-info">${{ total_importe_usd|moneda }}</strong>
+        {% endif %}
+      </span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if total_paginas and total_paginas > 1 %}
+<div class="card mt-3">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+      <div class="text-muted" style="font-size:.9rem">
+        Pagina <strong>{{ pagina_actual }}</strong> de <strong>{{ total_paginas }}</strong>
+        | <strong>{{ registros_pagina }}</strong> de <strong>{{ total_registros }}</strong> registros
+      </div>
+      <nav aria-label="Paginacion">
+        <ul class="pagination mb-0 flex-wrap">
+          {% if pagina_actual > 1 %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=1 if q_prov_archivados else None, pagina=1) }}"><i class="bi bi-chevron-double-left"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=1 if q_prov_archivados else None, pagina=pagina_actual-1) }}"><i class="bi bi-chevron-left"></i> Anterior</a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-left"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-left"></i> Anterior</span></li>
+          {% endif %}
+
+          {% set inicio = [1, pagina_actual - 2]|max %}
+          {% set fin = [total_paginas, pagina_actual + 2]|min %}
+          {% if inicio > 1 %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+          {% for p in range(inicio, fin + 1) %}
+          {% if p == pagina_actual %}
+          <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+          {% else %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=1 if q_prov_archivados else None, pagina=p) }}">{{ p }}</a></li>
+          {% endif %}
+          {% endfor %}
+          {% if fin < total_paginas %}<li class="page-item disabled"><span class="page-link">...</span></li>{% endif %}
+
+          {% if pagina_actual < total_paginas %}
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=1 if q_prov_archivados else None, pagina=pagina_actual+1) }}">Siguiente <i class="bi bi-chevron-right"></i></a></li>
+          <li class="page-item"><a class="page-link" href="{{ url_for('entradas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=1 if q_prov_archivados else None, pagina=total_paginas) }}"><i class="bi bi-chevron-double-right"></i></a></li>
+          {% else %}
+          <li class="page-item disabled"><span class="page-link">Siguiente <i class="bi bi-chevron-right"></i></span></li>
+          <li class="page-item disabled"><span class="page-link"><i class="bi bi-chevron-double-right"></i></span></li>
+          {% endif %}
+        </ul>
+      </nav>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<script>
+  const qDoc = document.getElementById('q_doc');
+  const qDocCampo = document.getElementById('q_doc_campo');
+  const resultadosDoc = document.getElementById('resultados-doc');
+  let debounceDoc = null;
+
+  qDoc.addEventListener('input', function() {
+    const q = this.value.trim();
+    clearTimeout(debounceDoc);
+    if (q.length < 2) { resultadosDoc.style.display = 'none'; return; }
+    debounceDoc = setTimeout(() => {
+      const campo = qDocCampo.value;
+      const url = `{{ url_for('entradas.api_buscar_documento') }}?campo=${encodeURIComponent(campo)}&q=${encodeURIComponent(q)}`;
+      fetch(url)
+        .then(r => r.json())
+        .then(data => {
+          resultadosDoc.innerHTML = '';
+          if (data.length === 0) {
+            resultadosDoc.innerHTML = '<div class="list-group-item text-muted" style="font-size:.82rem">Sin coincidencias.</div>';
+          } else {
+            data.forEach(item => {
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'list-group-item list-group-item-action';
+              btn.style.fontSize = '.82rem';
+              const mostrarCampo = campo ? '' : `<span class="badge bg-secondary me-1">${item.campo_label}</span>`;
+              btn.innerHTML = `${mostrarCampo}<span class="font-monospace fw-semibold">${item.valor}</span>` +
+                `<div class="text-muted" style="font-size:.72rem">${item.fecha || '-'} · ${item.num_renglones} renglon(es)</div>`;
+              btn.addEventListener('click', () => {
+                qDoc.value = item.valor;
+                if (!campo) qDocCampo.value = item.campo_key;
+                resultadosDoc.style.display = 'none';
+                qDoc.closest('form').submit();
+              });
+              resultadosDoc.appendChild(btn);
+            });
+          }
+          resultadosDoc.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!resultadosDoc.contains(e.target) && e.target !== qDoc) resultadosDoc.style.display = 'none';
+  });
+
+  qDocCampo.addEventListener('change', function() {
+    if (qDoc.value.trim().length >= 2) qDoc.dispatchEvent(new Event('input'));
+  });
+</script>
+{% endblock %}

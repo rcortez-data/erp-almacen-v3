@@ -1,0 +1,46 @@
+{% extends 'base.html' %}
+{% block title %}Préstamos Mantenimiento{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-tools"></i> Préstamos Mantenimiento</h1>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('prestamos_mantenimiento.prestar') }}" class="btn btn-primary btn-sm"><i class="bi bi-box-arrow-up"></i> Prestar</a>
+    <a href="{{ url_for('prestamos_mantenimiento.devolver') }}" class="btn btn-success btn-sm"><i class="bi bi-box-arrow-in-down"></i> Devolver</a>
+    <a href="{{ url_for('prestamos_mantenimiento.personal') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-person-badge"></i> Personal</a>
+    <a href="{{ url_for('prestamos_mantenimiento.material') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-wrench-adjustable"></i> Material</a>
+    <a href="{{ url_for('prestamos_mantenimiento.historial') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-clock-history"></i> Historial</a>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md"><a class="text-decoration-none" href="{{ url_for('prestamos_mantenimiento.material', estado='disponible') }}"><div class="stat-card bg-success"><div class="text-white-50">Disponibles</div><div class="fs-3 fw-bold">{{ stats.disponibles }}</div></div></a></div>
+  <div class="col-md"><a class="text-decoration-none" href="{{ url_for('prestamos_mantenimiento.material', estado='prestado') }}"><div class="stat-card bg-warning text-dark"><div class="opacity-75">Prestados</div><div class="fs-3 fw-bold">{{ stats.prestados }}</div></div></a></div>
+  <div class="col-md"><a class="text-decoration-none" href="{{ url_for('prestamos_mantenimiento.material', estado='danado') }}"><div class="stat-card bg-danger"><div class="text-white-50">Dañados</div><div class="fs-3 fw-bold">{{ stats.danados }}</div></div></a></div>
+  <div class="col-md"><a class="text-decoration-none" href="{{ url_for('prestamos_mantenimiento.material', estado='perdido') }}"><div class="stat-card bg-dark"><div class="text-white-50">Perdidos</div><div class="fs-3 fw-bold">{{ stats.perdidos }}</div></div></a></div>
+  <div class="col-md"><a class="text-decoration-none" href="{{ url_for('prestamos_mantenimiento.material') }}"><div class="stat-card bg-primary"><div class="text-white-50">Total activo</div><div class="fs-3 fw-bold">{{ stats.total }}</div></div></a></div>
+</div>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-exclamation-circle"></i> Material actualmente prestado</span>
+    <a href="{{ url_for('prestamos_mantenimiento.historial', estado='prestado') }}" class="btn btn-sm btn-outline-secondary">Ver todo</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead><tr><th>Material</th><th>Lo tiene</th><th>Fecha/hora préstamo</th><th>Observaciones</th></tr></thead>
+      <tbody>
+      {% for p in prestamos %}
+        <tr>
+          <td><div class="fw-semibold">{{ p.material_nombre }}</div><small class="font-monospace text-muted">{{ p.material_codigo }}</small></td>
+          <td><div class="fw-semibold">{{ p.recibe_nombre }}</div><small class="font-monospace text-muted">{{ p.recibe_codigo }}</small>{% if p.recibe_area %}<br><small class="text-muted">{{ p.recibe_area }}</small>{% endif %}</td>
+          <td>{{ p.fecha_prestamo }}</td>
+          <td>{{ p.observaciones_prestamo or '-' }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-4">No hay material prestado en este momento.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

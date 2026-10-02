@@ -1,0 +1,38 @@
+{% extends 'base.html' %}
+{% block title %}Registro de actividad{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-journal-text text-primary"></i> Registro de actividad</h1>
+</div>
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-sm table-hover mb-0">
+      <thead>
+        <tr><th>Fecha/Hora</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="text-muted" style="font-size:.82rem">{{ log.timestamp[:16] }}</td>
+          <td><span class="fw-semibold">{{ log.nombre or '—' }}</span>
+            <small class="text-muted">({{ log.username or '—' }})</small></td>
+          <td>
+            <span class="badge
+              {{ 'bg-danger' if 'BAJA' in log.accion else
+                 'bg-success' if 'ENTRADA' in log.accion or 'LOGIN' in log.accion else
+                 'bg-warning text-dark' if 'SALIDA' in log.accion else
+                 'bg-secondary' }}">
+              {{ log.accion }}
+            </span>
+          </td>
+          <td style="font-size:.85rem">{{ log.detalle or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-center text-muted py-3">Sin registros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted" style="font-size:.8rem">Últimos {{ logs|length }} registros</div>
+</div>
+{% endblock %}

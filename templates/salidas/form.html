@@ -1,0 +1,627 @@
+{% extends 'base.html' %}
+{% block title %}Registrar salida{% endblock %}
+{% block content %}
+<div class="module-hero">
+  <div>
+    <span class="module-kicker"><i class="bi bi-arrow-up-circle"></i> Captura de salidas</span>
+    <h1 class="page-title mb-1">Registrar salida de material</h1>
+    <div class="text-muted" style="font-size:.88rem">Captura el vale, agrega productos y descuenta material del inventario.</div>
+  </div>
+  <a href="{{ url_for('salidas.cancelar_captura') }}" class="btn btn-sm btn-outline-secondary"
+     tabindex="-1"
+     onclick="return {{ 'true' if not cart else 'confirm(\'¿Cancelar esta captura? Se perderán los productos ya agregados a la lista.\')' }}">
+    <i class="bi bi-x-circle"></i> Cancelar y salir
+  </a>
+</div>
+
+<form method="POST" id="form-salida">
+<input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+<div class="row g-3 capture-layout">
+  <div class="col-lg-7">
+    <div class="card mb-3 capture-card">
+      <div class="card-header py-3"><h2 class="panel-title"><i class="bi bi-receipt"></i> Datos del vale</h2></div>
+      <div class="card-body">
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Recibió <span class="text-danger">*</span></label>
+            <input type="text" name="responsable" id="responsable" class="form-control" tabindex="1"
+                   value="{{ doc.get('responsable','') }}" placeholder="Nombre completo de quien recibe"
+                   {{ 'autofocus' if not doc.get('responsable') and not cart }}>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Folio de vale <span class="text-danger">*</span></label>
+            <input type="text" name="no_vale" id="no_vale" class="form-control" tabindex="2"
+                   value="{{ doc.get('no_vale','') }}" placeholder="Ej: VALE-0123"
+                   {{ 'autofocus' if doc.get('responsable') and not cart }}>
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" name="es_mantenimiento" id="es_mantenimiento" tabindex="-1"
+                     {{ 'checked' if doc.get('es_mantenimiento') }}>
+              <label class="form-check-label fw-semibold" for="es_mantenimiento">Vale de Mantenimiento</label>
+              <div class="form-text">Completa el área y prepara el folio como <strong>M-</strong>.</div>
+            </div>
+            <div class="form-check form-switch mt-2">
+              <input class="form-check-input" type="checkbox" name="es_maquinados" id="es_maquinados" tabindex="-1"
+                     {{ 'checked' if doc.get('es_maquinados') }}>
+              <label class="form-check-label fw-semibold" for="es_maquinados">Vale de Maquinados</label>
+              <div class="form-text">Prepara el folio como <strong>M-</strong> y solicita máquina.</div>
+            </div>
+          </div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Área a la que sale el material</label>
+            <select name="area" id="area" class="form-select" tabindex="3">
+              <option value="">Sin área</option>
+              {% for area in areas_lista %}
+              <option value="{{ area.nombre }}" {{ 'selected' if doc.get('area') == area.nombre }}>{{ area.nombre }}</option>
+              {% endfor %}
+              {% if doc.get('area') and doc.get('area') not in areas_lista|map(attribute='nombre')|list %}
+              <option value="{{ doc.get('area') }}" selected>{{ doc.get('area') }} (actual)</option>
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Tipo de movimiento</label>
+            <select name="tipo_movimiento" class="form-select" tabindex="-1">
+              <option value="normal" {{ 'selected' if doc.get('tipo_movimiento','normal') == 'normal' }}>Salida normal</option>
+              <option value="ajuste" {{ 'selected' if doc.get('tipo_movimiento') == 'ajuste' }}>Ajuste de inventario (no cuadró el conteo)</option>
+            </select>
+          </div>
+        </div>
+        <div class="row g-3 mb-3" id="fila_maquinados">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Máquina</label>
+            <select name="maquina" id="maquina" class="form-select" tabindex="4">
+              <option value="">Selecciona máquina</option>
+              {% for m in maquinas %}
+              <option value="{{ m }}" {{ 'selected' if doc.get('maquina') == m }}>{{ m }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-6" id="fila_maquina_otro" style="display:none">
+            <label class="form-label fw-semibold">¿Cuál máquina? (Otros)</label>
+            <input type="text" name="maquina_otro" id="maquina_otro" class="form-control"
+                   value="{{ doc.get('maquina_otro','') }}" placeholder="Especifica la máquina">
+          </div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Proveedor</label>
+            <input type="text" name="proveedor" id="proveedor" class="form-control"
+                   value="{{ doc.get('proveedor','') }}" placeholder="Escribe el nombre del proveedor">
+          </div>
+        </div>
+        <div class="row g-3 mb-3">
+          <div class="col-md-6">
+            <label class="form-label fw-semibold">Fecha del vale</label>
+            <input type="date" name="fecha_vale" class="form-control" value="{{ doc.get('fecha_vale') or ahora[:10] }}">
+            <div class="form-text">Esta fecha si se puede cambiar.</div>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Orden de compra</label>
+            <input type="text" name="orden_compra" class="form-control" value="{{ doc.get('orden_compra','') }}" placeholder="Opcional">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Factura</label>
+            <input type="text" name="no_factura" class="form-control" value="{{ doc.get('no_factura','') }}" placeholder="Opcional">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label fw-semibold">Remisión</label>
+            <input type="text" name="no_remision" class="form-control" value="{{ doc.get('no_remision','') }}" placeholder="Opcional">
+          </div>
+        </div>
+        <div class="mb-0">
+          <label class="form-label">Observaciones</label>
+          <textarea name="observaciones" class="form-control" rows="2" tabindex="-1">{{ doc.get('observaciones','') }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <div class="card capture-card">
+      <div class="card-header py-3"><h2 class="panel-title"><i class="bi bi-box-seam"></i> Agregar producto</h2></div>
+      <div class="card-body">
+        <details class="border rounded mb-3 bg-light">
+          <summary class="p-3 fw-semibold" style="cursor:pointer"><i class="bi bi-collection"></i> Agregar productos por OC o factura</summary>
+          <div class="p-3 pt-0">
+          <div class="row g-2">
+            <div class="col-md-4"><select name="documento_tipo" class="form-select"><option value="oc">Orden de compra</option><option value="factura">Factura</option><option value="remision">Remisión</option></select></div>
+            <div class="col-md-5 position-relative"><input name="documento_valor" id="documento_valor" class="form-control" autocomplete="off" placeholder="Ej. OC0000061304 o 12345"><div id="documentos-sugeridos" class="list-group position-absolute w-100 shadow-sm" style="z-index:30;display:none"></div></div>
+            <div class="col-md-3 d-flex gap-1"><button type="submit" name="accion" value="agregar_documento_seleccionados" class="btn btn-primary flex-fill" formnovalidate><i class="bi bi-check2-square"></i> Agregar seleccionados</button><button type="submit" name="accion" value="agregar_documento" class="btn btn-outline-primary" formnovalidate title="Agregar todos los productos encontrados"><i class="bi bi-plus-square"></i> Todos</button></div>
+          </div>
+          <div id="productos-documento" class="mt-3" style="display:none"><div class="d-flex justify-content-between align-items-center mb-2"><strong>Productos encontrados</strong><label class="form-check-label"><input type="checkbox" id="marcar-todos-documento" class="form-check-input me-1"> Seleccionar todos</label></div><div id="lista-productos-documento" class="border rounded bg-white p-2"></div><div class="form-text">Marca uno o varios productos, o selecciona todos.</div></div>
+            <div class="form-text">Busca únicamente el tipo seleccionado, marca productos y ajusta sus cantidades antes de agregarlos.</div>
+          </div>
+        </details>
+        <div class="mb-3 position-relative">
+          <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+            <label class="form-label fw-semibold mb-1">Producto</label>
+            <div class="form-check form-switch mb-1">
+              <input class="form-check-input" type="checkbox" id="buscar-solo-h" tabindex="-1">
+              <label class="form-check-label" for="buscar-solo-h" style="font-size:.82rem">Solo OC H</label>
+            </div>
+          </div>
+          <input type="text" id="buscador-producto" class="form-control" autocomplete="off" tabindex="4"
+                 {{ 'autofocus' if cart }}
+                 placeholder="Busca por código o descripción, ej: tornillo 1/4">
+          <input type="hidden" name="producto_id" id="producto_id">
+          <div id="resultados-producto" class="list-group position-absolute w-100 shadow-sm autocomplete-menu"
+               style="z-index:20; max-height:280px; overflow-y:auto; display:none;"></div>
+        </div>
+
+        <div id="info-stock" class="alert alert-info py-1 mb-3" style="display:none;font-size:.85rem">
+          Stock actual: <strong id="val-stock"></strong>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Cantidad</label>
+          <div class="input-group" style="max-width:220px">
+            <input type="number" name="cantidad" id="cantidad" class="form-control" min="0.001" step="0.001" tabindex="5">
+            <span class="input-group-text" id="lbl-unidad">—</span>
+          </div>
+          <div class="input-group input-group-sm mt-2" id="fila-cantidad-stock" style="max-width:220px; display:none">
+            <input type="number" name="cantidad_compra" id="cantidad-compra" class="form-control" min="0.001" step="0.001">
+            <span class="input-group-text" id="lbl-unidad-stock">—</span>
+          </div>
+          <div id="conversion-salida" class="form-text fw-semibold text-danger" style="display:none"></div>
+        </div>
+
+        <button type="submit" name="accion" value="agregar_item" id="btn-agregar" class="btn btn-warning btn-sm" formnovalidate tabindex="-1">
+          <i class="bi bi-plus-lg"></i> Agregar a la lista
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="card sticky-summary">
+      <div class="card-header py-3 d-flex justify-content-between align-items-center">
+        <h2 class="panel-title"><i class="bi bi-list-check"></i> Salida actual</h2>
+        <span class="badge bg-secondary">{{ cart|length }}</span>
+      </div>
+      <div class="card-body p-0">
+        {% if cart %}
+        <div class="table-responsive">
+          <table class="table table-sm mb-0">
+            <thead><tr><th>Código</th><th>Cant.</th><th></th></tr></thead>
+            <tbody>
+            {% for item in cart %}
+              <tr>
+                <td class="font-monospace">
+                  {{ item.codigo }}
+                  {% if item.stock_origen == 'H' %}
+                  <span class="badge bg-info text-dark ms-1">OC H</span>
+                  {% endif %}
+                  {% if item.codigo_barras %}
+                  <br><span class="text-success" style="font-size:.72rem">{{ item.codigo_barras }}</span>
+                  {% endif %}
+                  <br><span class="text-muted" style="font-size:.72rem">{{ item.descripcion }}</span>
+                </td>
+                {% set cantidad_stock_item = ((item.cantidad * item.factor_conversion) if item.unidad_compra and item.factor_conversion and item.tipo_conversion == 'compra_a_uso' else ((item.cantidad / item.factor_conversion) if item.unidad_compra and item.factor_conversion else item.cantidad)) %}
+                <td>{{ cantidad_stock_item|cantidad_unidad(item.unidad_medida) }}
+                  {% if item.unidad_compra and item.factor_conversion %}
+                    <br><span class="text-muted" style="font-size:.72rem">= {{ item.cantidad|cantidad_unidad(item.unidad_compra) }}</span>
+                  {% endif %}
+                  {% if item.stock_actual is not none and cantidad_stock_item > item.stock_actual %}
+                    <br><span class="badge bg-danger" style="font-size:.62rem">Excede stock ({{ item.stock_actual }})</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <button type="submit" name="accion" value="quitar_item" formnovalidate tabindex="-1"
+                          class="btn btn-sm btn-outline-danger py-0 px-1"
+                          onclick="document.getElementById('idx-quitar').value='{{ loop.index0 }}'">
+                    <i class="bi bi-x"></i>
+                  </button>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-muted text-center py-4">Aún no agregas productos a esta salida.</div>
+        {% endif %}
+      </div>
+    </div>
+    <input type="hidden" name="idx" id="idx-quitar" value="">
+    <button type="submit" name="accion" value="guardar_todo" id="btn-guardar-todo" formnovalidate tabindex="-1" class="btn btn-primary w-100 mt-3" {{ 'disabled' if not cart }}>
+      <i class="bi bi-check-lg"></i> Finalizar y guardar {{ cart|length }} salida{{ 's' if cart|length != 1 else '' }}
+    </button>
+  </div>
+</div>
+</form>
+
+<script>
+  const buscador = document.getElementById('buscador-producto');
+  const resultados = document.getElementById('resultados-producto');
+  const productoIdInput = document.getElementById('producto_id');
+  const lblUnidad = document.getElementById('lbl-unidad');
+  const infoStock = document.getElementById('info-stock');
+  const valStock = document.getElementById('val-stock');
+  const cantidadInput = document.getElementById('cantidad');
+  const cantidadCompraInput = document.getElementById('cantidad-compra');
+  const filaCantidadStock = document.getElementById('fila-cantidad-stock');
+  const lblUnidadStock = document.getElementById('lbl-unidad-stock');
+  const mantenimientoCheck = document.getElementById('es_mantenimiento');
+  const maquinadosCheck = document.getElementById('es_maquinados');
+  const valeInput = document.getElementById('no_vale');
+  const areaInput = document.getElementById('area');
+  const maquinaInput = document.getElementById('maquina');
+  const maquinaOtroInput = document.getElementById('maquina_otro');
+  const filaMaquinaOtro = document.getElementById('fila_maquina_otro');
+  const filaMaquinados = document.getElementById('fila_maquinados');
+  const responsableInput = document.getElementById('responsable');
+  const btnAgregar = document.getElementById('btn-agregar');
+  const conversionSalida = document.getElementById('conversion-salida');
+  const buscarSoloH = document.getElementById('buscar-solo-h');
+  let productoSeleccionado = null;
+  let debounceTimer = null;
+  let resultadoActivo = -1;
+
+  function botonesResultado() {
+    return [...resultados.querySelectorAll('button.list-group-item-action')];
+  }
+
+  function resaltarResultado(indice) {
+    const botones = botonesResultado();
+    if (!botones.length) return;
+    resultadoActivo = (indice + botones.length) % botones.length;
+    botones.forEach((boton, posicion) => {
+      const activo = posicion === resultadoActivo;
+      boton.classList.toggle('active', activo);
+      boton.setAttribute('aria-selected', activo ? 'true' : 'false');
+    });
+    botones[resultadoActivo].scrollIntoView({ block: 'nearest' });
+  }
+
+  function fijarAreaPorNombre(nombre) {
+    const buscado = (nombre || '').trim().toUpperCase();
+    let encontrada = false;
+    Array.from(areaInput.options).forEach((opt) => {
+      if (opt.value.trim().toUpperCase() === buscado) {
+        areaInput.value = opt.value;
+        encontrada = true;
+      }
+    });
+    if (!encontrada && nombre) {
+      const opt = document.createElement('option');
+      opt.value = nombre;
+      opt.textContent = `${nombre} (actual)`;
+      areaInput.appendChild(opt);
+      areaInput.value = nombre;
+    }
+  }
+
+  function limpiarPrefijoSiSolo(prefijo) {
+    if (valeInput.value.trim().toUpperCase() === prefijo.toUpperCase()) valeInput.value = '';
+  }
+
+  function prefijoValeActual() {
+    if (mantenimientoCheck.checked) return 'M-';
+    if (maquinadosCheck.checked) return 'M-';
+    return '';
+  }
+
+  function limpiarNumeroVale(valor, prefijo) {
+    let texto = String(valor || '').trim();
+    if (prefijo === 'M-') {
+      texto = texto.replace(/^M\s*-?/i, '').replace(/^MAQ\s*-?/i, '');
+    }
+    return texto;
+  }
+
+  function protegerPrefijoVale() {
+    const prefijo = prefijoValeActual();
+    if (!prefijo) return;
+    if (!valeInput.value.toUpperCase().startsWith(prefijo)) {
+      valeInput.value = prefijo + limpiarNumeroVale(valeInput.value, prefijo);
+    }
+    if (valeInput.selectionStart < prefijo.length) {
+      valeInput.setSelectionRange(prefijo.length, prefijo.length);
+    }
+  }
+
+  valeInput.addEventListener('keydown', (e) => {
+    const prefijo = prefijoValeActual();
+    if (!prefijo) return;
+    const inicio = valeInput.selectionStart;
+    const fin = valeInput.selectionEnd;
+    if ((e.key === 'Backspace' && inicio <= prefijo.length && fin <= prefijo.length) ||
+        (e.key === 'Delete' && inicio < prefijo.length)) {
+      e.preventDefault();
+      valeInput.setSelectionRange(prefijo.length, prefijo.length);
+    }
+  });
+  valeInput.addEventListener('input', protegerPrefijoVale);
+  valeInput.addEventListener('click', protegerPrefijoVale);
+  valeInput.addEventListener('focus', protegerPrefijoVale);
+
+  function aplicarTipoVale(tipo, enfocar = true) {
+    if (tipo === 'mantenimiento') {
+      maquinadosCheck.checked = false;
+      filaMaquinados.style.display = '';
+      fijarAreaPorNombre('Mantenimiento');
+      valeInput.value = `M-${limpiarNumeroVale(valeInput.value, 'M-')}`;
+    } else if (tipo === 'maquinados') {
+      mantenimientoCheck.checked = false;
+      filaMaquinados.style.display = '';
+      fijarAreaPorNombre('Maquinados');
+      valeInput.value = `M-${limpiarNumeroVale(valeInput.value, 'M-')}`;
+    } else {
+      filaMaquinados.style.display = '';
+      limpiarPrefijoSiSolo('M-');
+    }
+    if (enfocar && tipo !== 'normal') {
+      valeInput.focus();
+    }
+    protegerPrefijoVale();
+  }
+
+  function aplicarMantenimiento(enfocar = true) {
+    if (mantenimientoCheck.checked) {
+      aplicarTipoVale('mantenimiento', enfocar);
+    } else {
+      aplicarTipoVale(maquinadosCheck.checked ? 'maquinados' : 'normal', enfocar);
+      if (areaInput.value.trim().toUpperCase() === 'MANTENIMIENTO') areaInput.value = '';
+    }
+  }
+
+  function aplicarMaquinados(enfocar = true) {
+    if (maquinadosCheck.checked) {
+      aplicarTipoVale('maquinados', enfocar);
+    } else {
+      aplicarTipoVale(mantenimientoCheck.checked ? 'mantenimiento' : 'normal', enfocar);
+      if (areaInput.value.trim().toUpperCase() === 'MAQUINADOS') areaInput.value = '';
+    }
+  }
+  function actualizarMaquinaOtro() {
+    // El campo depende de la opción elegida, no de que el checkbox se haya
+    // marcado antes: así también aparece si el usuario cambia directamente
+    // el select a "Otros".
+    const visible = maquinaInput.value === 'Otros';
+    filaMaquinaOtro.style.display = visible ? '' : 'none';
+    if (!visible) maquinaOtroInput.value = '';
+  }
+  maquinaInput.addEventListener('change', actualizarMaquinaOtro);
+  mantenimientoCheck.addEventListener('change', () => aplicarMantenimiento(true));
+  maquinadosCheck.addEventListener('change', () => aplicarMaquinados(true));
+  if (mantenimientoCheck.checked) aplicarMantenimiento(false);
+  if (maquinadosCheck.checked) aplicarMaquinados(false);
+  actualizarMaquinaOtro();
+
+  buscador.addEventListener('input', function() {
+    productoIdInput.value = '';
+    resultadoActivo = -1;
+    const q = this.value.trim();
+    clearTimeout(debounceTimer);
+    if (q.length < 2) { resultados.style.display = 'none'; return; }
+    debounceTimer = setTimeout(() => {
+      const filtroH = buscarSoloH && buscarSoloH.checked ? '&solo_h=1' : '';
+      fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}${filtroH}`)
+        .then(r => r.json())
+        .then(data => {
+          resultados.innerHTML = '';
+          resultadoActivo = -1;
+          if (data.length === 0) {
+            resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados</div>';
+          } else {
+            data.forEach(p => {
+              const item = document.createElement('button');
+              item.type = 'button';
+              item.tabIndex = -1;
+              item.className = 'list-group-item list-group-item-action';
+              const barras = p.codigo_barras ? `<div class="text-success font-monospace" style="font-size:.76rem">${p.codigo_barras}</div>` : '';
+              const origen = p.stock_origen === 'H' ? '<span class="badge bg-info text-dark ms-1">OC H</span>' : '';
+              item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span>${origen} — ${p.descripcion}${barras}
+                <div class="text-muted" style="font-size:.78rem">Stock actual: ${p.stock_actual} ${p.unidad_medida}</div>`;
+              item.addEventListener('click', () => seleccionarProducto(p));
+              resultados.appendChild(item);
+            });
+          }
+          resultados.style.display = 'block';
+        });
+    }, 250);
+  });
+
+  document.addEventListener('click', function(e) {
+    if (!resultados.contains(e.target) && e.target !== buscador) resultados.style.display = 'none';
+  });
+
+  function seleccionarProducto(p) {
+    buscador.value = `${p.codigo} — ${p.descripcion}`;
+    productoSeleccionado = p;
+    productoIdInput.value = p.id;
+    lblUnidad.textContent = p.unidad_medida || '—';
+    lblUnidadStock.textContent = (p.unidad_compra && p.factor_conversion) ? p.unidad_compra : '—';
+    filaCantidadStock.style.display = (p.unidad_compra && p.factor_conversion) ? 'flex' : 'none';
+    cantidadInput.value = '';
+    cantidadCompraInput.value = '';
+    const conversion = (p.unidad_compra && p.factor_conversion)
+      ? ` = ${stockACompra(Number(p.stock_actual || 0), p).toFixed(2)} ${p.unidad_compra}`
+      : '';
+    valStock.textContent = `${p.stock_actual} ${p.unidad_medida}${conversion}`;
+    infoStock.style.display = 'block';
+    actualizarConversionSalida();
+    resultados.style.display = 'none';
+    cantidadInput.focus();
+  }
+
+
+  function actualizarConversionSalida(origen = 'stock') {
+    if (!productoSeleccionado || !productoSeleccionado.unidad_compra || !productoSeleccionado.factor_conversion) {
+      conversionSalida.style.display = 'none';
+      conversionSalida.textContent = '';
+      return;
+    }
+    const factor = Number(productoSeleccionado.factor_conversion || 0);
+    if (!factor) {
+      conversionSalida.style.display = 'none';
+      return;
+    }
+    if (origen === 'stock') {
+      if (!cantidadInput.value) return;
+      cantidadCompraInput.value = stockACompra(Number(cantidadInput.value), productoSeleccionado).toFixed(2);
+    } else {
+      if (!cantidadCompraInput.value) return;
+      cantidadInput.value = compraAStock(Number(cantidadCompraInput.value), productoSeleccionado).toFixed(2);
+    }
+    conversionSalida.textContent = `${cantidadInput.value} ${productoSeleccionado.unidad_medida} = ${cantidadCompraInput.value} ${productoSeleccionado.unidad_compra}`;
+    conversionSalida.style.display = 'block';
+  }
+  function stockACompra(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad / factor : cantidad * factor;
+  }
+  function compraAStock(cantidad, producto) {
+    const factor = Number(producto.factor_conversion || 0);
+    if (!factor) return cantidad;
+    return (producto.tipo_conversion || 'uso_a_compra') === 'compra_a_uso' ? cantidad * factor : cantidad / factor;
+  }
+  cantidadInput.addEventListener('input', () => actualizarConversionSalida('stock'));
+  cantidadCompraInput.addEventListener('input', () => actualizarConversionSalida('compra'));
+  if (buscarSoloH) {
+    buscarSoloH.addEventListener('change', () => {
+      productoIdInput.value = '';
+      productoSeleccionado = null;
+      buscador.value = '';
+      resultados.style.display = 'none';
+      infoStock.style.display = 'none';
+      cantidadInput.value = '';
+      cantidadCompraInput.value = '';
+      actualizarConversionSalida();
+      buscador.focus();
+    });
+  }
+  buscador.addEventListener('keydown', function(e) {
+    const botones = botonesResultado();
+    if (e.key === 'ArrowDown' && botones.length) {
+      e.preventDefault();
+      resaltarResultado(resultadoActivo + 1);
+    } else if (e.key === 'ArrowUp' && botones.length) {
+      e.preventDefault();
+      resaltarResultado(resultadoActivo <= 0 ? botones.length - 1 : resultadoActivo - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (productoIdInput.value) {
+        cantidadInput.focus();
+        return;
+      }
+      const elegido = botones[resultadoActivo >= 0 ? resultadoActivo : 0];
+      if (elegido) elegido.click();
+    } else if (e.key === 'Escape') {
+      resultados.style.display = 'none';
+      resultadoActivo = -1;
+    }
+  });
+
+  cantidadInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      btnAgregar.click();
+    } else if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      responsableInput.focus();
+      responsableInput.select();
+    }
+  });
+
+  document.getElementById('btn-agregar').addEventListener('click', function(e) {
+    if (!productoIdInput.value) {
+      e.preventDefault();
+      alert('Selecciona un producto de la lista de resultados.');
+      return;
+    }
+    const cantidadCompraOk = cantidadCompraInput.value && parseFloat(cantidadCompraInput.value) > 0;
+    const cantidadStockOk = cantidadInput.value && parseFloat(cantidadInput.value) > 0;
+    if (!cantidadCompraOk && !cantidadStockOk) {
+      e.preventDefault();
+      alert('Captura una cantidad mayor a 0.');
+    }
+  });
+
+  document.getElementById('btn-guardar-todo').addEventListener('click', function(e) {
+    const faltantes = [];
+    if (!document.querySelector('input[name="responsable"]').value.trim()) faltantes.push('quién recibe el material');
+    if (!document.getElementById('no_vale').value.trim()) faltantes.push('el folio de vale');
+    if (maquinadosCheck.checked && !maquinaInput.value.trim()) faltantes.push('la máquina');
+    if (faltantes.length) {
+      e.preventDefault();
+      alert('Falta capturar: ' + faltantes.join(', ') + '.');
+    }
+  });
+
+  const tipoDocumento = document.querySelector('select[name="documento_tipo"]');
+  const valorDocumento = document.getElementById('documento_valor');
+  const sugerenciasDocumento = document.getElementById('documentos-sugeridos');
+  const productosDocumento = document.getElementById('productos-documento');
+  const listaProductosDocumento = document.getElementById('lista-productos-documento');
+  const marcarTodosDocumento = document.getElementById('marcar-todos-documento');
+  let temporizadorDocumento;
+  valorDocumento.addEventListener('input', () => {
+    clearTimeout(temporizadorDocumento); productosDocumento.style.display = 'none';
+    const q = valorDocumento.value.trim();
+    if (q.length < 2) { sugerenciasDocumento.style.display = 'none'; return; }
+    temporizadorDocumento = setTimeout(() => fetch(`{{ url_for('salidas.api_documentos_entrada') }}?tipo=${tipoDocumento.value}&q=${encodeURIComponent(q)}`).then(r => r.json()).then(data => {
+      sugerenciasDocumento.innerHTML = '';
+      data.forEach(d => { const b=document.createElement('button'); b.type='button'; b.className='list-group-item list-group-item-action'; b.innerHTML=`<strong>${d.valor}</strong> <small class="text-muted">${d.productos} producto(s)</small>`; b.onclick=()=>seleccionarDocumento(d.valor); sugerenciasDocumento.appendChild(b); });
+      sugerenciasDocumento.style.display = data.length ? 'block' : 'none';
+    }), 250);
+  });
+  tipoDocumento.addEventListener('change', () => { valorDocumento.value=''; sugerenciasDocumento.innerHTML=''; sugerenciasDocumento.style.display='none'; listaProductosDocumento.innerHTML=''; productosDocumento.style.display='none'; });
+  function seleccionarDocumento(valor) {
+    valorDocumento.value = valor; sugerenciasDocumento.style.display='none';
+    fetch(`{{ url_for('salidas.api_documento_productos') }}?tipo=${tipoDocumento.value}&valor=${encodeURIComponent(valor)}`).then(r=>r.json()).then(respuesta=>{
+      const data = respuesta.productos || [];
+      const documentos = respuesta.documentos || {};
+      if (documentos.no_factura) document.querySelector('input[name="no_factura"]').value = documentos.no_factura;
+      if (documentos.no_remision) document.querySelector('input[name="no_remision"]').value = documentos.no_remision;
+      listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
+      listaProductosDocumento.innerHTML=''; marcarTodosDocumento.checked=false;
+      data.forEach(p=>{
+        const row=document.createElement('div');
+        row.className='d-flex align-items-center gap-2 border-bottom py-1 flex-wrap';
+        const tieneConversion=p.unidad_compra && p.factor_conversion;
+        const unidad=p.unidad_medida;
+        const maxStock=tieneConversion ? compraAStock(Number(p.cantidad || 0), p).toFixed(2) : '';
+        const maxCompra=tieneConversion ? Number(p.cantidad || 0).toFixed(2) : '';
+        const conversion=tieneConversion ? ` = ${maxCompra} ${p.unidad_compra}` : '';
+        const origen=p.stock_origen === 'H' ? '<span class="badge bg-info text-dark ms-1">OC H</span>' : '';
+        const compraInput=tieneConversion ? `<div class="input-group input-group-sm" style="width:150px"><input type="number" class="form-control cantidad-documento" data-producto-id="${p.id}" data-factor="${p.factor_conversion}" data-tipo-conversion="${p.tipo_conversion || 'uso_a_compra'}" value="${maxCompra}" min="0.001" max="${p.cantidad}" step="0.001" title="Cantidad en ${p.unidad_compra}"><span class="input-group-text">${p.unidad_compra}</span></div>` : '';
+        row.innerHTML=`<label class="mb-0 flex-grow-1"><input type="checkbox" class="producto-documento me-2" value="${p.id}"> <span class="font-monospace">${p.codigo}</span>${origen} — ${p.descripcion} <small class="text-muted">(máximo ${maxStock || p.cantidad} ${unidad}${conversion})</small></label><div class="input-group input-group-sm" style="width:150px"><input type="number" class="form-control cantidad-documento-stock" data-producto-id="${p.id}" data-factor="${p.factor_conversion || ''}" data-tipo-conversion="${p.tipo_conversion || 'uso_a_compra'}" value="${maxStock || p.cantidad}" min="0.001" step="0.001" title="Cantidad en ${unidad}"><span class="input-group-text">${unidad}</span></div>${compraInput}`;
+        listaProductosDocumento.appendChild(row);
+      });
+      document.querySelectorAll('.cantidad-documento').forEach(input=>{
+        input.addEventListener('input',()=>{
+          const factor=Number(input.dataset.factor || 0);
+          const tipo=input.dataset.tipoConversion || 'uso_a_compra';
+          const stock=document.querySelector(`.cantidad-documento-stock[data-producto-id="${input.dataset.productoId}"]`);
+          if (!factor || !stock || input.value==='') return;
+          stock.value=(tipo === 'compra_a_uso' ? Number(input.value)*factor : Number(input.value)/factor).toFixed(2);
+        });
+      });
+      document.querySelectorAll('.cantidad-documento-stock').forEach(input=>{
+        input.addEventListener('input',()=>{
+          const factor=Number(input.dataset.factor || 0);
+          const tipo=input.dataset.tipoConversion || 'uso_a_compra';
+          const compra=document.querySelector(`.cantidad-documento[data-producto-id="${input.dataset.productoId}"]`);
+          if (!factor || !compra || input.value==='') return;
+          compra.value=(tipo === 'compra_a_uso' ? Number(input.value)/factor : Number(input.value)*factor).toFixed(2);
+        });
+      });
+      productosDocumento.style.display=data.length?'block':'none';
+    });
+  }
+  marcarTodosDocumento.addEventListener('change',()=>document.querySelectorAll('.producto-documento').forEach(x=>x.checked=marcarTodosDocumento.checked));
+  document.getElementById('form-salida').addEventListener('submit', e=>{
+    if (e.submitter && ['agregar_documento', 'agregar_documento_seleccionados'].includes(e.submitter.value)) {
+      document.querySelectorAll('input[name="producto_ids"]').forEach(x=>x.remove());
+      document.querySelectorAll('input[name^="producto_cantidad_"]').forEach(x=>x.remove());
+      if (e.submitter.value === 'agregar_documento_seleccionados') {
+        document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const h=document.createElement('input'); h.type='hidden'; h.name='producto_ids'; h.value=x.value; e.currentTarget.appendChild(h); });
+        document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const cantidad=document.querySelector(`.cantidad-documento[data-producto-id="${x.value}"]`); const h=document.createElement('input'); h.type='hidden'; h.name=`producto_cantidad_${x.value}`; h.value=cantidad ? cantidad.value : ''; e.currentTarget.appendChild(h); });
+        document.querySelectorAll('.producto-documento:checked').forEach(x=>{ const cantidad=document.querySelector(`.cantidad-documento-stock[data-producto-id="${x.value}"]`); const h=document.createElement('input'); h.type='hidden'; h.name=`producto_cantidad_stock_${x.value}`; h.value=cantidad ? cantidad.value : ''; e.currentTarget.appendChild(h); });
+      }
+    }
+  });
+</script>
+{% endblock %}

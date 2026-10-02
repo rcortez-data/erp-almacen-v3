@@ -1,0 +1,184 @@
+Option Explicit
+
+' Pegar este codigo completo en Outlook VBA:
+' Alt + F11 -> Microsoft Outlook Objects -> ThisOutlookSession
+'
+' Guarda automaticamente adjuntos PDF de ordenes de compra que lleguen a Outlook.
+' Filtros:
+' - Buzon/cuenta esperada: almacen_g@grupo-tensa.com.mx
+' - Remitente permitido: compras@grupo-tensa.com.mx
+' - Nombre de archivo exacto: OC + 10 digitos + .pdf, ejemplo OC0000061304.pdf
+'
+' Carpeta destino:
+' C:\Users\Almacen\Desktop\ERP\erp_almacen_v3\ORDENES DE COMPRA
+'
+' Si el PDF ya existe, primero respalda el archivo anterior con fecha/hora actual:
+' OC0000061304_RESPALDO_20260819_1045.pdf
+' y despues guarda el nuevo como OC0000061304.pdf.
+
+Private Const OC_REMITENTE_PERMITIDO As String = "compras@grupo-tensa.com.mx"
+Private Const OC_CUENTA_DESTINO As String = "almacen_g@grupo-tensa.com.mx"
+Private Const OC_CARPETA_DESTINO As String = "C:\Users\Almacen\Desktop\ERP\erp_almacen_v3\ORDENES DE COMPRA"
+
+Private WithEvents BandejaOC As Outlook.Items
+
+Private Sub Application_Startup()
+    IniciarMonitorOC
+End Sub
+
+Public Sub IniciarMonitorOC()
+    Dim ns As Outlook.NameSpace
+    Dim inbox As Outlook.Folder
+
+    Set ns = Application.GetNamespace("MAPI")
+    Set inbox = ObtenerBandejaEntrada(ns, OC_CUENTA_DESTINO)
+
+    If inbox Is Nothing Then
+        MsgBox "No encontre la bandeja de entrada de " & OC_CUENTA_DESTINO, vbExclamation
+        Exit Sub
+    End If
+
+    AsegurarCarpeta OC_CARPETA_DESTINO
+    Set BandejaOC = inbox.Items
+End Sub
+
+Private Sub BandejaOC_ItemAdd(ByVal Item As Object)
+    On Error GoTo Salir
+    If TypeOf Item Is Outlook.MailItem Then
+        ProcesarCorreoOC Item
+    End If
+Salir:
+End Sub
+
+Public Sub DescargarHistoricoOC()
+    Dim ns As Outlook.NameSpace
+    Dim inbox As Outlook.Folder
+    Dim items As Outlook.Items
+    Dim item As Object
+    Dim totalGuardados As Long
+
+    Set ns = Application.GetNamespace("MAPI")
+    Set inbox = ObtenerBandejaEntrada(ns, OC_CUENTA_DESTINO)
+
+    If inbox Is Nothing Then
+        MsgBox "No encontre la bandeja de entrada de " & OC_CUENTA_DESTINO, vbExclamation
+        Exit Sub
+    End If
+
+    AsegurarCarpeta OC_CARPETA_DESTINO
+    Set items = inbox.Items
+    items.Sort "[ReceivedTime]", True
+
+    For Each item In items
+        If TypeOf item Is Outlook.MailItem Then
+            totalGuardados = totalGuardados + ProcesarCorreoOC(item)
+        End If
+    Next item
+
+    MsgBox "Historico revisado. PDFs de OC guardados: " & totalGuardados, vbInformation
+End Sub
+
+Private Function ProcesarCorreoOC(ByVal mail As Outlook.MailItem) As Long
+    Dim adj As Outlook.Attachment
+    Dim remitente As String
+    Dim guardados As Long
+
+    remitente = LCase$(ObtenerCorreoRemitente(mail))
+    If remitente <> OC_REMITENTE_PERMITIDO Then Exit Function
+    If mail.Attachments.Count = 0 Then Exit Function
+
+    For Each adj In mail.Attachments
+        If EsNombreOCPdf(adj.FileName) Then
+            GuardarAdjuntoOC adj
+            guardados = guardados + 1
+        End If
+    Next adj
+
+    ProcesarCorreoOC = guardados
+End Function
+
+Private Sub GuardarAdjuntoOC(ByVal adj As Outlook.Attachment)
+    Dim destino As String
+    Dim respaldo As String
+    Dim base As String
+
+    AsegurarCarpeta OC_CARPETA_DESTINO
+    destino = OC_CARPETA_DESTINO & "\" & adj.FileName
+
+    If Dir(destino, vbNormal) <> "" Then
+        base = Left$(adj.FileName, Len(adj.FileName) - 4)
+        respaldo = RutaRespaldoDisponible(base)
+        Name destino As respaldo
+    End If
+
+    adj.SaveAsFile destino
+End Sub
+
+Private Function RutaRespaldoDisponible(ByVal base As String) As String
+    Dim intento As Long
+    Dim sufijo As String
+    Dim ruta As String
+
+    intento = 0
+    Do
+        If intento = 0 Then
+            sufijo = ""
+        Else
+            sufijo = "_" & Format(intento, "00")
+        End If
+
+        ruta = OC_CARPETA_DESTINO & "\" & base & "_RESPALDO_" & Format(Now, "yyyymmdd_hhnnss") & sufijo & ".pdf"
+        intento = intento + 1
+    Loop While Dir(ruta, vbNormal) <> ""
+
+    RutaRespaldoDisponible = ruta
+End Function
+
+Private Function EsNombreOCPdf(ByVal nombre As String) As Boolean
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+
+    re.Pattern = "^OC[0-9]{10}\.pdf$"
+    re.IgnoreCase = False
+    re.Global = False
+
+    EsNombreOCPdf = re.Test(nombre)
+End Function
+
+Private Function ObtenerCorreoRemitente(ByVal mail As Outlook.MailItem) As String
+    On Error Resume Next
+
+    If LCase$(mail.SenderEmailType) = "ex" Then
+        ObtenerCorreoRemitente = mail.Sender.GetExchangeUser.PrimarySmtpAddress
+    Else
+        ObtenerCorreoRemitente = mail.SenderEmailAddress
+    End If
+End Function
+
+Private Function ObtenerBandejaEntrada(ByVal ns As Outlook.NameSpace, ByVal cuenta As String) As Outlook.Folder
+    Dim store As Outlook.Store
+    Dim root As Outlook.Folder
+
+    For Each store In ns.Stores
+        If LCase$(store.DisplayName) = LCase$(cuenta) Then
+            Set ObtenerBandejaEntrada = store.GetDefaultFolder(olFolderInbox)
+            Exit Function
+        End If
+    Next store
+
+    For Each root In ns.Folders
+        If LCase$(root.Name) = LCase$(cuenta) Then
+            On Error Resume Next
+            Set ObtenerBandejaEntrada = root.Folders("Bandeja de entrada")
+            If ObtenerBandejaEntrada Is Nothing Then Set ObtenerBandejaEntrada = root.Folders("Inbox")
+            On Error GoTo 0
+            Exit Function
+        End If
+    Next root
+
+    Set ObtenerBandejaEntrada = ns.GetDefaultFolder(olFolderInbox)
+End Function
+
+Private Sub AsegurarCarpeta(ByVal ruta As String)
+    If Dir(ruta, vbDirectory) = "" Then MkDir ruta
+End Sub

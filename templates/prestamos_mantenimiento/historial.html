@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Historial de préstamos{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-clock-history"></i> Historial de préstamos</h1>
+  <a href="{{ url_for('prestamos_mantenimiento.index') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Módulo</a>
+</div>
+<div class="card mb-3"><div class="card-body py-2">
+  <form method="GET" class="row g-2 align-items-end">
+    <div class="col-md-5"><input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Buscar material o persona"></div>
+    <div class="col-md-3"><select name="estado" class="form-select form-select-sm"><option value="todos" {{ 'selected' if estado=='todos' }}>Todos</option><option value="prestado" {{ 'selected' if estado=='prestado' }}>Prestados</option><option value="devuelto" {{ 'selected' if estado=='devuelto' }}>Devueltos</option><option value="perdido" {{ 'selected' if estado=='perdido' }}>Perdidos</option></select></div>
+    <div class="col-auto"><button class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Consultar</button><a href="{{ url_for('prestamos_mantenimiento.historial') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a></div>
+  </form>
+</div></div>
+<div class="card"><div class="table-responsive"><table class="table table-hover mb-0">
+  <thead><tr><th>Material</th><th>Recibió</th><th>Prestado</th><th>Devolvió</th><th>Devuelto</th><th>Estado</th><th>Notas</th></tr></thead>
+  <tbody>
+  {% for r in registros %}
+    <tr>
+      <td><div class="fw-semibold">{{ r.material_nombre }}</div><small class="font-monospace text-muted">{{ r.material_codigo }}</small></td>
+      <td><div>{{ r.recibe_nombre }}</div><small class="font-monospace text-muted">{{ r.recibe_codigo }}</small>{% if r.recibe_area %}<br><small class="text-muted">{{ r.recibe_area }}</small>{% endif %}</td>
+      <td>{{ r.fecha_prestamo }}</td>
+      <td>{% if r.devuelve_nombre %}<div>{{ r.devuelve_nombre }}</div><small class="font-monospace text-muted">{{ r.devuelve_codigo }}</small>{% if r.devuelve_area %}<br><small class="text-muted">{{ r.devuelve_area }}</small>{% endif %}{% else %}-{% endif %}</td>
+      <td>{{ r.fecha_devolucion or '-' }}</td>
+      <td>{% if r.estado == 'prestado' %}<span class="badge bg-warning text-dark">Prestado</span>{% elif r.estado == 'devuelto' %}<span class="badge bg-success">Devuelto</span>{% else %}<span class="badge bg-dark">{{ r.estado }}</span>{% endif %}</td>
+      <td><small>{{ r.observaciones_prestamo or '' }}{% if r.observaciones_devolucion %}<br>{{ r.observaciones_devolucion }}{% endif %}</small></td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="text-center text-muted py-4">No hay movimientos.</td></tr>
+  {% endfor %}
+  </tbody>
+</table></div></div>
+{% endblock %}
