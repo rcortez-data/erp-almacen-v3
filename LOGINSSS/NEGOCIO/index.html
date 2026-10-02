@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es-MX">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f0e6" />
+    <title>NEGOCIO · Caja de barrio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand-lockup" href="#" aria-label="NEGOCIO inicio">
+          <span class="brand-mark">N</span>
+          <span><strong>negocio</strong><small>caja de barrio</small></span>
+        </a>
+        <div class="topbar-context">
+          <span class="live-dot"></span>
+          <span>Turno abierto · Caja 01</span>
+        </div>
+        <button class="icon-button" type="button" aria-label="Abrir menú" id="menuButton">☰</button>
+      </header>
+
+      <main class="workspace">
+        <section class="catalog-panel" aria-labelledby="catalog-title">
+          <div class="intro-row">
+            <div>
+              <p class="eyebrow">viernes · 02 oct 2026</p>
+              <h1 id="catalog-title">¿Qué va para la bolsa?</h1>
+            </div>
+            <div class="cash-note"><span>Venta #</span><strong id="saleNumber">00428</strong></div>
+          </div>
+
+          <div class="search-wrap">
+            <span class="search-icon">⌕</span>
+            <label class="sr-only" for="searchInput">Buscar productos</label>
+            <input id="searchInput" type="search" placeholder="Busca por nombre, código o marca" autocomplete="off" />
+            <kbd>Ctrl K</kbd>
+          </div>
+
+          <div class="category-strip" id="categoryStrip" aria-label="Categorías"></div>
+
+          <div class="section-heading">
+            <h2 id="productHeading">Favoritos de la casa</h2>
+            <span id="productCount" class="muted-label"></span>
+          </div>
+          <div class="product-grid" id="productGrid"></div>
+        </section>
+
+        <aside class="cart-panel" aria-labelledby="cart-title">
+          <div class="cart-header">
+            <div>
+              <p class="eyebrow">mostrador</p>
+              <h2 id="cart-title">La bolsa <span class="cart-count" id="cartCount">0</span></h2>
+            </div>
+            <button class="text-button" type="button" id="clearCartButton">Vaciar</button>
+          </div>
+          <div class="cart-items" id="cartItems">
+            <div class="empty-cart"><span class="empty-basket">⌁</span><strong>La bolsa está lista</strong><p>Toca un producto para empezar la venta.</p></div>
+          </div>
+          <div class="cart-footer">
+            <div class="summary-line"><span>Subtotal</span><strong id="subtotal">$0.00</strong></div>
+            <div class="summary-line muted-line"><span>Descuento</span><strong id="discount">-$0.00</strong></div>
+            <div class="total-line"><span>Total</span><strong id="total">$0.00</strong></div>
+            <button class="charge-button" type="button" id="chargeButton" disabled><span>Cobrar ahora</span><span>→</span></button>
+            <p class="shortcut-hint">Enter para cobrar · Esc para limpiar</p>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="statusbar">
+        <span><i class="status-check">✓</i> Datos guardados en este dispositivo</span>
+        <span>NEGOCIO / prototipo 0.1</span>
+      </footer>
+    </div>
+
+    <div class="modal-backdrop" id="paymentModal" hidden>
+      <section class="payment-modal" role="dialog" aria-modal="true" aria-labelledby="paymentTitle">
+        <button class="modal-close" type="button" id="closeModalButton" aria-label="Cerrar">×</button>
+        <p class="eyebrow">cerrar venta <span id="modalSaleNumber">#00428</span></p>
+        <h2 id="paymentTitle">¿Cómo paga la clienta?</h2>
+        <div class="payment-total" id="modalTotal">$0.00</div>
+        <div class="payment-methods" id="paymentMethods">
+          <button class="payment-method is-selected" type="button" data-method="efectivo"><span>💵</span><strong>Efectivo</strong><small>calcular cambio</small></button>
+          <button class="payment-method" type="button" data-method="tarjeta"><span>💳</span><strong>Tarjeta</strong><small>cobro externo</small></button>
+          <button class="payment-method" type="button" data-method="transferencia"><span>↗</span><strong>Transferencia</strong><small>confirmar depósito</small></button>
+        </div>
+        <div class="cash-entry" id="cashEntry">
+          <label for="cashInput">Recibido en efectivo</label>
+          <div class="money-input"><span>$</span><input id="cashInput" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+          <div class="change-row"><span>Cambio</span><strong id="changeAmount">$0.00</strong></div>
+        </div>
+        <button class="confirm-button" type="button" id="confirmPaymentButton">Confirmar venta</button>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
