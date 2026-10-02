@@ -30,6 +30,15 @@ def normalizar_vale(no_vale, tipo_vale):
     return f'{prefijo}{numero}' if numero else prefijo
 
 
+def normalizar_vale_mantenimiento(no_vale, es_mantenimiento):
+    """Normaliza el formato legible usado por el formulario de mantenimiento."""
+    valor = (no_vale or '').strip()
+    if not es_mantenimiento:
+        return valor
+    numero = valor.upper().removeprefix('M').lstrip('-').strip()
+    return f'M {numero}'.strip() if numero else 'M'
+
+
 def _factor_conversion(producto):
     try:
         factor = float(producto['factor_conversion'] or 0)

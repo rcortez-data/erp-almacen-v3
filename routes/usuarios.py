@@ -1,10 +1,26 @@
 import re
 
-from flask import Blueprint, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 from werkzeug.security import generate_password_hash
 
 from database import get_db, log_actividad
 from routes.auth import login_required
+
+
+def _validar_password(password):
+    """Devuelve un mensaje si la contraseña no cumple la política configurada."""
+    password = password or ""
+    minimo = int(current_app.config.get('PASSWORD_MIN_LENGTH', 8))
+    if len(password) < minimo:
+        return f'La contraseña debe tener al menos {minimo} caracteres.'
+    if current_app.config.get('REQUIRE_STRONG_PASSWORD', False):
+        if not any(c.islower() for c in password):
+            return 'La contraseña debe incluir minúsculas.'
+        if not any(c.isupper() for c in password):
+            return 'La contraseña debe incluir mayúsculas.'
+        if not any(c.isdigit() for c in password):
+            return 'La contraseña debe incluir números.'
+    return None
 
 usuarios_bp = Blueprint('usuarios', __name__, url_prefix='/usuarios')
 
