@@ -36,4 +36,19 @@ agenda['Ana'] = {
 print(agenda)
 
 # Eliminar un contacto existente
-agenda.pop()
+# agenda.pop('pedro')
+# # del agenda['pedro']  cualquiera de las 2 funciones hace lo mismo
+# print(agenda) 
+
+# Mostramos los contactos de la agenda
+
+print(f'\nContactos en la Agenda')
+for nombre, detalles in agenda.items():
+    print(f'''Nombre: {nombre}
+Telefono: {detalles['telefono']}
+Email: {detalles['email']}
+Direccion: {detalles['direccion']}
+''')
+
+
+

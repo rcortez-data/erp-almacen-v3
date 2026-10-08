@@ -8,13 +8,9 @@
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card"><div class="card-body">
-      <form method="POST">
+      <form method="POST" id="form-devolucion">
         <div class="mb-3">
-          <label class="form-label">1. Escanea material/herramienta</label>
-          <input name="material_codigo" id="material_codigo" class="form-control form-control-lg font-monospace" autocomplete="off" autofocus placeholder="Ej: PRES-000001">
-        </div>
-        <div class="mb-3">
-          <label class="form-label">2. ¿Quién lo devuelve? *</label>
+          <label class="form-label">1. ¿Quién lo devuelve? *</label>
           <div class="btn-group w-100" role="group">
             <input type="radio" class="btn-check" name="devuelve_modo" id="devuelve-catalogo" value="catalogo" checked>
             <label class="btn btn-outline-primary" for="devuelve-catalogo"><i class="bi bi-upc-scan"></i> Escanear persona</label>
@@ -25,7 +21,10 @@
         <div id="bloque-devuelve-catalogo">
         <div class="mb-3">
           <label class="form-label">Escanea quién devuelve *</label>
-          <input name="devuelve_codigo" id="devuelve_codigo" class="form-control font-monospace" autocomplete="off" placeholder="Puede ser la misma persona u otra">
+          <div class="input-group">
+            <input name="devuelve_codigo" id="devuelve_codigo" class="form-control form-control-lg font-monospace" autocomplete="off" autofocus placeholder="Puede ser la misma persona u otra">
+            <button type="button" class="btn btn-outline-secondary" id="limpiar-devuelve" title="Limpiar personal"><i class="bi bi-x-lg"></i> Limpiar</button>
+          </div>
         </div>
         </div>
         <div id="bloque-devuelve-manual" class="border rounded bg-light p-3 mb-3 d-none">
@@ -33,6 +32,13 @@
             <div class="col-md-4"><label class="form-label">Nómina *</label><input name="devuelve_manual_nomina" id="devuelve_manual_nomina" class="form-control" list="nominas-sugeridas" autocomplete="off"></div>
             <div class="col-md-5"><label class="form-label">Nombre *</label><input name="devuelve_manual_nombre" id="devuelve_manual_nombre" class="form-control" list="responsables-sugeridos" autocomplete="off"></div>
             <div class="col-md-3"><label class="form-label">Área *</label><input name="devuelve_manual_area" id="devuelve_manual_area" class="form-control" list="areas-sugeridas"></div>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">2. Escanea material/herramienta</label>
+          <div class="input-group">
+            <input name="material_codigo" id="material_codigo" class="form-control form-control-lg font-monospace" autocomplete="off" placeholder="Ej: PRES-000001">
+            <button type="button" class="btn btn-outline-secondary" id="limpiar-material" title="Limpiar material"><i class="bi bi-x-lg"></i> Limpiar</button>
           </div>
         </div>
         <div class="mb-3">
@@ -73,6 +79,8 @@ const responsablesSugeridos = document.getElementById('responsables-sugeridos');
 const nominasSugeridas = document.getElementById('nominas-sugeridas');
 const areasSugeridas = document.getElementById('areas-sugeridas');
 let responsablesCache = [];
+let materialDetectado = false;
+let enviandoDevolucion = false;
 function htmlSafe(v) {
   return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
 }
@@ -85,6 +93,27 @@ function aplicarModoDevolucion() {
   devuelveManualNomina.required = manual;
   devuelveManualNombre.required = manual;
   devuelveManualArea.required = manual;
+  if (manual) devuelveManualNomina.focus(); else devuelveCodigo.focus();
+}
+
+function responsableDevolucionListo() {
+  if (devuelveManual.checked) {
+    return devuelveManualNomina.value.trim() && devuelveManualNombre.value.trim() && devuelveManualArea.value.trim();
+  }
+  return devuelveCodigo.value.trim();
+}
+
+function enfocarMaterial() {
+  setTimeout(() => {
+    materialInput.focus();
+    materialInput.select?.();
+  }, 80);
+}
+
+function enviarDevolucionSiLista() {
+  if (enviandoDevolucion || !responsableDevolucionListo() || !materialDetectado) return;
+  enviandoDevolucion = true;
+  document.getElementById('form-devolucion').requestSubmit();
 }
 
 devuelveCatalogo.addEventListener('change', aplicarModoDevolucion);
@@ -97,9 +126,11 @@ async function cargarMaterial() {
   const data = await res.json();
   if (!res.ok) {
     panel.innerHTML = `<div class="text-danger">No encontrado: ${htmlSafe(codigo)}</div>`;
+    materialDetectado = false;
     return;
   }
   materialInput.value = data.codigo_barras;
+  materialDetectado = true;
   const p = data.prestamo;
   const fotoItem = data.foto_ruta ? `<img src="/static/${htmlSafe(data.foto_ruta)}" class="rounded border me-2" style="width:86px;height:86px;object-fit:cover" alt="Foto item">` : '';
   const fotoUbicacion = data.foto_ubicacion_ruta ? `<img src="/static/${htmlSafe(data.foto_ubicacion_ruta)}" class="rounded border" style="width:86px;height:86px;object-fit:cover" alt="Foto ubicación">` : '';
@@ -110,7 +141,20 @@ async function cargarMaterial() {
     ${(fotoItem || fotoUbicacion) ? `<div class="mt-2">${fotoItem}${fotoUbicacion}</div>` : ''}
     ${p ? `<hr><div>Lo tiene:</div><div class="fw-semibold">${htmlSafe(p.recibe_nombre)}</div><div class="font-monospace text-muted">${htmlSafe(p.recibe_codigo)}</div><div class="text-muted mt-1">${htmlSafe(p.fecha_prestamo)}</div>` : '<hr><div class="text-muted">No tiene préstamo activo.</div>'}
   `;
+  enviarDevolucionSiLista();
 }
+
+document.getElementById('limpiar-devuelve').addEventListener('click', () => {
+  devuelveCodigo.value = '';
+  devuelveCodigo.focus();
+});
+
+document.getElementById('limpiar-material').addEventListener('click', () => {
+  materialInput.value = '';
+  materialDetectado = false;
+  panel.innerHTML = '<div class="text-muted">Escanea material para ver quién lo tiene.</div>';
+  materialInput.focus();
+});
 
 materialInput.addEventListener('change', cargarMaterial);
 materialInput.addEventListener('keydown', event => {
@@ -150,6 +194,13 @@ devuelveManualNomina.addEventListener('blur', async () => {
   if (!exacto) return;
   devuelveManualNombre.value = exacto.nombre || devuelveManualNombre.value;
   devuelveManualArea.value = exacto.area || devuelveManualArea.value;
+  enfocarMaterial();
+});
+
+devuelveCodigo.addEventListener('keydown', event => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  enfocarMaterial();
 });
 </script>
 {% endblock %}

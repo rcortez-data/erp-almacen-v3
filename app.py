@@ -287,5 +287,5 @@ if __name__ == "__main__":
     # Evita que una ejecucion normal active el recargador de Flask y arranque
     # el ERP dos veces. Para depurar se puede establecer DEBUG=True.
     debug_mode = os.environ.get('DEBUG', 'False').lower() == 'true'
-    port = int(os.environ.get('ERP_PORT', '5001'))
+    port = int(os.environ.get('ERP_PORT', '5000'))
     app.run(debug=debug_mode, host="127.0.0.1", port=port)

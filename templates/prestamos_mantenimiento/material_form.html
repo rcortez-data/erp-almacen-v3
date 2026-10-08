@@ -8,9 +8,17 @@
 <div class="card" style="max-width:860px"><div class="card-body">
   <form method="POST" enctype="multipart/form-data">
     <div class="row g-3">
-      <div class="col-md-4"><label class="form-label">Código único</label><input name="codigo" class="form-control text-uppercase" value="{{ item.codigo if item else '' }}" placeholder="Vacío = automático"></div>
+      <div class="col-md-4">
+        <label class="form-label">Código único</label>
+        {% if item %}
+        <input name="codigo" class="form-control text-uppercase" value="{{ item.codigo }}" required>
+        <div class="form-text">Solo cambia el código si es necesario.</div>
+        {% else %}
+        <input name="codigo" class="form-control text-uppercase font-monospace" placeholder="Vacío = automático">
+        <div class="form-text">Puedes usar el código del producto. Si lo dejas vacío, se genera uno automático.</div>
+        {% endif %}
+      </div>
       <div class="col-md-8"><label class="form-label">Nombre *</label><input name="nombre" class="form-control" required value="{{ item.nombre if item else '' }}" placeholder="Ej: Multímetro Fluke"></div>
-      <div class="col-md-6"><label class="form-label">Categoría</label><input name="categoria" class="form-control" value="{{ item.categoria if item else '' }}" placeholder="Herramienta, medición, eléctrico..."></div>
       <div class="col-md-6"><label class="form-label">Ubicación</label><input name="ubicacion" class="form-control" value="{{ item.ubicacion if item else '' }}"></div>
       <div class="col-md-6"><label class="form-label">Estado</label><select name="estado" class="form-select">{% for key, meta in estados_material.items() %}<option value="{{ key }}" {{ 'selected' if item and item.estado==key }}>{{ meta[0] }}</option>{% endfor %}</select></div>
       {% if item %}<div class="col-md-6"><label class="form-label">Activo</label><select name="activo" class="form-select"><option value="1" {{ 'selected' if item.activo }}>Activo</option><option value="0" {{ 'selected' if not item.activo }}>Inactivo</option></select></div>{% endif %}

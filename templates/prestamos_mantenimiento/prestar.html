@@ -21,7 +21,10 @@
         <div id="bloque-catalogo">
         <div class="mb-3">
           <label class="form-label">1. Escanea personal de mantenimiento</label>
-          <input name="trabajador_codigo" id="trabajador_codigo" class="form-control form-control-lg font-monospace" autocomplete="off" autofocus placeholder="Ej: MANT-000001">
+          <div class="input-group">
+            <input name="trabajador_codigo" id="trabajador_codigo" class="form-control form-control-lg font-monospace" autocomplete="off" autofocus placeholder="Ej: MANT-000001">
+            <button type="button" class="btn btn-outline-secondary" id="limpiar-personal" title="Limpiar personal"><i class="bi bi-x-lg"></i> Limpiar</button>
+          </div>
           <div id="trabajador-info" class="form-text">Puedes escanear el código de barras o escribir la nómina. Al cargar debe aparecer la persona del lado derecho.</div>
         </div>
         </div>
@@ -35,7 +38,10 @@
         </div>
         <div class="mb-3">
           <label class="form-label">Escanea material/herramienta</label>
-          <input id="material_scan" class="form-control form-control-lg font-monospace" autocomplete="off" placeholder="Escanea un material y presiona Enter">
+          <div class="input-group">
+            <input id="material_scan" class="form-control form-control-lg font-monospace" autocomplete="off" placeholder="Escanea un material y presiona Enter">
+            <button type="button" class="btn btn-outline-secondary" id="limpiar-material-scan" title="Limpiar material"><i class="bi bi-x-lg"></i> Limpiar</button>
+          </div>
           <div class="form-text">Puedes escanear varios materiales para la misma persona.</div>
         </div>
         <div class="mb-3">
@@ -76,6 +82,10 @@ const nominasSugeridas = document.getElementById('nominas-sugeridas');
 const areasSugeridas = document.getElementById('areas-sugeridas');
 const codigos = new Set();
 let responsablesCache = [];
+let trabajadorDetectado = false;
+let enviandoPrestamo = false;
+let cargandoTrabajador = false;
+let ultimoTrabajadorNormalizado = '';
 
 function htmlSafe(v) {
   return String(v ?? '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
@@ -92,25 +102,68 @@ function aplicarModo() {
   if (manual) manualNomina.focus(); else trabajadorInput.focus();
 }
 
+function responsableListo() {
+  if (modoManual.checked) {
+    return manualNomina.value.trim() && manualNombre.value.trim() && manualArea.value.trim();
+  }
+  return trabajadorDetectado && trabajadorInput.value.trim();
+}
+
+function enviarPrestamoSiListo() {
+  if (enviandoPrestamo || !responsableListo() || !materialCodigos.value.trim()) return;
+  enviandoPrestamo = true;
+  document.getElementById('form-prestamo').requestSubmit();
+}
+
+function enfocarMaterialScan() {
+  setTimeout(() => {
+    materialScan.focus();
+    materialScan.select();
+  }, 80);
+}
+
 modoCatalogo.addEventListener('change', aplicarModo);
 modoManual.addEventListener('change', aplicarModo);
 aplicarModo();
 
 async function cargarTrabajador() {
   const codigo = trabajadorInput.value.trim();
-  if (!codigo) return;
-  const res = await fetch(`{{ url_for('prestamos_mantenimiento.api_personal', codigo='__COD__') }}`.replace('__COD__', encodeURIComponent(codigo)));
-  const data = await res.json();
-  if (!res.ok) {
-    panelPersonal.innerHTML = `<div class="text-danger">No encontrado: ${htmlSafe(codigo)}</div>`;
+  if (!codigo || cargandoTrabajador) return;
+  const codigoNormalizado = codigo.toUpperCase();
+  if (trabajadorDetectado && codigoNormalizado === ultimoTrabajadorNormalizado) {
+    enfocarMaterialScan();
     return;
   }
-  trabajadorInput.value = data.codigo_barras;
-  panelPersonal.innerHTML = `<div class="fw-bold">${htmlSafe(data.nombre)}</div><div class="font-monospace text-success">${htmlSafe(data.codigo_barras)}</div><div class="text-muted">${htmlSafe(data.area || '-')}</div>`;
-  materialScan.focus();
+  cargandoTrabajador = true;
+  try {
+    const res = await fetch(`{{ url_for('prestamos_mantenimiento.api_personal', codigo='__COD__') }}`.replace('__COD__', encodeURIComponent(codigo)));
+    const data = await res.json();
+    if (!res.ok) {
+      panelPersonal.innerHTML = `<div class="text-danger">No encontrado: ${htmlSafe(codigo)}</div>`;
+      trabajadorDetectado = false;
+      ultimoTrabajadorNormalizado = '';
+      trabajadorInput.focus();
+      trabajadorInput.select();
+      return;
+    }
+    trabajadorInput.value = data.codigo_barras;
+    trabajadorDetectado = true;
+    ultimoTrabajadorNormalizado = String(data.codigo_barras || codigo).trim().toUpperCase();
+    panelPersonal.innerHTML = `<div class="fw-bold">${htmlSafe(data.nombre)}</div><div class="font-monospace text-success">${htmlSafe(data.codigo_barras)}</div><div class="text-muted">${htmlSafe(data.area || '-')}</div>`;
+    enfocarMaterialScan();
+  } finally {
+    cargandoTrabajador = false;
+  }
 }
 
 trabajadorInput.addEventListener('change', cargarTrabajador);
+let temporizadorEscaneo = null;
+trabajadorInput.addEventListener('input', () => {
+  clearTimeout(temporizadorEscaneo);
+  if (trabajadorInput.value.trim().length < 4) return;
+  // Los escáneres escriben muy rápido; si se detiene la entrada, se asume escaneo completo
+  temporizadorEscaneo = setTimeout(cargarTrabajador, 300);
+});
 trabajadorInput.addEventListener('keydown', event => {
   if (event.key !== 'Enter') return;
   event.preventDefault();
@@ -136,8 +189,24 @@ materialScan.addEventListener('keydown', async event => {
   if (ok) {
     codigos.add(data.codigo_barras);
     materialCodigos.value = Array.from(codigos).join('\n');
+    enviarPrestamoSiListo();
   }
   materialScan.value = '';
+});
+
+document.getElementById('limpiar-personal').addEventListener('click', () => {
+  clearTimeout(temporizadorEscaneo);
+  trabajadorInput.value = '';
+  trabajadorDetectado = false;
+  ultimoTrabajadorNormalizado = '';
+  panelPersonal.innerHTML = '<div class="text-muted">Sin personal escaneado.</div>';
+  trabajadorInput.focus();
+});
+
+document.getElementById('limpiar-material-scan').addEventListener('click', () => {
+  materialScan.value = '';
+  panelMaterial.innerHTML = '<div class="text-muted">Sin material escaneado.</div>';
+  materialScan.focus();
 });
 
 document.getElementById('limpiar-lista').addEventListener('click', () => {
@@ -177,6 +246,7 @@ manualNomina.addEventListener('blur', async () => {
   if (!exacto) return;
   manualNombre.value = exacto.nombre || manualNombre.value;
   manualArea.value = exacto.area || manualArea.value;
+  enfocarMaterialScan();
 });
 </script>
 {% endblock %}

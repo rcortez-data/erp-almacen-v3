@@ -11,7 +11,7 @@
 </div>
 <div class="card mb-3"><div class="card-body py-2">
   <form method="GET" class="row g-2 align-items-end">
-    <div class="col-md-5"><input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Buscar código, nombre, categoría..."></div>
+    <div class="col-md-5"><input name="q" class="form-control form-control-sm" value="{{ q }}" placeholder="Buscar código, nombre, ubicación..."></div>
     <input type="hidden" name="estado" value="{{ estado }}">
     <div class="col-auto"><button class="btn btn-sm btn-secondary"><i class="bi bi-search"></i> Buscar</button><a href="{{ url_for('prestamos_mantenimiento.material') }}" class="btn btn-sm btn-outline-secondary">Limpiar</a></div>
     <div class="col-auto ms-auto btn-group btn-group-sm flex-wrap">
@@ -24,7 +24,7 @@
   </form>
 </div></div>
 <div class="card"><div class="table-responsive"><table class="table table-hover mb-0">
-  <thead><tr><th style="width:42px"><input type="checkbox" class="form-check-input" id="check-todos-material"></th><th>Fotos</th><th>Código</th><th>Material</th><th>Categoría/ubicación</th><th>Código de barras</th><th>Estado</th><th></th></tr></thead>
+  <thead><tr><th style="width:42px"><input type="checkbox" class="form-check-input" id="check-todos-material"></th><th>Fotos</th><th>Código</th><th>Material</th><th>Ubicación</th><th>Código de barras</th><th>Estado</th><th></th></tr></thead>
   <tbody>
   {% for r in registros %}
     {% set meta = estados_material.get(r.estado, ('Sin estado','secondary')) %}
@@ -46,7 +46,7 @@
       </td>
       <td class="font-monospace">{{ r.codigo }}</td>
       <td><div class="fw-semibold">{{ r.nombre }}</div><small class="text-muted">{{ r.descripcion or '-' }}</small></td>
-      <td>{{ r.categoria or '-' }}<br><small class="text-muted">{{ r.ubicacion or '-' }}</small></td>
+      <td>{{ r.ubicacion or '-' }}</td>
       <td><img src="{{ url_for('prestamos_mantenimiento.material_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}" style="max-width:220px;height:58px"><br><small class="font-monospace text-success">{{ r.codigo_barras }}</small></td>
       <td><span class="badge bg-{{ meta[1] }}">{{ meta[0] }}</span>{% if not r.activo %}<br><span class="badge bg-secondary mt-1">Inactivo</span>{% endif %}</td>
       <td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('prestamos_mantenimiento.material_editar', item_id=r.id) }}"><i class="bi bi-pencil"></i> Editar</a></td>

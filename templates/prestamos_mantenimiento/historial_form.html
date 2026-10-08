@@ -1,0 +1,87 @@
+{% extends 'base.html' %}
+{% block title %}Editar movimiento{% endblock %}
+{% block content %}
+<div class="topbar">
+  <h1 class="page-title"><i class="bi bi-pencil-square"></i> Editar movimiento</h1>
+  <a href="{{ url_for('prestamos_mantenimiento.historial') }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Historial</a>
+</div>
+
+<div class="card" style="max-width:980px"><div class="card-body">
+  <div class="alert alert-warning">
+    Usa esta edición solo para corregir movimientos capturados por error. Al guardar se recalcula el estado actual del material.
+  </div>
+  <form method="POST">
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label">Material</label>
+        <input class="form-control" value="{{ item.material_nombre }} ({{ item.material_codigo }})" readonly>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Estado del movimiento</label>
+        <select name="estado" id="estado" class="form-select">
+          <option value="prestado" {{ 'selected' if item.estado == 'prestado' }}>Prestado</option>
+          <option value="devuelto" {{ 'selected' if item.estado == 'devuelto' }}>Devuelto</option>
+          <option value="perdido" {{ 'selected' if item.estado == 'perdido' }}>Perdido</option>
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label">Estado al devolver</label>
+        <select name="estado_devolucion" id="estado_devolucion" class="form-select">
+          <option value="bueno" {{ 'selected' if item.estado_devolucion == 'bueno' or not item.estado_devolucion }}>Bueno / disponible</option>
+          <option value="danado" {{ 'selected' if item.estado_devolucion == 'danado' }}>Dañado</option>
+          <option value="mantenimiento" {{ 'selected' if item.estado_devolucion == 'mantenimiento' }}>Mandar a mantenimiento</option>
+          <option value="perdido" {{ 'selected' if item.estado_devolucion == 'perdido' }}>Perdido</option>
+        </select>
+      </div>
+
+      <div class="col-md-6">
+        <label class="form-label">Fecha préstamo</label>
+        <input name="fecha_prestamo" class="form-control font-monospace" value="{{ item.fecha_prestamo or '' }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label">Fecha devolución</label>
+        <input name="fecha_devolucion" id="fecha_devolucion" class="form-control font-monospace" value="{{ item.fecha_devolucion or '' }}" placeholder="Vacío si sigue prestado">
+      </div>
+
+      <div class="col-12"><hr></div>
+      <div class="col-12"><h6 class="mb-0">Quién recibió</h6></div>
+      <div class="col-md-3"><label class="form-label">Código/Nómina</label><input name="recibe_codigo" class="form-control" value="{{ item.recibe_codigo or '' }}"></div>
+      <div class="col-md-6"><label class="form-label">Nombre *</label><input name="recibe_nombre" class="form-control" required value="{{ item.recibe_nombre or '' }}"></div>
+      <div class="col-md-3"><label class="form-label">Área</label><input name="recibe_area" class="form-control" value="{{ item.recibe_area or '' }}"></div>
+
+      <div class="col-12"><h6 class="mb-0 mt-2">Quién devolvió</h6></div>
+      <div class="col-md-3"><label class="form-label">Código/Nómina</label><input name="devuelve_codigo" class="form-control" value="{{ item.devuelve_codigo or '' }}"></div>
+      <div class="col-md-6"><label class="form-label">Nombre</label><input name="devuelve_nombre" class="form-control" value="{{ item.devuelve_nombre or '' }}"></div>
+      <div class="col-md-3"><label class="form-label">Área</label><input name="devuelve_area" class="form-control" value="{{ item.devuelve_area or '' }}"></div>
+
+      <div class="col-md-6"><label class="form-label">Observaciones préstamo</label><textarea name="observaciones_prestamo" class="form-control" rows="3">{{ item.observaciones_prestamo or '' }}</textarea></div>
+      <div class="col-md-6"><label class="form-label">Observaciones devolución</label><textarea name="observaciones_devolucion" class="form-control" rows="3">{{ item.observaciones_devolucion or '' }}</textarea></div>
+    </div>
+
+    <div class="mt-3">
+      <button class="btn btn-primary"><i class="bi bi-check-lg"></i> Guardar cambios</button>
+      <a href="{{ url_for('prestamos_mantenimiento.historial') }}" class="btn btn-outline-secondary">Cancelar</a>
+    </div>
+  </form>
+</div></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const estado = document.getElementById('estado');
+const estadoDevolucion = document.getElementById('estado_devolucion');
+const fechaDevolucion = document.getElementById('fecha_devolucion');
+
+function actualizarCampos() {
+  const prestado = estado.value === 'prestado';
+  estadoDevolucion.disabled = prestado;
+  fechaDevolucion.disabled = prestado;
+  if (prestado) {
+    fechaDevolucion.value = '';
+  }
+}
+
+estado.addEventListener('change', actualizarCampos);
+actualizarCampos();
+</script>
+{% endblock %}

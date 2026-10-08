@@ -43,16 +43,25 @@ def _codigo_barras_material(codigo):
     return f'PRES-{_limpiar_codigo(codigo)}'
 
 
-def _siguiente_codigo(tipo, prefijo):
-    conn = get_db()
+def _siguiente_codigo(tipo, prefijo, conn=None):
+    """Obtiene el siguiente código y evita colisiones con códigos existentes."""
+    conn_propia = conn is None
+    conn = conn or get_db()
     try:
         conn.execute("INSERT OR IGNORE INTO folios VALUES (?, 0)", (tipo,))
-        conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo=?", (tipo,))
-        num = conn.execute("SELECT ultimo FROM folios WHERE tipo=?", (tipo,)).fetchone()[0]
-        conn.commit()
-        return f'{prefijo}-{num:06d}'
+        while True:
+            conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo=?", (tipo,))
+            num = conn.execute("SELECT ultimo FROM folios WHERE tipo=?", (tipo,)).fetchone()[0]
+            codigo = f'{prefijo}-{num:06d}'
+            if not conn.execute(
+                    "SELECT 1 FROM material_prestamo WHERE codigo=? LIMIT 1",
+                    (codigo,)).fetchone():
+                if conn_propia:
+                    conn.commit()
+                return codigo
     finally:
-        conn.close()
+        if conn_propia:
+            conn.close()
 
 
 def _guardar_foto_material(archivo, codigo, sufijo='ITEM'):
@@ -257,7 +266,7 @@ def material():
 @login_required
 def material_nuevo():
     if request.method == 'POST':
-        codigo = _limpiar_codigo(request.form.get('codigo')) or _siguiente_codigo('material_prestamo', 'PRES')
+        codigo_manual = _limpiar_codigo(request.form.get('codigo'))
         nombre = (request.form.get('nombre') or '').strip()
         descripcion = (request.form.get('descripcion') or '').strip() or None
         categoria = (request.form.get('categoria') or '').strip() or None
@@ -269,6 +278,9 @@ def material_nuevo():
             return render_template('prestamos_mantenimiento/material_form.html', item=None, estados_material=ESTADOS_MATERIAL)
         conn = get_db()
         try:
+            # Si el material ya trae un código propio se respeta; si no,
+            # se genera uno automático dentro de la misma conexión del INSERT.
+            codigo = codigo_manual or _siguiente_codigo('material_prestamo', 'PRES', conn=conn)
             foto = _guardar_foto_material(request.files.get('foto'), codigo, 'ITEM')
             foto_ubicacion = _guardar_foto_material(request.files.get('foto_ubicacion'), codigo, 'UBICACION')
             conn.execute("""
@@ -470,6 +482,34 @@ def devolver():
     return render_template('prestamos_mantenimiento/devolver.html')
 
 
+def _estado_material_desde_movimiento(prestamo):
+    if not prestamo:
+        return 'disponible'
+    if prestamo['estado'] == 'prestado':
+        return 'prestado'
+    if prestamo['estado'] == 'perdido':
+        return 'perdido'
+    return {
+        'danado': 'danado',
+        'mantenimiento': 'mantenimiento',
+        'perdido': 'perdido',
+    }.get(prestamo['estado_devolucion'], 'disponible')
+
+
+def _sincronizar_estado_material_desde_historial(conn, material_id):
+    prestamo = conn.execute("""
+        SELECT estado, estado_devolucion
+        FROM prestamos_mantenimiento
+        WHERE material_id=?
+        ORDER BY fecha_prestamo DESC, id DESC
+        LIMIT 1
+    """, (material_id,)).fetchone()
+    conn.execute(
+        "UPDATE material_prestamo SET estado=? WHERE id=?",
+        (_estado_material_desde_movimiento(prestamo), material_id)
+    )
+
+
 @prestamos_mantenimiento_bp.route('/historial')
 @login_required
 def historial():
@@ -507,6 +547,112 @@ def historial():
     registros = conn.execute(query, params).fetchall()
     conn.close()
     return render_template('prestamos_mantenimiento/historial.html', registros=registros, q=q, estado=estado)
+
+
+@prestamos_mantenimiento_bp.route('/historial/editar/<int:prestamo_id>', methods=['GET', 'POST'])
+@login_required
+def historial_editar(prestamo_id):
+    conn = get_db()
+    prestamo = conn.execute("""
+        SELECT pm.*, mp.codigo AS material_codigo, mp.nombre AS material_nombre,
+               COALESCE(pm.recibe_codigo_historico, pr.codigo) AS recibe_codigo,
+               COALESCE(pm.recibe_nombre_historico, pr.nombre) AS recibe_nombre,
+               COALESCE(pm.recibe_area_historico, pr.area) AS recibe_area,
+               COALESCE(pm.devuelve_codigo_historico, pd.codigo) AS devuelve_codigo,
+               COALESCE(pm.devuelve_nombre_historico, pd.nombre) AS devuelve_nombre,
+               COALESCE(pm.devuelve_area_historico, pd.area) AS devuelve_area
+        FROM prestamos_mantenimiento pm
+        JOIN material_prestamo mp ON mp.id = pm.material_id
+        JOIN personal_mantenimiento pr ON pr.id = pm.trabajador_recibe_id
+        LEFT JOIN personal_mantenimiento pd ON pd.id = pm.trabajador_devuelve_id
+        WHERE pm.id=?
+    """, (prestamo_id,)).fetchone()
+    if not prestamo:
+        conn.close()
+        flash('Movimiento no encontrado.', 'danger')
+        return redirect(url_for('prestamos_mantenimiento.historial'))
+
+    if request.method == 'POST':
+        estado = request.form.get('estado') or 'prestado'
+        if estado not in {'prestado', 'devuelto', 'perdido'}:
+            estado = 'prestado'
+        estado_devolucion = request.form.get('estado_devolucion') or None
+        if estado == 'prestado':
+            estado_devolucion = None
+
+        fecha_prestamo = (request.form.get('fecha_prestamo') or '').strip() or prestamo['fecha_prestamo']
+        fecha_devolucion = (request.form.get('fecha_devolucion') or '').strip() or None
+        if estado == 'prestado':
+            fecha_devolucion = None
+
+        recibe_codigo = (request.form.get('recibe_codigo') or '').strip() or None
+        recibe_nombre = (request.form.get('recibe_nombre') or '').strip()
+        recibe_area = (request.form.get('recibe_area') or '').strip() or None
+        devuelve_codigo = (request.form.get('devuelve_codigo') or '').strip() or None
+        devuelve_nombre = (request.form.get('devuelve_nombre') or '').strip() or None
+        devuelve_area = (request.form.get('devuelve_area') or '').strip() or None
+        observaciones_prestamo = (request.form.get('observaciones_prestamo') or '').strip() or None
+        observaciones_devolucion = (request.form.get('observaciones_devolucion') or '').strip() or None
+
+        if not recibe_nombre:
+            flash('El nombre de quien recibió es obligatorio.', 'danger')
+            conn.close()
+            return render_template('prestamos_mantenimiento/historial_form.html', item=prestamo)
+
+        try:
+            conn.execute("""
+                UPDATE prestamos_mantenimiento
+                SET estado=?, estado_devolucion=?, fecha_prestamo=?, fecha_devolucion=?,
+                    recibe_codigo_historico=?, recibe_nombre_historico=?, recibe_area_historico=?,
+                    devuelve_codigo_historico=?, devuelve_nombre_historico=?, devuelve_area_historico=?,
+                    observaciones_prestamo=?, observaciones_devolucion=?
+                WHERE id=?
+            """, (
+                estado, estado_devolucion, fecha_prestamo, fecha_devolucion,
+                recibe_codigo, recibe_nombre, recibe_area,
+                devuelve_codigo, devuelve_nombre, devuelve_area,
+                observaciones_prestamo, observaciones_devolucion, prestamo_id
+            ))
+            _sincronizar_estado_material_desde_historial(conn, prestamo['material_id'])
+            conn.commit()
+            log_actividad(session['user_id'], 'EDITAR_HISTORIAL_PRESTAMO', f'{prestamo["material_codigo"]} | movimiento {prestamo_id}')
+            flash('Movimiento actualizado.', 'success')
+            return redirect(url_for('prestamos_mantenimiento.historial'))
+        except Exception as e:
+            conn.rollback()
+            flash(f'No se pudo actualizar el movimiento: {e}', 'danger')
+
+    conn.close()
+    return render_template('prestamos_mantenimiento/historial_form.html', item=prestamo)
+
+
+@prestamos_mantenimiento_bp.route('/historial/eliminar/<int:prestamo_id>', methods=['POST'])
+@login_required
+def historial_eliminar(prestamo_id):
+    conn = get_db()
+    prestamo = conn.execute("""
+        SELECT pm.*, mp.codigo AS material_codigo
+        FROM prestamos_mantenimiento pm
+        JOIN material_prestamo mp ON mp.id = pm.material_id
+        WHERE pm.id=?
+    """, (prestamo_id,)).fetchone()
+    if not prestamo:
+        conn.close()
+        flash('Movimiento no encontrado.', 'danger')
+        return redirect(url_for('prestamos_mantenimiento.historial'))
+    try:
+        material_id = prestamo['material_id']
+        conn.execute("DELETE FROM prestamos_mantenimiento WHERE id=?", (prestamo_id,))
+        _sincronizar_estado_material_desde_historial(conn, material_id)
+        conn.commit()
+        log_actividad(session['user_id'], 'ELIMINAR_HISTORIAL_PRESTAMO', f'{prestamo["material_codigo"]} | movimiento {prestamo_id}')
+        flash('Movimiento eliminado y estado del material recalculado.', 'success')
+    except Exception as e:
+        conn.rollback()
+        flash(f'No se pudo eliminar el movimiento: {e}', 'danger')
+    finally:
+        conn.close()
+    return redirect(url_for('prestamos_mantenimiento.historial'))
 
 
 @prestamos_mantenimiento_bp.route('/api/personal/<codigo>')
@@ -647,22 +793,27 @@ def _tspl_prestamos_bloque(tipo, bloque):
 
     # 101x76 mm a 203 dpi = aprox. 812 x 608 dots. Cada sub-etiqueta mide
     # ~406 x 304 dots para sacar hasta 4 piezas recortables por etiqueta TSC.
+    # Se desplaza 5 mm (aprox. 40 dots) la división central hacia la derecha:
+    # la columna izquierda queda un poco más ancha y se compensa el margen
+    # desigual que deja la impresora.
+    ancho_izquierdo = 446
+    ancho_derecho = 366
     tarjetas = [
         (0, 0),
-        (406, 0),
+        (ancho_izquierdo, 0),
         (0, 304),
-        (406, 304),
+        (ancho_izquierdo, 304),
     ]
 
     def texto(x, y, valor, fuente='2', xmul=1, ymul=1):
         lineas.append(f'TEXT {x},{y},"{fuente}",0,{xmul},{ymul},"{_texto_tsc(valor)}"')
 
-    def barcode(x, y, valor):
+    def barcode(x, y, valor, altura=58, texto_visible=1, modulo=1, proporcion=2):
         valor = _texto_tsc(valor)
-        lineas.append(f'BARCODE {x},{y},"128",58,1,0,1,2,"{valor}"')
+        lineas.append(f'BARCODE {x},{y},"128",{altura},{texto_visible},0,{modulo},{proporcion},"{valor}"')
 
     # Líneas de corte.
-    lineas.append('BAR 405,0,2,608')
+    lineas.append('BAR 445,0,2,608')
     lineas.append('BAR 0,303,812,2')
 
     for idx, item in enumerate(bloque):
@@ -683,6 +834,20 @@ def _tspl_prestamos_bloque(tipo, bloque):
         titulo = 'PERSONAL MANTENIMIENTO' if es_personal else 'MATERIAL A PRESTAMO'
         nombre = item['nombre']
         codigo_barras = item['codigo_barras']
+        if not es_personal:
+            # Material: etiqueta limpia, únicamente el código de barras y
+            # mucho más grande dentro de su cuarto de hoja.
+            ancho_tarjeta = ancho_izquierdo if idx % 2 == 0 else ancho_derecho
+            ancho_barra_estimado = min(ancho_tarjeta - 28, max(190, len(codigo_barras) * 18))
+            ajuste_hacia_afuera = -24 if idx % 2 == 0 else 24
+            x_barcode = base_x + max(14, int((ancho_tarjeta - ancho_barra_estimado) / 2)) + ajuste_hacia_afuera
+            barcode(x_barcode, base_y + 76, codigo_barras, altura=150,
+                    texto_visible=0, modulo=2, proporcion=4)
+            nombre_ref = _lineas_tsc(nombre, 34, 1)[0]
+            ancho_nombre = min(ancho_tarjeta - 16, len(nombre_ref) * 8)
+            x_nombre = base_x + max(8, int((ancho_tarjeta - ancho_nombre) / 2))
+            texto(x_nombre, base_y + 276, nombre_ref, '1', 1, 1)
+            continue
         meta = (
             f"NOMINA: {item['codigo']}  {item['area'] or ''}"
             if es_personal
@@ -803,7 +968,7 @@ def material_codigo_barras(item_id):
     conn.close()
     if not item:
         return Response('No encontrado', status=404)
-    return Response(code128_svg(item['codigo_barras'], alto=52, modulo=2, margen=8, incluir_texto=True), mimetype='image/svg+xml')
+    return Response(code128_svg(item['codigo_barras'], alto=52, modulo=2, margen=8, incluir_texto=False), mimetype='image/svg+xml')
 
 
 def _ids_desde_request(args):

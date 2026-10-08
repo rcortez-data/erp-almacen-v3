@@ -60,7 +60,9 @@
       margin: 12px auto;
       background: #fff;
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      /* La impresora deja más margen a la derecha: damos 5 mm a la columna
+         izquierda para que ambas etiquetas queden más parejas. */
+      grid-template-columns: calc(50% + 5mm) calc(50% - 5mm);
       grid-template-rows: 1fr 1fr;
       page-break-after: always;
       overflow: hidden;
@@ -73,6 +75,50 @@
       border-right: .28mm dashed #9ca3af;
       border-bottom: .28mm dashed #9ca3af;
       overflow: hidden;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .label-card.material-only {
+      padding: 2mm;
+      flex-direction: column;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .material-only .barcode {
+      width: 100%;
+      height: 25mm;
+      flex: 1;
+    }
+
+    .material-only .barcode img {
+      width: min(100%, 58mm);
+      max-width: 100%;
+      height: 25mm;
+      object-fit: contain;
+    }
+
+    /* Conserva el ancho del código y corrige solo el lado que mira a la
+       división central: cada código se desplaza 3 mm hacia afuera. */
+    .label-card:nth-child(odd).material-only .barcode img {
+      transform: translateX(-3mm);
+    }
+
+    .label-card:nth-child(even).material-only .barcode img {
+      transform: translateX(3mm);
+    }
+
+    .material-name-reference {
+      width: 100%;
+      height: 4mm;
+      overflow: hidden;
+      font-size: 5.5px;
+      line-height: 1;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      color: #4b5563;
       text-align: center;
       text-transform: uppercase;
     }
@@ -212,7 +258,13 @@
     <section class="sheet">
       {% for r in bloque %}
       {% if r %}
-      <div class="label-card">
+      <div class="label-card {{ 'material-only' if tipo != 'personal' else '' }}">
+        {% if tipo != 'personal' %}
+        <div class="barcode">
+          <img src="{{ url_for('prestamos_mantenimiento.material_codigo_barras', item_id=r.id) }}" alt="{{ r.codigo_barras }}">
+        </div>
+        <div class="material-name-reference">{{ r.nombre }}</div>
+        {% else %}
         <div class="brand">
           <img src="{{ url_for('static', filename='img/grupo-tensa-logo.png') }}" alt="Grupo Tensa">
         </div>
@@ -233,6 +285,7 @@
           {% endif %}
         </div>
         <div class="codigo">{{ r.codigo_barras }}</div>
+        {% endif %}
       </div>
       {% else %}
       <div class="label-card"></div>
