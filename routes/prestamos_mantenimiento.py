@@ -812,10 +812,6 @@ def _tspl_prestamos_bloque(tipo, bloque):
         valor = _texto_tsc(valor)
         lineas.append(f'BARCODE {x},{y},"128",{altura},{texto_visible},0,{modulo},{proporcion},"{valor}"')
 
-    # Líneas de corte.
-    lineas.append('BAR 445,0,2,608')
-    lineas.append('BAR 0,303,812,2')
-
     for idx, item in enumerate(bloque):
         if item is None:
             continue
@@ -823,8 +819,8 @@ def _tspl_prestamos_bloque(tipo, bloque):
         if idx >= 2:
             base_y -= 16
         # La TSC está tomando el origen un poco cargado hacia la izquierda.
-        # Se centra cada sub-etiqueta dentro de su cuarto y se usa código de
-        # barras más angosto para que no se salga del área recortable.
+        # El material se centra usando el ancho real de cada columna para que
+        # el código derecho no quede recortado por la división central.
         ajuste_columna = 12 if idx % 2 == 0 else 24
         x_texto = base_x + 74 + ajuste_columna
         x_titulo = base_x + 104 + ajuste_columna
@@ -838,11 +834,17 @@ def _tspl_prestamos_bloque(tipo, bloque):
             # Material: etiqueta limpia, únicamente el código de barras y
             # mucho más grande dentro de su cuarto de hoja.
             ancho_tarjeta = ancho_izquierdo if idx % 2 == 0 else ancho_derecho
-            ancho_barra_estimado = min(ancho_tarjeta - 28, max(190, len(codigo_barras) * 18))
-            ajuste_hacia_afuera = -24 if idx % 2 == 0 else 24
-            x_barcode = base_x + max(14, int((ancho_tarjeta - ancho_barra_estimado) / 2)) + ajuste_hacia_afuera
+            # La columna derecha es más angosta. Usa un módulo compacto para
+            # conservar zonas blancas a ambos lados y evitar que el lector
+            # encuentre el código recortado por el borde de la etiqueta.
+            es_columna_derecha = idx % 2 == 1
+            ancho_barra_estimado = 180 if es_columna_derecha else min(ancho_tarjeta - 20, 328)
+            ajuste_derecha = 12 if es_columna_derecha else 0
+            x_barcode = base_x + max(10, int((ancho_tarjeta - ancho_barra_estimado) / 2)) + ajuste_derecha
+            modulo_barra = 1 if es_columna_derecha else 2
+            proporcion_barra = 2 if es_columna_derecha else 4
             barcode(x_barcode, base_y + 76, codigo_barras, altura=150,
-                    texto_visible=0, modulo=2, proporcion=4)
+                    texto_visible=0, modulo=modulo_barra, proporcion=proporcion_barra)
             nombre_ref = _lineas_tsc(nombre, 34, 1)[0]
             ancho_nombre = min(ancho_tarjeta - 16, len(nombre_ref) * 8)
             x_nombre = base_x + max(8, int((ancho_tarjeta - ancho_nombre) / 2))

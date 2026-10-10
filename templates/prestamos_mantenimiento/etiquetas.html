@@ -72,8 +72,8 @@
     .label-card {
       position: relative;
       padding: 3.2mm 3.5mm 2.8mm;
-      border-right: .28mm dashed #9ca3af;
-      border-bottom: .28mm dashed #9ca3af;
+      border-right: 0;
+      border-bottom: 0;
       overflow: hidden;
       text-align: center;
       text-transform: uppercase;
@@ -100,13 +100,8 @@
       object-fit: contain;
     }
 
-    /* Conserva el ancho del código y corrige solo el lado que mira a la
-       división central: cada código se desplaza 3 mm hacia afuera. */
-    .label-card:nth-child(odd).material-only .barcode img {
-      transform: translateX(-3mm);
-    }
-
     .label-card:nth-child(even).material-only .barcode img {
+      width: min(100%, 42mm);
       transform: translateX(3mm);
     }
 
@@ -123,11 +118,7 @@
       text-transform: uppercase;
     }
 
-    .label-card:nth-child(2n) {
-      border-right: 0;
-    }
-
-    .label-card:nth-child(n+3) {
+    .label-card {
       border-bottom: 0;
     }
 
