@@ -3,7 +3,8 @@ import re
 import base64
 import subprocess
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
 
@@ -16,6 +17,19 @@ from routes.entradas import TSC_PRINTER_NAME, _lineas_tsc, _texto_tsc
 prestamos_mantenimiento_bp = Blueprint(
     'prestamos_mantenimiento', __name__, url_prefix='/prestamos-mantenimiento'
 )
+
+
+def _fecha_hora_local(valor):
+    """Convierte un timestamp UTC de la base a hora de Ciudad de México."""
+    if not valor:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(valor).strip().replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo('America/Mexico_City')).strftime('%d/%m/%Y %H:%M')
+    except (TypeError, ValueError):
+        return str(valor)
 
 
 ESTADOS_MATERIAL = {
@@ -685,7 +699,11 @@ def api_material(codigo):
     if not item:
         return jsonify({'error': 'No encontrado'}), 404
     data = dict(item)
-    data['prestamo'] = dict(prestamo) if prestamo else None
+    if prestamo:
+        data['prestamo'] = dict(prestamo)
+        data['prestamo']['fecha_prestamo'] = _fecha_hora_local(prestamo['fecha_prestamo'])
+    else:
+        data['prestamo'] = None
     return jsonify(data)
 
 

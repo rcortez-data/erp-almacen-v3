@@ -28,7 +28,8 @@ from routes.areas import areas_bp
 from routes.listados import listados_bp
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from logging.handlers import RotatingFileHandler
 
 # ====== CONFIGURACIÓN DE LOGGING ======
@@ -222,6 +223,21 @@ def formato_fecha_vale(valor):
         return f"{dia}/{meses[int(mes)]}/{anio[-2:]}"
     except Exception:
         return texto
+
+
+@app.template_filter('fecha_hora_local')
+def formato_fecha_hora_local(valor):
+    """Convierte timestamps UTC de la base a hora local de Ciudad de México."""
+    if not valor:
+        return '-'
+    try:
+        texto = str(valor).strip().replace('Z', '+00:00')
+        dt = datetime.fromisoformat(texto)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(ZoneInfo('America/Mexico_City')).strftime('%d/%m/%Y %H:%M')
+    except (TypeError, ValueError):
+        return str(valor)
 
 # ====== REGISTRO DE BLUEPRINTS ======
 blueprints = [

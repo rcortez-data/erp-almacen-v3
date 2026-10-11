@@ -19,9 +19,9 @@
     <tr>
       <td><div class="fw-semibold">{{ r.material_nombre }}</div><small class="font-monospace text-muted">{{ r.material_codigo }}</small></td>
       <td><div>{{ r.recibe_nombre }}</div><small class="font-monospace text-muted">{{ r.recibe_codigo }}</small>{% if r.recibe_area %}<br><small class="text-muted">{{ r.recibe_area }}</small>{% endif %}</td>
-      <td>{{ r.fecha_prestamo }}</td>
+      <td>{{ r.fecha_prestamo|fecha_hora_local }}</td>
       <td>{% if r.devuelve_nombre %}<div>{{ r.devuelve_nombre }}</div><small class="font-monospace text-muted">{{ r.devuelve_codigo }}</small>{% if r.devuelve_area %}<br><small class="text-muted">{{ r.devuelve_area }}</small>{% endif %}{% else %}-{% endif %}</td>
-      <td>{{ r.fecha_devolucion or '-' }}</td>
+      <td>{{ r.fecha_devolucion|fecha_hora_local }}</td>
       <td>{% if r.estado == 'prestado' %}<span class="badge bg-warning text-dark">Prestado</span>{% elif r.estado == 'devuelto' %}<span class="badge bg-success">Devuelto</span>{% else %}<span class="badge bg-dark">{{ r.estado }}</span>{% endif %}</td>
       <td><small>{{ r.observaciones_prestamo or '' }}{% if r.observaciones_devolucion %}<br>{{ r.observaciones_devolucion }}{% endif %}</small></td>
       <td class="text-nowrap">
