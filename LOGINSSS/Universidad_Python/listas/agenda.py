@@ -36,4 +36,4 @@ agenda['Ana'] = {
 print(agenda)
 
 # Eliminar un contacto existente
-agenda.pop()
+agenda.pop('maria')
