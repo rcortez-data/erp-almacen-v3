@@ -569,9 +569,44 @@
   const filaRecuperacionAlmacen = document.getElementById('fila-recuperacion-almacen');
   const recuperacionAlmacenInput = document.getElementById('recuperacion_almacen_item');
   let debounceTimer = null;
+  let productosSugeridos = [];
+  let indiceProductoActivo = -1;
+
+  function resaltarProductoActivo() {
+    const opciones = resultados.querySelectorAll('button.list-group-item-action');
+    opciones.forEach((opcion, indice) => {
+      const activo = indice === indiceProductoActivo;
+      opcion.classList.toggle('active', activo);
+      if (activo) opcion.scrollIntoView({block: 'nearest'});
+    });
+  }
+
+  buscador.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      resultados.style.display = 'none';
+      indiceProductoActivo = -1;
+      return;
+    }
+    if (resultados.style.display === 'none' || !productosSugeridos.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      indiceProductoActivo = (indiceProductoActivo + 1) % productosSugeridos.length;
+      resaltarProductoActivo();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      indiceProductoActivo = (indiceProductoActivo - 1 + productosSugeridos.length) % productosSugeridos.length;
+      resaltarProductoActivo();
+    } else if (e.key === 'Enter' && indiceProductoActivo >= 0) {
+      e.preventDefault();
+      seleccionarProducto(productosSugeridos[indiceProductoActivo]);
+      indiceProductoActivo = -1;
+    }
+  });
 
   buscador.addEventListener('input', function() {
     productoIdInput.value = '';
+    productosSugeridos = [];
+    indiceProductoActivo = -1;
     const q = this.value.trim();
     clearTimeout(debounceTimer);
     if (q.length < 2) { resultados.style.display = 'none'; return; }
@@ -579,11 +614,13 @@
       fetch(`{{ url_for('inventario.api_buscar') }}?q=${encodeURIComponent(q)}`)
         .then(r => r.json())
         .then(data => {
+          productosSugeridos = data;
+          indiceProductoActivo = data.length ? 0 : -1;
           resultados.innerHTML = '';
           if (data.length === 0) {
             resultados.innerHTML = '<div class="list-group-item text-muted">Sin resultados. Puedes registrar el producto con el botón de abajo.</div>';
           } else {
-            data.forEach(p => {
+            data.forEach((p, indice) => {
               const item = document.createElement('button');
               item.type = 'button';
               item.className = 'list-group-item list-group-item-action';
@@ -593,10 +630,15 @@
               item.innerHTML = `<span class="font-monospace fw-semibold">${p.codigo}</span>  -  ${p.descripcion}${barras}
                 <div class="text-muted" style="font-size:.78rem">Stock: ${p.stock_actual} ${p.unidad_medida} | Precio ref: $${p.precio_unitario}${ubicacion}${categoria}</div>`;
               item.addEventListener('click', () => seleccionarProducto(p));
+              item.addEventListener('mouseenter', () => {
+                indiceProductoActivo = indice;
+                resaltarProductoActivo();
+              });
               resultados.appendChild(item);
             });
           }
           resultados.style.display = 'block';
+          resaltarProductoActivo();
         });
     }, 250);
   });
@@ -821,9 +863,50 @@
   const resultadosProv = document.getElementById('resultados-proveedor');
   const proveedorIdInput = document.getElementById('proveedor_id');
   let debounceProv = null;
+  let proveedoresSugeridos = [];
+  let indiceProveedorActivo = -1;
+
+  function resaltarProveedorActivo() {
+    const opciones = resultadosProv.querySelectorAll('button.list-group-item-action');
+    opciones.forEach((opcion, indice) => {
+      const activo = indice === indiceProveedorActivo;
+      opcion.classList.toggle('active', activo);
+      if (activo) opcion.scrollIntoView({block: 'nearest'});
+    });
+  }
+
+  function seleccionarProveedor(p) {
+    buscadorProv.value = p.nombre_comercial ? `${p.nombre} (${p.nombre_comercial})` : p.nombre;
+    proveedorIdInput.value = p.id;
+    resultadosProv.style.display = 'none';
+    indiceProveedorActivo = -1;
+  }
+
+  buscadorProv.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      resultadosProv.style.display = 'none';
+      indiceProveedorActivo = -1;
+      return;
+    }
+    if (resultadosProv.style.display === 'none' || !proveedoresSugeridos.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      indiceProveedorActivo = (indiceProveedorActivo + 1) % proveedoresSugeridos.length;
+      resaltarProveedorActivo();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      indiceProveedorActivo = (indiceProveedorActivo - 1 + proveedoresSugeridos.length) % proveedoresSugeridos.length;
+      resaltarProveedorActivo();
+    } else if (e.key === 'Enter' && indiceProveedorActivo >= 0) {
+      e.preventDefault();
+      seleccionarProveedor(proveedoresSugeridos[indiceProveedorActivo]);
+    }
+  });
 
   function buscarProveedores() {
     proveedorIdInput.value = '';
+    proveedoresSugeridos = [];
+    indiceProveedorActivo = -1;
     const q = buscadorProv.value.trim();
     clearTimeout(debounceProv);
     if (q.length < 1) { resultadosProv.style.display = 'none'; return; }
@@ -831,6 +914,8 @@
       fetch(`{{ url_for('proveedores.api_buscar') }}?q=${encodeURIComponent(q)}`)
         .then(r => r.json())
         .then(data => {
+          proveedoresSugeridos = data;
+          indiceProveedorActivo = data.length ? 0 : -1;
           resultadosProv.innerHTML = '';
           if (data.length === 0) {
             resultadosProv.innerHTML = '<div class="list-group-item text-muted">Sin resultados.</div>' +
@@ -839,20 +924,21 @@
             resultadosProv.style.display = 'block';
             document.getElementById('btn-alta-desde-resultados').addEventListener('click', () => abrirModalAltaProveedor(q));
           } else {
-            data.forEach(p => {
+            data.forEach((p, indice) => {
               const item = document.createElement('button');
               item.type = 'button';
               item.className = 'list-group-item list-group-item-action';
               item.innerHTML = `<strong>${p.nombre}</strong>` + (p.nombre_comercial ? ` <span class="text-muted">(${p.nombre_comercial})</span>` : '');
-              item.addEventListener('click', () => {
-                buscadorProv.value = p.nombre_comercial ? `${p.nombre} (${p.nombre_comercial})` : p.nombre;
-                proveedorIdInput.value = p.id;
-                resultadosProv.style.display = 'none';
+              item.addEventListener('click', () => seleccionarProveedor(p));
+              item.addEventListener('mouseenter', () => {
+                indiceProveedorActivo = indice;
+                resaltarProveedorActivo();
               });
               resultadosProv.appendChild(item);
             });
           }
           resultadosProv.style.display = 'block';
+          resaltarProveedorActivo();
         });
     }, 200);
   }

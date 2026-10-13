@@ -930,6 +930,7 @@ def nuevo():
             descripcion_item = (request.form.get('descripcion_item') or '').strip()
             actualizar_descripcion_producto = request.form.get('actualizar_descripcion_producto') == 'on'
             recuperacion_almacen_item = request.form.get('recuperacion_almacen_item') == 'on'
+            es_oc_h_item = _es_orden_compra_h(request.form.get('orden_compra'))
             moneda = (request.form.get('moneda') or 'MXN').strip().upper()
             aplica_iva = request.form.get('aplica_iva') == 'on'
             if not pid or not cantidad:
@@ -1023,7 +1024,10 @@ def nuevo():
                             "UPDATE productos SET departamento=? WHERE id=?",
                             (departamento_item, prod['id'])
                         )
-                    if ubicacion_item and ubicacion_item != (prod['ubicacion'] or ''):
+                    # En una OC H la ubicación capturada pertenece al espejo
+                    # de Hidalgo, no al producto base del almacén local.
+                    if (ubicacion_item and ubicacion_item != (prod['ubicacion'] or '')
+                            and (not es_oc_h_item or recuperacion_almacen_item)):
                         conn.execute(
                             "UPDATE productos SET ubicacion=? WHERE id=?",
                             (ubicacion_item, prod['id'])
@@ -1034,7 +1038,8 @@ def nuevo():
                             ((maquina_otro_item if maquina_item == 'Otros' else '') != (prod['maquina_otro'] or ''))
                         )) or
                         (departamento_item and departamento_item != (prod['departamento'] or '')) or
-                            (ubicacion_item and ubicacion_item != (prod['ubicacion'] or ''))):
+                        (ubicacion_item and ubicacion_item != (prod['ubicacion'] or '')
+                         and (not es_oc_h_item or recuperacion_almacen_item))):
                         conn.commit()
                     elif conversion_cambio or descripcion_cambio:
                         conn.commit()
@@ -1157,6 +1162,17 @@ def nuevo():
                     producto_id_entrada = _producto_para_oc_h(
                         conn, item.get('producto_id'), doc.get('orden_compra'), recuperacion_almacen
                     )
+                    if (_es_orden_compra_h(doc.get('orden_compra'))
+                            and not recuperacion_almacen
+                            and not item.get('es_servicio')
+                            and producto_id_entrada
+                            and item.get('ubicacion')):
+                        # La ubicación capturada para Hidalgo se conserva en
+                        # su producto espejo, sin modificar el producto local.
+                        conn.execute(
+                            "UPDATE productos SET ubicacion=? WHERE id=?",
+                            (item['ubicacion'], producto_id_entrada)
+                        )
                     conn.execute("UPDATE folios SET ultimo = ultimo + 1 WHERE tipo = 'entrada'")
                     num = conn.execute("SELECT ultimo FROM folios WHERE tipo = 'entrada'").fetchone()[0]
                     folio = f"ENT-{str(num).zfill(6)}"
