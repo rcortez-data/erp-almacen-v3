@@ -759,7 +759,10 @@ def index():
     
     offset = (pagina - 1) * registros_por_pagina
     entradas_pagina = conn.execute(
-        f"{select_sql} {from_sql} {where_sql} ORDER BY e.fecha DESC LIMIT ? OFFSET ?",
+        # El id autoincremental representa el orden real en que se capturaron
+        # las entradas. No dependemos de factura, OC ni fecha de vale, que
+        # pueden repetirse o capturarse con una fecha distinta.
+        f"{select_sql} {from_sql} {where_sql} ORDER BY e.id DESC LIMIT ? OFFSET ?",
         params + [registros_por_pagina, offset]
     ).fetchall()
 
@@ -1599,10 +1602,10 @@ def reporte_diario():
         LEFT JOIN proveedores pr ON e.proveedor_id=pr.id
         WHERE DATE(COALESCE(e.fecha_vale, e.fecha)) = ?
           AND e.no_factura IS NOT NULL AND TRIM(e.no_factura) != ''
-        ORDER BY
-          UPPER(TRIM(COALESCE(e.no_factura, ''))),
-          UPPER(TRIM(COALESCE(e.orden_compra, ''))),
-          e.id
+        -- El reporte impreso debe conservar la secuencia en que se capturaron
+        -- las entradas. El id autoincremental es el consecutivo de captura;
+        -- factura y OC pueden repetirse o capturarse en otro orden.
+        ORDER BY e.id ASC
     """, (fecha,)).fetchall()
 
     total_importe = 0
