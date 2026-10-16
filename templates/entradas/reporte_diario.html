@@ -11,10 +11,12 @@
       </div>
     </form>
     {% if modo_impresion %}
-    <button onclick="window.print()" class="btn btn-sm btn-danger"><i class="bi bi-printer"></i> Imprimir</button>
+    <button type="button" onclick="window.print()" class="btn btn-sm btn-danger"><i class="bi bi-printer"></i> Imprimir</button>
+    <button type="button" onclick="window.print()" class="btn btn-sm btn-outline-primary" title="En el diálogo elige Guardar como PDF"><i class="bi bi-file-earmark-pdf"></i> Guardar PDF</button>
     <a href="{{ url_for('entradas.reporte_diario', fecha=fecha) }}" class="btn btn-sm btn-outline-secondary">Regresar</a>
     {% else %}
     <a href="{{ url_for('entradas.reporte_diario', fecha=fecha, imprimir=1) }}" class="btn btn-sm btn-danger"><i class="bi bi-printer"></i> Imprimir</a>
+    <a href="{{ url_for('entradas.reporte_diario', fecha=fecha, imprimir=1) }}" class="btn btn-sm btn-outline-primary" title="Abrir la vista para guardar el reporte como PDF"><i class="bi bi-file-earmark-pdf"></i> Guardar PDF</a>
     <a href="{{ url_for('entradas.index') }}" class="btn btn-sm btn-outline-secondary">Regresar</a>
     {% endif %}
   </div>
