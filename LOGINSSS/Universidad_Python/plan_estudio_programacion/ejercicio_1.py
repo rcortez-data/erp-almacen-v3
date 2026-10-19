@@ -59,7 +59,7 @@ print(f'''
 -Cantidad: {cantidad}
 -Descuento: {descuento}
 -Impuesto: {impuesto}
--------------------------------
-subtotal: {subtotal}
-total: {total}
+--------------------------------
+-subtotal: {subtotal}
+-total: {total}
 ''')
