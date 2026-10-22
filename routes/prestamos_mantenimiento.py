@@ -3,7 +3,7 @@ import re
 import base64
 import subprocess
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from flask import Blueprint, Response, current_app, flash, jsonify, redirect, render_template, request, session, url_for
@@ -30,6 +30,22 @@ def _fecha_hora_local(valor):
         return dt.astimezone(ZoneInfo('America/Mexico_City')).strftime('%d/%m/%Y %H:%M')
     except (TypeError, ValueError):
         return str(valor)
+
+
+def _prestamo_con_dos_dias_atraso(valor, ahora=None):
+    """Indica si un préstamo activo ya cumplió 48 horas sin devolución."""
+    if not valor:
+        return False
+    try:
+        fecha = datetime.fromisoformat(str(valor).strip().replace('Z', '+00:00'))
+        if fecha.tzinfo is None:
+            fecha = fecha.replace(tzinfo=timezone.utc)
+        ahora = ahora or datetime.now(timezone.utc)
+        if ahora.tzinfo is None:
+            ahora = ahora.replace(tzinfo=timezone.utc)
+        return ahora - fecha.astimezone(timezone.utc) >= timedelta(days=2)
+    except (TypeError, ValueError):
+        return False
 
 
 ESTADOS_MATERIAL = {
@@ -121,6 +137,11 @@ def index():
         ORDER BY pm.fecha_prestamo DESC
         LIMIT 25
     """).fetchall()
+    ahora = datetime.now(timezone.utc)
+    prestamos = [
+        dict(prestamo, es_atrasado=_prestamo_con_dos_dias_atraso(prestamo['fecha_prestamo'], ahora))
+        for prestamo in prestamos
+    ]
     conn.close()
     return render_template(
         'prestamos_mantenimiento/index.html',

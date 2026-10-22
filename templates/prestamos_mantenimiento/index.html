@@ -30,10 +30,13 @@
       <thead><tr><th>Material</th><th>Lo tiene</th><th>Fecha/hora préstamo</th><th>Observaciones</th></tr></thead>
       <tbody>
       {% for p in prestamos %}
-        <tr>
+        <tr class="{% if p.es_atrasado %}table-danger{% endif %}"{% if p.es_atrasado %} title="Préstamo con 2 días o más de atraso"{% endif %}>
           <td><div class="fw-semibold">{{ p.material_nombre }}</div><small class="font-monospace text-muted">{{ p.material_codigo }}</small></td>
           <td><div class="fw-semibold">{{ p.recibe_nombre }}</div><small class="font-monospace text-muted">{{ p.recibe_codigo }}</small>{% if p.recibe_area %}<br><small class="text-muted">{{ p.recibe_area }}</small>{% endif %}</td>
-          <td>{{ p.fecha_prestamo|fecha_hora_local }}</td>
+          <td>
+            {{ p.fecha_prestamo|fecha_hora_local }}
+            {% if p.es_atrasado %}<br><span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> 2 días de atraso</span>{% endif %}
+          </td>
           <td>{{ p.observaciones_prestamo or '-' }}</td>
         </tr>
       {% else %}
