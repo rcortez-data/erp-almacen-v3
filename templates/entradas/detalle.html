@@ -8,6 +8,11 @@
     <a href="{{ url_for('entradas.etiquetas', ids=entrada.id) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-dark">
       <i class="bi bi-tags"></i> Etiqueta
     </a>
+    {% if entrada.producto_id %}
+    <a href="{{ url_for('inventario.etiquetas', ids=entrada.producto_id) }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-success">
+      <i class="bi bi-upc-scan"></i> Código de barras
+    </a>
+    {% endif %}
     {% endif %}
     <a href="{{ url_for('entradas.editar', eid=entrada.id, volver=volver) }}" class="btn btn-sm btn-outline-primary">
       <i class="bi bi-pencil"></i> Editar / completar

@@ -236,6 +236,9 @@
               <a href="{{ url_for('entradas.etiquetas', ids=e.id) }}" target="_blank" rel="noopener" class="btn btn-outline-dark" title="Imprimir etiqueta">
                 <i class="bi bi-tags"></i>
               </a>
+              <a href="{{ url_for('inventario.etiquetas', ids=e.producto_id) }}" target="_blank" rel="noopener" class="btn btn-outline-success" title="Imprimir código de barras del producto">
+                <i class="bi bi-upc-scan"></i>
+              </a>
               <form method="POST" action="{{ url_for('entradas.imprimir_etiquetas_tsc') }}" class="d-inline">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="ids" value="{{ e.id }}">

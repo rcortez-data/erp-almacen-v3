@@ -310,13 +310,19 @@ def codigo_barras_svg(pid):
 @inventario_bp.route('/etiquetas')
 @login_required
 def etiquetas():
+    ids, q, productos = _obtener_productos_etiquetas(request.args)
+    return render_template('inventario/etiquetas.html', productos=productos, q=q, ids=ids)
+
+
+def _obtener_productos_etiquetas(args):
     ids = []
-    for raw in request.args.getlist('ids'):
-        try:
-            ids.append(int(raw))
-        except (TypeError, ValueError):
-            continue
-    q = request.args.get('q', '').strip()
+    for raw in args.getlist('ids'):
+        for valor in str(raw).split(','):
+            try:
+                ids.append(int(valor))
+            except (TypeError, ValueError):
+                continue
+    q = args.get('q', '').strip()
     conn = get_db()
     params = []
     query = """
@@ -338,56 +344,40 @@ def etiquetas():
     query += " ORDER BY codigo"
     productos = conn.execute(query, params).fetchall()
     conn.close()
-    return render_template('inventario/etiquetas.html', productos=productos, q=q, ids=ids)
+    return ids, q, productos
+
+
+@inventario_bp.route('/etiquetas/tsc', methods=['POST'])
+@login_required
+def imprimir_etiquetas_tsc():
+    ids, _q, filas = _obtener_productos_etiquetas(request.form)
+    volver = request.form.get('volver') or url_for('inventario.index')
+    if not filas:
+        flash('Selecciona al menos un producto para imprimir etiquetas.', 'warning')
+        return redirect(volver)
+    registros = []
+    for fila in filas:
+        registro = dict(fila)
+        registro['nombre'] = registro['descripcion']
+        registro['codigo_barras'] = registro['codigo_barras'] or generar_codigo_barras_producto(registro['codigo'])
+        registros.append(registro)
+    try:
+        # Se reutiliza el generador de Mantenimiento para garantizar exactamente
+        # las mismas dimensiones, distribución 2x2 y ajuste de la TSC.
+        from routes.prestamos_mantenimiento import _imprimir_tsc_prestamos
+        _imprimir_tsc_prestamos('material', registros)
+        flash(f'{len(registros)} etiqueta(s) enviadas a la impresora TSC.', 'success')
+    except Exception as exc:
+        flash(f'No se pudo imprimir en la TSC: {exc}', 'danger')
+    return redirect(volver)
 
 
 @inventario_bp.route('/etiquetas-tsc')
 @login_required
 def etiquetas_tsc():
-    ids = []
-    for raw in request.args.getlist('ids'):
-        try:
-            ids.append(int(raw))
-        except (TypeError, ValueError):
-            continue
-    q = request.args.get('q', '').strip()
-    conn = get_db()
-    params = []
-    query = """
-        SELECT p.id, p.codigo, p.descripcion, p.ubicacion, p.unidad_medida,
-               p.maquina, p.maquina_otro,
-               le.cantidad, le.no_remision,
-               COALESCE(NULLIF(pr.nombre_comercial, ''), pr.nombre, le.proveedor_nombre_historico) AS proveedor
-        FROM productos p
-        LEFT JOIN (
-            SELECT e.*
-            FROM entradas e
-            INNER JOIN (
-                SELECT producto_id, MAX(fecha) AS fecha_max
-                FROM entradas
-                WHERE producto_id IS NOT NULL
-                GROUP BY producto_id
-            ) ult ON ult.producto_id = e.producto_id AND ult.fecha_max = e.fecha
-        ) le ON le.producto_id = p.id
-        LEFT JOIN proveedores pr ON pr.id = le.proveedor_id
-        WHERE p.activo=1
-    """
-    if ids:
-        placeholders = ",".join("?" for _ in ids)
-        query += f" AND p.id IN ({placeholders})"
-        params.extend(ids)
-    elif q:
-        cond, cond_params = construir_busqueda_dinamica(
-            q, ["p.codigo", "p.codigo_barras", "p.descripcion", "p.ubicacion", "le.no_remision"])
-        if cond:
-            query += f" AND {cond}"
-            params.extend(cond_params)
-    else:
-        query += " AND 1=0"
-    query += " ORDER BY p.codigo"
-    productos = conn.execute(query, params).fetchall()
-    conn.close()
-    return render_template('inventario/etiquetas_tsc.html', productos=productos, q=q, ids=ids)
+    """Compatibilidad con enlaces antiguos: abre la misma vista de etiquetas."""
+    ids, q, productos = _obtener_productos_etiquetas(request.args)
+    return render_template('inventario/etiquetas.html', productos=productos, q=q, ids=ids)
 
 
 @inventario_bp.route('/movil')

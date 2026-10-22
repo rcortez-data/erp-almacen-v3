@@ -13,7 +13,7 @@
       <tbody>
         {% for log in logs %}
         <tr>
-          <td class="text-muted" style="font-size:.82rem">{{ log.timestamp[:16] }}</td>
+          <td class="text-muted" style="font-size:.82rem">{{ log.timestamp|fecha_hora_local }}</td>
           <td><span class="fw-semibold">{{ log.nombre or '—' }}</span>
             <small class="text-muted">({{ log.username or '—' }})</small></td>
           <td>
