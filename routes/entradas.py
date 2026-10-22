@@ -686,6 +686,8 @@ def index():
     q_doc_campo = request.args.get('q_doc_campo', '').strip()
     q_prov = request.args.get('q_prov', '').strip()
     q_prov_archivados = request.args.get('q_prov_archivados') == '1'
+    producto_ids_reporte = _ids_productos_reporte(request.args)
+    reporte_todos = request.args.get('reporte_todos') in ('1', 'true', 'on', 'si')
     pagina = request.args.get('pagina', 1, type=int)
     registros_por_pagina = 50
     
@@ -802,12 +804,130 @@ def index():
                            fecha_ini=fecha_ini, fecha_fin=fecha_fin,
                            q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov,
                            q_prov_archivados=q_prov_archivados,
+                           producto_ids_reporte=producto_ids_reporte, reporte_todos=reporte_todos,
                            total_importe=total_importe, total_iva=total_iva,
                            total_general=total_general, filtro_activo=filtro_activo,
                            total_importe_mxn=total_importe_mxn, total_importe_usd=total_importe_usd,
                            total_general_mxn=total_general_mxn,
                            pagina_actual=pagina, total_paginas=total_paginas,
                            total_registros=total_registros, registros_pagina=len(entradas))
+
+
+def _ids_productos_reporte(args):
+    ids = []
+    for raw in args.getlist('producto_ids'):
+        for value in str(raw).split(','):
+            try:
+                producto_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if producto_id > 0 and producto_id not in ids:
+                ids.append(producto_id)
+    return ids
+
+
+@entradas_bp.route('/reporte')
+@login_required
+def reporte():
+    fecha_ini = request.args.get('fecha_ini', '').strip()
+    fecha_fin = request.args.get('fecha_fin', '').strip()
+    q = request.args.get('q', '').strip()
+    q_doc = request.args.get('q_doc', '').strip()
+    q_doc_campo = request.args.get('q_doc_campo', '').strip()
+    q_prov = request.args.get('q_prov', '').strip()
+    q_prov_archivados = request.args.get('q_prov_archivados') == '1'
+    reporte_todos = request.args.get('reporte_todos') in ('1', 'true', 'on', 'si')
+    producto_ids = _ids_productos_reporte(request.args)
+
+    where_sql = "WHERE 1=1"
+    params = []
+    if fecha_ini:
+        where_sql += " AND DATE(COALESCE(e.fecha_vale, e.fecha)) >= ?"
+        params.append(fecha_ini)
+    if fecha_fin:
+        where_sql += " AND DATE(COALESCE(e.fecha_vale, e.fecha)) <= ?"
+        params.append(fecha_fin)
+    if producto_ids and not reporte_todos:
+        placeholders = ','.join('?' for _ in producto_ids)
+        where_sql += f" AND e.producto_id IN ({placeholders})"
+        params.extend(producto_ids)
+    if q:
+        cond, cond_params = construir_busqueda_dinamica(q, ['p.codigo', 'p.codigo_barras', 'p.descripcion'])
+        if cond:
+            where_sql += f" AND {cond}"
+            params.extend(cond_params)
+    if q_doc:
+        campos_doc = {
+            'factura': 'e.no_factura', 'remision': 'e.no_remision',
+            'requisicion': 'e.no_requisicion', 'oc': 'e.orden_compra', 'folio': 'e.folio',
+        }
+        if q_doc_campo in campos_doc:
+            where_sql += f" AND TRIM(UPPER({campos_doc[q_doc_campo]})) LIKE TRIM(UPPER(?))"
+            params.append(f"%{q_doc}%")
+        else:
+            cond, cond_params = construir_busqueda_dinamica(
+                q_doc, ['e.no_factura', 'e.no_remision', 'e.no_requisicion', 'e.orden_compra', 'e.folio'])
+            if cond:
+                where_sql += f" AND {cond}"
+                params.extend(cond_params)
+    if q_prov:
+        cond, cond_params = construir_busqueda_dinamica(
+            q_prov, ['pr.nombre', 'pr.nombre_comercial', 'e.proveedor_nombre_historico'])
+        if cond:
+            where_sql += f" AND {cond}"
+            params.extend(cond_params)
+        if not q_prov_archivados:
+            where_sql += " AND COALESCE(pr.activo, 0)=1"
+
+    conn = get_db()
+    filas = conn.execute(f"""
+        SELECT e.*, COALESCE(p.codigo, 'SERVICIO') AS codigo,
+               COALESCE(e.concepto_servicio, p.descripcion) AS descripcion,
+               COALESCE(p.unidad_medida, 'SERVICIO') AS unidad_medida,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion,
+               COALESCE(e.ubicacion, p.ubicacion) AS ubicacion_actual,
+               u.nombre AS usuario_nombre,
+               COALESCE(pr.nombre, e.proveedor_nombre_historico) AS proveedor_nombre,
+               pr.nombre_comercial AS proveedor_nombre_comercial
+        FROM entradas e
+        LEFT JOIN productos p ON e.producto_id=p.id
+        LEFT JOIN usuarios u ON e.usuario_id=u.id
+        LEFT JOIN proveedores pr ON e.proveedor_id=pr.id
+        {where_sql}
+        ORDER BY COALESCE(e.fecha_vale, e.fecha) DESC, e.id DESC
+    """, params).fetchall()
+    conn.close()
+
+    movimientos = []
+    for fila in filas:
+        movimiento = dict(fila)
+        movimiento['cantidad_reporte'] = fila['cantidad_piezas'] if (
+            (fila['unidad_compra_movimiento'] and fila['factor_conversion_movimiento']) or
+            (fila['unidad_compra'] and fila['cantidad_piezas'] is not None and fila['cantidad_piezas'] != fila['cantidad'])
+        ) else fila['cantidad']
+        movimiento['subtotal_real'] = _subtotal_real(fila)
+        movimiento['es_dolar'] = _es_dolar(fila['moneda'])
+        movimiento['iva_real'] = _iva_de(movimiento['subtotal_real'], fila['moneda'], fila['aplica_iva'])
+        movimiento['importe_con_iva'] = round(movimiento['subtotal_real'] + movimiento['iva_real'], 2)
+        movimiento['unidad_medida'] = _normalizar_unidad(movimiento.get('unidad_medida'))
+        movimientos.append(movimiento)
+
+    productos_reporte = sorted({fila['codigo'] for fila in movimientos if fila['producto_id']})
+    total_general = sum(fila['importe_con_iva'] for fila in movimientos)
+    fechas_movimientos = [
+        str(movimiento['fecha_vale'] or movimiento['fecha'] or '')[:10]
+        for movimiento in movimientos
+    ]
+    fecha_hasta_reporte = fecha_fin or (max(fechas_movimientos) if fechas_movimientos else '')
+    return render_template(
+        'entradas/reporte.html', movimientos=movimientos,
+        fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc,
+        q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=q_prov_archivados,
+        producto_ids=producto_ids, reporte_todos=reporte_todos,
+        productos_reporte=productos_reporte,
+        total_general=total_general, fecha_hasta_reporte=fecha_hasta_reporte,
+        ahora=datetime.utcnow(),
+    )
 
 
 @entradas_bp.route('/etiquetas')

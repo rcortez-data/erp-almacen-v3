@@ -1,6 +1,10 @@
 {% extends 'base.html' %}
 {% block title %}Salidas de material{% endblock %}
 {% block content %}
+<style>
+  .fila-reporte { cursor: pointer; }
+  .fila-reporte.seleccionada { background-color: rgba(13, 110, 253, .10); }
+</style>
 <div class="module-hero">
   <div>
     <span class="module-kicker"><i class="bi bi-arrow-up-circle"></i> Salidas</span>
@@ -112,6 +116,12 @@
       {% if filtro_activo %}
       <span class="lab-pill"><i class="bi bi-funnel"></i> Filtro activo</span>
       {% endif %}
+      <button type="button" id="btn-reporte-salidas" class="btn btn-sm btn-outline-primary" data-ids="">
+        <i class="bi bi-printer"></i> Imprimir reporte (<span id="contador-reporte">0</span>)
+      </button>
+      <button type="button" id="btn-seleccionar-todo-salidas" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-check-all"></i> Seleccionar todo
+      </button>
       <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
     </div>
   </div>
@@ -119,6 +129,9 @@
     <table class="table table-hover align-middle mb-0 exits-table">
       <thead>
         <tr>
+          <th class="col-compact" title="Seleccionar producto para el reporte">
+            <i class="bi bi-check2-square"></i>
+          </th>
           <th class="col-code">Folio</th>
           <th class="col-code">Codigo</th>
           <th class="col-desc">Descripcion</th>
@@ -135,7 +148,10 @@
       </thead>
       <tbody>
         {% for s in salidas %}
-        <tr>
+        <tr class="fila-reporte">
+          <td class="text-center">
+            <input type="checkbox" class="form-check-input chk-reporte-salida" value="{{ s.id }}" title="Incluir esta salida de {{ s.codigo }} en el reporte" {{ 'checked' if reporte_todos or s.id in salida_ids_reporte }}>
+          </td>
           <td>
             <span class="badge bg-warning text-dark">{{ s.folio }}</span>
             {% if s.tipo_movimiento == 'ajuste' %}<span class="badge bg-dark">Ajuste</span>{% endif %}
@@ -191,7 +207,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="12" class="empty-state">No se encontraron registros.</td></tr>
+        <tr><td colspan="13" class="empty-state">No se encontraron registros.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -253,4 +269,72 @@
   </div>
 </div>
 {% endif %}
+<script>
+(() => {
+  const checks = Array.from(document.querySelectorAll('.chk-reporte-salida'));
+  const button = document.getElementById('btn-reporte-salidas');
+  const selectAllButton = document.getElementById('btn-seleccionar-todo-salidas');
+  const count = document.getElementById('contador-reporte');
+  const selectedIds = new Set(new URLSearchParams(window.location.search).getAll('salida_ids'));
+
+  const updateSelection = () => {
+    if (count) count.textContent = selectedIds.size;
+    if (button) button.dataset.ids = [...selectedIds].join(',');
+  };
+
+  checks.forEach(check => {
+    check.addEventListener('change', () => {
+      if (check.checked) selectedIds.add(check.value);
+      else selectedIds.delete(check.value);
+      check.closest('tr')?.classList.toggle('seleccionada', check.checked);
+      updateSelection();
+    });
+  });
+  document.querySelectorAll('.fila-reporte').forEach(row => row.addEventListener('click', event => {
+    if (event.target.closest('a, button, form, input, select, textarea, label')) return;
+    const check = row.querySelector('.chk-reporte-salida');
+    if (check) check.click();
+  }));
+  selectAllButton?.addEventListener('click', () => {
+    const seleccionar = selectAllButton.dataset.todos !== '1';
+    checks.forEach(check => {
+      check.checked = seleccionar;
+      if (seleccionar) selectedIds.add(check.value);
+      else selectedIds.delete(check.value);
+      check.closest('tr')?.classList.toggle('seleccionada', seleccionar);
+    });
+    selectAllButton.dataset.todos = seleccionar ? '1' : '0';
+    selectAllButton.innerHTML = seleccionar
+      ? '<i class="bi bi-x-square"></i> Quitar selección total'
+      : '<i class="bi bi-check-all"></i> Seleccionar todo';
+    updateSelection();
+  });
+  document.querySelectorAll('.pagination a').forEach(link => link.addEventListener('click', () => {
+    const url = new URL(link.href, window.location.origin);
+    if (selectAllButton?.dataset.todos === '1') {
+      url.searchParams.set('reporte_todos', '1');
+    } else {
+      selectedIds.forEach(id => url.searchParams.append('salida_ids', id));
+    }
+    link.href = url.toString();
+  }));
+  if ({{ 'true' if reporte_todos else 'false' }}) {
+    selectAllButton.dataset.todos = '1';
+    selectAllButton.innerHTML = '<i class="bi bi-x-square"></i> Quitar selección total';
+  }
+  updateSelection();
+  button?.addEventListener('click', () => {
+    const params = new URLSearchParams();
+    const form = document.querySelector('.filter-card form');
+    if (form) {
+      new FormData(form).forEach((value, key) => {
+        if (value) params.append(key, value);
+      });
+    }
+    if (selectAllButton?.dataset.todos === '1') params.append('reporte_todos', '1');
+    (button.dataset.ids || '').split(',').filter(Boolean).forEach(id => params.append('salida_ids', id));
+    window.open(`{{ url_for('salidas.reporte') }}?${params.toString()}`, '_blank');
+  });
+})();
+</script>
 {% endblock %}

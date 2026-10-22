@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Reporte de salidas{% endblock %}
+{% block content %}
+<style>
+  .reporte-toolbar { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+  .reporte-resumen { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: .5rem; padding: .75rem 1rem; margin-bottom: 1rem; }
+  .reporte-resumen-productos { margin-top: .85rem; }
+  .reporte-tabla { font-size: .82rem; }
+  .reporte-tabla th { white-space: nowrap; }
+  .reporte-tabla td { vertical-align: top; }
+  @media print {
+    @page { size: landscape; margin: 10mm; }
+    .no-print, nav, .sidebar, .app-sidebar { display: none !important; }
+    .container, .container-fluid { max-width: none !important; width: 100% !important; }
+    .card { border: 0 !important; box-shadow: none !important; }
+    .reporte-tabla { font-size: 9pt; }
+    .reporte-tabla th, .reporte-tabla td { padding: .25rem .35rem; }
+  }
+</style>
+
+<div class="reporte-toolbar no-print">
+  <a href="{{ url_for('salidas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp, q_area=q_area, q_vale=q_vale, solo_h=1 if solo_h else None) }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar a salidas
+  </a>
+  <button type="button" class="btn btn-primary" onclick="window.print()">
+    <i class="bi bi-printer"></i> Imprimir
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <div class="text-muted text-uppercase" style="font-size:.75rem; letter-spacing:.08em">Reporte de movimientos</div>
+        <h1 class="h3 mb-1">Salidas de material</h1>
+        <div class="text-muted">Generado el {{ ahora|fecha_hora_local if ahora else '' }}</div>
+      </div>
+      <div class="text-end">
+        <div class="fw-bold">{{ movimientos|length }} movimiento(s)</div>
+        <div class="text-muted">Cantidad total de movimientos: {{ total_cantidad|moneda }}</div>
+      </div>
+    </div>
+
+    <div class="reporte-resumen">
+      <div class="row g-2">
+        <div class="col-md-3"><strong>Desde:</strong> {{ fecha_ini or 'Sin límite' }}</div>
+        <div class="col-md-3"><strong>Hasta:</strong> {{ fecha_hasta_reporte|fecha_vale if fecha_hasta_reporte else 'Sin registros' }}</div>
+        <div class="col-md-6"><strong>Productos:</strong>
+          {% if resumen_productos %}
+            {% for producto in resumen_productos %}{{ producto.descripcion }}{% if not loop.last %}, {% endif %}{% endfor %}
+          {% else %}Todos los productos filtrados{% endif %}
+        </div>
+        {% if q or q_resp or q_area or q_vale or solo_h %}
+        <div class="col-12"><strong>Filtros adicionales:</strong>
+          {{ q or '' }}{% if q_resp %} · Recibió: {{ q_resp }}{% endif %}{% if q_area %} · Área: {{ q_area }}{% endif %}{% if q_vale %} · Vale/documento: {{ q_vale }}{% endif %}{% if solo_h %} · Solo OC H{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% if resumen_productos %}
+      <div class="reporte-resumen-productos">
+        <div class="fw-semibold mb-1">Resumen por producto</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0 bg-white">
+            <thead class="table-light">
+              <tr>
+                <th>Producto</th>
+                <th class="text-end">Total salida</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for producto in resumen_productos %}
+              <tr>
+                <td>{{ producto.descripcion }}</td>
+                <td class="text-end fw-bold text-danger">
+                  -{{ producto.cantidad_salida|cantidad_unidad(producto.unidad_medida) }}
+                  {% if producto.tiene_conversion %}
+                  <br><span class="text-muted fw-normal">{{ producto.cantidad_compra|cantidad_unidad(producto.unidad_compra) }}</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+    {% for grupo in movimientos_por_producto %}
+    <div class="mb-3">
+      <div class="fw-semibold border-bottom pb-1 mb-1">{{ grupo.descripcion }}</div>
+      <div class="table-responsive">
+      <table class="table table-bordered table-sm reporte-tabla mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Folio</th>
+            <th>Fecha</th>
+            <th>Código</th>
+            <th>Descripción</th>
+            <th class="text-end">Cantidad</th>
+            <th>Área</th>
+            <th>Máquina</th>
+            <th>Recibió</th>
+            <th>Vale</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in grupo.movimientos %}
+          <tr>
+            <td>{{ m.folio }}</td>
+            <td>{{ (m.fecha_vale or m.fecha[:10])|fecha_vale }}</td>
+            <td class="font-monospace">{{ m.codigo }}</td>
+            <td>{{ m.descripcion }}</td>
+            <td class="text-end text-danger fw-bold">
+              -{{ m.cantidad_salida|cantidad_unidad(m.unidad_medida) }}
+              {% if m.cantidad_compra_reporte is not none %}
+              <br><span class="text-muted fw-normal">{{ m.cantidad_compra_reporte|cantidad_unidad(m.unidad_compra_reporte) }}</span>
+              {% endif %}
+            </td>
+            <td>{{ m.area or '-' }}</td>
+            <td>{{ m.maquina or '-' }}</td>
+            <td>{{ m.responsable or '-' }}</td>
+            <td>{{ m.no_vale or '-' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="text-center text-muted py-4">No se encontraron salidas con los filtros seleccionados.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

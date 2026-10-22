@@ -6,6 +6,8 @@
     .col-code { text-align: center !important; }
     .font-monospace { text-align: center !important; }
   }
+  .fila-reporte { cursor: pointer; }
+  .fila-reporte.seleccionada { background-color: rgba(25, 135, 84, .10); }
 </style>
 {% endblock %}
 {% block content %}
@@ -140,6 +142,12 @@
         </button>
       </form>
       {% endif %}
+      <button type="button" id="btn-reporte-entradas" class="btn btn-sm btn-outline-primary" data-ids="">
+        <i class="bi bi-printer"></i> Imprimir reporte (<span id="contador-reporte-entradas">0</span>)
+      </button>
+      <button type="button" id="btn-seleccionar-todo-entradas" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-check-all"></i> Seleccionar todo
+      </button>
       <span class="table-scroll-hint"><i class="bi bi-arrow-left-right"></i> Desliza para ver mas columnas</span>
     </div>
   </div>
@@ -147,6 +155,9 @@
     <table class="table table-hover align-middle mb-0 entries-table">
       <thead>
         <tr>
+          <th class="col-compact" title="Seleccionar producto para el reporte">
+            <i class="bi bi-check2-square"></i>
+          </th>
           <th class="col-code">Folio</th>
           <th class="col-code">Codigo</th>
           <th class="col-desc">Descripcion</th>
@@ -165,7 +176,12 @@
       </thead>
       <tbody>
         {% for e in entradas %}
-        <tr>
+        <tr class="fila-reporte">
+          <td class="text-center">
+            {% if e.producto_id %}
+            <input type="checkbox" class="form-check-input chk-reporte-entrada" value="{{ e.producto_id }}" title="Incluir {{ e.codigo }} en el reporte" {{ 'checked' if reporte_todos or e.producto_id in producto_ids_reporte }}>
+            {% endif %}
+          </td>
           <td>
             <span class="badge bg-success">{{ e.folio }}</span>
             {% if e.tipo_movimiento == 'ajuste' %}<span class="badge bg-dark">Ajuste</span>{% endif %}
@@ -259,7 +275,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="14" class="empty-state">No se encontraron registros.</td></tr>
+        <tr><td colspan="15" class="empty-state">No se encontraron registros.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -373,6 +389,67 @@
 
   qDocCampo.addEventListener('change', function() {
     if (qDoc.value.trim().length >= 2) qDoc.dispatchEvent(new Event('input'));
+  });
+
+  const reporteChecks = Array.from(document.querySelectorAll('.chk-reporte-entrada'));
+  const reporteButton = document.getElementById('btn-reporte-entradas');
+  const seleccionarTodoButton = document.getElementById('btn-seleccionar-todo-entradas');
+  const reporteCount = document.getElementById('contador-reporte-entradas');
+  const selectedIds = new Set(new URLSearchParams(window.location.search).getAll('producto_ids'));
+  const updateReporteSelection = () => {
+    if (reporteCount) reporteCount.textContent = selectedIds.size;
+    if (reporteButton) reporteButton.dataset.ids = [...selectedIds].join(',');
+  };
+  reporteChecks.forEach(check => check.addEventListener('change', () => {
+    if (check.checked) selectedIds.add(check.value);
+    else selectedIds.delete(check.value);
+    check.closest('tr')?.classList.toggle('seleccionada', check.checked);
+    updateReporteSelection();
+  }));
+  document.querySelectorAll('.fila-reporte').forEach(row => row.addEventListener('click', event => {
+    if (event.target.closest('a, button, form, input, select, textarea, label')) return;
+    const check = row.querySelector('.chk-reporte-entrada');
+    if (check) check.click();
+  }));
+  seleccionarTodoButton?.addEventListener('click', () => {
+    const seleccionar = seleccionarTodoButton.dataset.todos !== '1';
+    reporteChecks.forEach(check => {
+      check.checked = seleccionar;
+      if (seleccionar) selectedIds.add(check.value);
+      else selectedIds.delete(check.value);
+      check.closest('tr')?.classList.toggle('seleccionada', seleccionar);
+    });
+    seleccionarTodoButton.dataset.todos = seleccionar ? '1' : '0';
+    seleccionarTodoButton.innerHTML = seleccionar
+      ? '<i class="bi bi-x-square"></i> Quitar selección total'
+      : '<i class="bi bi-check-all"></i> Seleccionar todo';
+    updateReporteSelection();
+  });
+  document.querySelectorAll('.pagination a').forEach(link => link.addEventListener('click', () => {
+    const url = new URL(link.href, window.location.origin);
+    if (seleccionarTodoButton?.dataset.todos === '1') {
+      url.searchParams.set('reporte_todos', '1');
+    } else {
+      selectedIds.forEach(id => url.searchParams.append('producto_ids', id));
+    }
+    link.href = url.toString();
+  }));
+  if ({{ 'true' if reporte_todos else 'false' }}) {
+    seleccionarTodoButton.dataset.todos = '1';
+    seleccionarTodoButton.innerHTML = '<i class="bi bi-x-square"></i> Quitar selección total';
+  }
+  updateReporteSelection();
+  reporteButton?.addEventListener('click', () => {
+    const params = new URLSearchParams();
+    const form = document.querySelector('.filter-card form');
+    if (form) {
+      new FormData(form).forEach((value, key) => {
+        if (value) params.append(key, value);
+      });
+    }
+    if (seleccionarTodoButton?.dataset.todos === '1') params.append('reporte_todos', '1');
+    (reporteButton.dataset.ids || '').split(',').filter(Boolean).forEach(id => params.append('producto_ids', id));
+    window.open(`{{ url_for('entradas.reporte') }}?${params.toString()}`, '_blank');
   });
 </script>
 {% endblock %}

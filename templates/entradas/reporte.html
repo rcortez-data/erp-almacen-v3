@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block title %}Reporte de entradas{% endblock %}
+{% block content %}
+<style>
+  .reporte-toolbar { display: flex; justify-content: space-between; gap: 1rem; align-items: center; margin-bottom: 1rem; }
+  .reporte-resumen { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: .5rem; padding: .75rem 1rem; margin-bottom: 1rem; }
+  .reporte-tabla { font-size: .82rem; }
+  .reporte-tabla th { white-space: nowrap; }
+  .reporte-tabla td { vertical-align: top; }
+  @media print {
+    @page { size: landscape; margin: 10mm; }
+    .no-print, nav, .sidebar, .app-sidebar { display: none !important; }
+    .container, .container-fluid { max-width: none !important; width: 100% !important; }
+    .card { border: 0 !important; box-shadow: none !important; }
+    .reporte-tabla { font-size: 9pt; }
+    .reporte-tabla th, .reporte-tabla td { padding: .25rem .35rem; }
+  }
+</style>
+
+<div class="reporte-toolbar no-print">
+  <a href="{{ url_for('entradas.index', fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_doc=q_doc, q_doc_campo=q_doc_campo, q_prov=q_prov, q_prov_archivados=1 if q_prov_archivados else None) }}" class="btn btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i> Regresar a entradas
+  </a>
+  <button type="button" class="btn btn-primary" onclick="window.print()">
+    <i class="bi bi-printer"></i> Imprimir
+  </button>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <div class="text-muted text-uppercase" style="font-size:.75rem; letter-spacing:.08em">Reporte de movimientos</div>
+        <h1 class="h3 mb-1">Entradas de material</h1>
+        <div class="text-muted">Generado el {{ ahora|fecha_hora_local if ahora else '' }}</div>
+      </div>
+      <div class="text-end">
+        <div class="fw-bold">{{ movimientos|length }} movimiento(s)</div>
+        <div class="text-muted">Total con IVA: ${{ total_general|moneda }}</div>
+      </div>
+    </div>
+
+    <div class="reporte-resumen">
+      <div class="row g-2">
+        <div class="col-md-3"><strong>Desde:</strong> {{ fecha_ini or 'Sin límite' }}</div>
+        <div class="col-md-3"><strong>Hasta:</strong> {{ fecha_hasta_reporte|fecha_vale if fecha_hasta_reporte else 'Sin registros' }}</div>
+        <div class="col-md-6"><strong>Productos:</strong> {{ productos_reporte|join(', ') if productos_reporte else 'Todos los productos filtrados' }}</div>
+        {% if q or q_doc or q_prov or q_prov_archivados %}
+        <div class="col-12"><strong>Filtros adicionales:</strong>
+          {{ q or '' }}{% if q_doc %} · Documento: {{ q_doc }}{% endif %}{% if q_prov %} · Proveedor: {{ q_prov }}{% endif %}{% if q_prov_archivados %} · Incluye archivados{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-bordered table-sm reporte-tabla mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Folio</th>
+            <th>Fecha</th>
+            <th>Código</th>
+            <th>Descripción</th>
+            <th>Ubicación</th>
+            <th class="text-end">Cantidad</th>
+            <th>Proveedor</th>
+            <th>Factura</th>
+            <th>Remisión</th>
+            <th>Requisición</th>
+            <th>OC</th>
+            <th class="text-end">Importe</th>
+            <th>Usuario</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in movimientos %}
+          <tr>
+            <td>{{ m.folio }}</td>
+            <td>{{ (m.fecha_vale or m.fecha[:10])|fecha_vale }}</td>
+            <td class="font-monospace">{{ m.codigo }}</td>
+            <td>{{ m.descripcion }}</td>
+            <td>{{ m.ubicacion_actual or '-' }}</td>
+            <td class="text-end fw-bold">{{ m.cantidad_reporte|cantidad_unidad(m.unidad_medida) }}</td>
+            <td>{{ m.proveedor_nombre or '-' }}</td>
+            <td>{{ m.no_factura or '-' }}</td>
+            <td>{{ m.no_remision or '-' }}</td>
+            <td>{{ m.no_requisicion or '-' }}</td>
+            <td>{{ m.orden_compra or '-' }}</td>
+            <td class="text-end text-success fw-bold">${{ m.importe_con_iva|moneda }}{% if m.es_dolar %} USD{% endif %}</td>
+            <td>{{ m.usuario_nombre or '-' }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="13" class="text-center text-muted py-4">No se encontraron entradas con los filtros seleccionados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

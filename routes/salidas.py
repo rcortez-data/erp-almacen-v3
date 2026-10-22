@@ -3,7 +3,7 @@ from routes.auth import login_required
 from database import get_db, next_folio, log_actividad
 from routes.inventario import construir_busqueda_dinamica
 from constantes import MAQUINAS
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import calendar
 
 salidas_bp = Blueprint('salidas', __name__, url_prefix='/salidas')
@@ -232,6 +232,8 @@ def index():
     q_area = request.args.get('q_area', '').strip()
     q_vale = request.args.get('q_vale', '').strip()
     solo_h = request.args.get('solo_h') in ('1', 'true', 'on', 'si')
+    salida_ids_reporte = _ids_salidas_reporte(request.args)
+    reporte_todos = request.args.get('reporte_todos') in ('1', 'true', 'on', 'si')
     pagina = request.args.get('pagina', 1, type=int)
     registros_por_pagina = 50
     
@@ -310,6 +312,7 @@ def index():
     return render_template('salidas/index.html', salidas=salidas,
                            fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp,
                            q_area=q_area, q_vale=q_vale, solo_h=solo_h,
+                           salida_ids_reporte=salida_ids_reporte, reporte_todos=reporte_todos,
                            total_cantidad=total_cantidad,
                            total_ajustes=total_ajustes,
                            total_vales=total_vales,
@@ -317,6 +320,158 @@ def index():
                            areas_lista=areas_lista,
                            pagina_actual=pagina, total_paginas=total_paginas,
                            total_registros=total_registros, registros_pagina=len(salidas))
+
+
+def _ids_salidas_reporte(args):
+    ids = []
+    for raw in args.getlist('salida_ids'):
+        for value in str(raw).split(','):
+            try:
+                producto_id = int(value)
+            except (TypeError, ValueError):
+                continue
+            if producto_id > 0 and producto_id not in ids:
+                ids.append(producto_id)
+    return ids
+
+
+def _cantidad_salida_reporte(salida):
+    snapshot = salida['cantidad_stock'] is not None and salida['unidad_compra_movimiento'] and salida['factor_conversion_movimiento']
+    if snapshot:
+        return float(salida['cantidad_stock'] or 0)
+    factor = salida['factor_conversion']
+    if salida['unidad_compra'] and factor:
+        if salida['tipo_conversion'] == 'compra_a_uso':
+            return float(salida['cantidad'] or 0) * float(factor)
+        return float(salida['cantidad'] or 0) / float(factor)
+    return float(salida['cantidad'] or 0)
+
+
+def _datos_conversion_salida_reporte(salida):
+    """Devuelve la cantidad en unidad de compra para mostrar conversiones."""
+    unidad_compra = salida['unidad_compra_movimiento'] or salida['unidad_compra']
+    factor = salida['factor_conversion_movimiento'] or salida['factor_conversion']
+    if not unidad_compra or not factor:
+        return None, None
+    return float(salida['cantidad'] or 0), unidad_compra
+
+
+@salidas_bp.route('/reporte')
+@login_required
+def reporte():
+    fecha_ini = request.args.get('fecha_ini', '').strip()
+    fecha_fin = request.args.get('fecha_fin', '').strip()
+    q = request.args.get('q', '').strip()
+    q_resp = request.args.get('q_resp', '').strip()
+    q_area = request.args.get('q_area', '').strip()
+    q_vale = request.args.get('q_vale', '').strip()
+    solo_h = request.args.get('solo_h') in ('1', 'true', 'on', 'si')
+    reporte_todos = request.args.get('reporte_todos') in ('1', 'true', 'on', 'si')
+    salida_ids = _ids_salidas_reporte(request.args)
+
+    where_sql = "WHERE 1=1"
+    params = []
+    if fecha_ini:
+        where_sql += " AND DATE(COALESCE(s.fecha_vale, s.fecha)) >= ?"
+        params.append(fecha_ini)
+    if fecha_fin:
+        where_sql += " AND DATE(COALESCE(s.fecha_vale, s.fecha)) <= ?"
+        params.append(fecha_fin)
+    if salida_ids and not reporte_todos:
+        placeholders = ','.join('?' for _ in salida_ids)
+        where_sql += f" AND s.id IN ({placeholders})"
+        params.extend(salida_ids)
+    if q:
+        cond, cond_params = construir_busqueda_dinamica(q, ['p.codigo', 'p.codigo_barras', 'p.descripcion', 's.folio'])
+        if cond:
+            where_sql += f" AND {cond}"
+            params.extend(cond_params)
+    if q_resp:
+        cond, cond_params = construir_busqueda_dinamica(q_resp, ['s.responsable'])
+        if cond:
+            where_sql += f" AND {cond}"
+            params.extend(cond_params)
+    if q_area:
+        cond, cond_params = construir_busqueda_dinamica(q_area, ['s.area'])
+        if cond:
+            where_sql += f" AND {cond}"
+            params.extend(cond_params)
+    if q_vale:
+        cond, cond_params = construir_busqueda_dinamica(q_vale, ['s.no_vale', 's.no_factura', 's.no_remision', 's.maquina'])
+        if cond:
+            where_sql += f" AND {cond}"
+            params.extend(cond_params)
+    if solo_h:
+        where_sql += " AND COALESCE(p.stock_origen, 'ALMACEN') = 'H'"
+
+    conn = get_db()
+    filas = conn.execute(f"""
+        SELECT s.*, p.codigo, p.codigo_barras, p.descripcion, p.unidad_medida,
+               p.unidad_compra, p.factor_conversion, p.tipo_conversion,
+               COALESCE(p.stock_origen, 'ALMACEN') AS stock_origen,
+               u.nombre AS usuario_nombre
+        FROM salidas s
+        JOIN productos p ON s.producto_id=p.id
+        LEFT JOIN usuarios u ON s.usuario_id=u.id
+        {where_sql}
+        ORDER BY COALESCE(s.fecha_vale, s.fecha) DESC, s.id DESC
+    """, params).fetchall()
+    conn.close()
+
+    movimientos = []
+    for fila in filas:
+        movimiento = dict(fila)
+        movimiento['cantidad_salida'] = _cantidad_salida_reporte(fila)
+        movimiento['cantidad_compra_reporte'], movimiento['unidad_compra_reporte'] = _datos_conversion_salida_reporte(fila)
+        movimientos.append(movimiento)
+    productos_reporte = sorted({fila['codigo'] for fila in movimientos})
+    total_cantidad = sum(fila['cantidad_salida'] for fila in movimientos)
+    resumen_por_producto = {}
+    for movimiento in movimientos:
+        producto_id = movimiento['producto_id']
+        resumen = resumen_por_producto.setdefault(producto_id, {
+            'codigo': movimiento['codigo'],
+            'descripcion': movimiento['descripcion'],
+            'unidad_medida': movimiento['unidad_medida'],
+            'cantidad_salida': 0,
+            'cantidad_compra': 0,
+            'unidad_compra': movimiento['unidad_compra_reporte'],
+            'tiene_conversion': False,
+        })
+        resumen['cantidad_salida'] += movimiento['cantidad_salida']
+        if movimiento['cantidad_compra_reporte'] is not None:
+            resumen['cantidad_compra'] += movimiento['cantidad_compra_reporte']
+            resumen['tiene_conversion'] = True
+            resumen['unidad_compra'] = resumen['unidad_compra'] or movimiento['unidad_compra_reporte']
+    resumen_productos = sorted(resumen_por_producto.values(), key=lambda item: item['codigo'])
+    fechas_movimientos = [
+        str(movimiento['fecha_vale'] or movimiento['fecha'] or '')[:10]
+        for movimiento in movimientos
+    ]
+    fecha_hasta_reporte = fecha_fin or (max(fechas_movimientos) if fechas_movimientos else '')
+    movimientos_por_producto = [
+        {
+            **resumen,
+            'movimientos': [
+                movimiento for movimiento in movimientos
+                if movimiento['producto_id'] == producto_id
+            ],
+        }
+        for producto_id, resumen in sorted(
+            resumen_por_producto.items(), key=lambda item: item[1]['codigo']
+        )
+    ]
+    return render_template(
+        'salidas/reporte.html', movimientos=movimientos,
+        fecha_ini=fecha_ini, fecha_fin=fecha_fin, q=q, q_resp=q_resp,
+        q_area=q_area, q_vale=q_vale, solo_h=solo_h,
+        salida_ids=salida_ids, reporte_todos=reporte_todos,
+        productos_reporte=productos_reporte,
+        total_cantidad=total_cantidad, resumen_productos=resumen_productos,
+        movimientos_por_producto=movimientos_por_producto,
+        fecha_hasta_reporte=fecha_hasta_reporte,
+        ahora=datetime.now(timezone.utc),
+    )
 
 
 @salidas_bp.route('/consumo-mensual', methods=['GET', 'POST'])
