@@ -6,7 +6,7 @@ Ricardo
 
 ## Punto de continuidad
 
-Fecha de registro: 21 de octubre de 2026
+Última actualización: 22 de octubre de 2026
 
 Estamos trabajando ejercicios prácticos de Python, avanzando uno por uno. El alumno envía su código y se revisa antes de pasar al siguiente ejercicio.
 
@@ -41,7 +41,12 @@ El alumno resolvió correctamente estos ejercicios:
 8. Contar números ingresados sin contar el `0`.
 9. Encontrar el número mayor.
 10. Calcular suma, cantidad, mayor y promedio.
-11. Ignorar números negativos usando `continue` y sumar positivos.
+11. Ignorar números negativos usando `continue` y sumar positivos. Completado correctamente; el alumno además integró contador, mayor y promedio de ejercicios anteriores.
+12. Recorrer una lista usando `for`, `continue` y `break` para sumar valores positivos hasta encontrar `0`. Completado correctamente; resultado `12`.
+13. Recorrer una lista, identificar pares con el operador `%`, usar `append()` y guardar los resultados. Completado correctamente; resultado `[8, 20, 14]`.
+14. Filtrar números mayores que `10` usando `continue` y `append()`. Completado correctamente; resultado `[12, 21, 30, 16]`.
+15. Filtrar palabras por cantidad de caracteres usando `len()`, `continue` y `append()`. Completado correctamente; resultado `['computadora', 'programacion', 'teclado']`.
+16. Aplicar un descuento del `10%` a precios seleccionados usando `continue`, operaciones y `append()`. Completado correctamente; resultado `[135.0, 198.0, 270.0]`.
 
 ## Observaciones del maestro
 
@@ -55,23 +60,29 @@ El alumno resolvió correctamente estos ejercicios:
 
 ## Ejercicio pendiente
 
+El ejercicio 16 ya fue revisado y quedó aprobado. El siguiente ejercicio es el número 17.
+
 Dada esta lista:
 
 ```python
-numeros = [4, -2, 8, 0, 10, -5, 6]
+carrito = [
+    {"producto": "Pan", "precio": 20, "cantidad": 2},
+    {"producto": "Leche", "precio": 25, "cantidad": 3},
+    {"producto": "Sopa", "precio": 18, "cantidad": 4}
+]
 ```
 
 Recórrela con un `for` y cumple estas reglas:
 
-- Si encuentras un número negativo, usa `continue`.
-- Si encuentras `0`, usa `break`.
-- Suma los números positivos anteriores al `0`.
-- Imprime la suma final.
+- Crea una variable `total` con valor `0`.
+- Calcula el subtotal de cada producto: `precio * cantidad`.
+- Acumula cada subtotal en `total`.
+- Imprime el total final.
 
 Resultado esperado:
 
 ```text
-12
+182
 ```
 
 ## Cómo continuar
