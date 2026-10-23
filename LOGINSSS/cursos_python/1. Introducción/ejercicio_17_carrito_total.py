@@ -9,7 +9,7 @@
 # - Acumula cada subtotal en total.
 # - Imprime el total final.
 # Resultado esperado:
-# 182
+# 187
 
 carrito = [
      {"producto": "Pan", "precio": 20, "cantidad": 2},
@@ -17,9 +17,7 @@ carrito = [
      {"producto": "Sopa", "precio": 18, "cantidad": 4}
         ]
 total = 0
-subtotal = 0
-for carro in carrito:
-    subtotal = carro['precio'] * carro['cantidad']
-for sub in subtotal:
-    sub += total
+for producto in carrito:
+    subtotal = producto['precio'] * producto['cantidad']
+    total += subtotal
 print(total)

@@ -6,7 +6,7 @@ Ricardo
 
 ## Punto de continuidad
 
-Última actualización: 22 de octubre de 2026
+Última actualización: 23 de octubre de 2026
 
 Estamos trabajando ejercicios prácticos de Python, avanzando uno por uno. El alumno envía su código y se revisa antes de pasar al siguiente ejercicio.
 
@@ -47,6 +47,33 @@ El alumno resolvió correctamente estos ejercicios:
 14. Filtrar números mayores que `10` usando `continue` y `append()`. Completado correctamente; resultado `[12, 21, 30, 16]`.
 15. Filtrar palabras por cantidad de caracteres usando `len()`, `continue` y `append()`. Completado correctamente; resultado `['computadora', 'programacion', 'teclado']`.
 16. Aplicar un descuento del `10%` a precios seleccionados usando `continue`, operaciones y `append()`. Completado correctamente; resultado `[135.0, 198.0, 270.0]`.
+17. Recorrer un carrito de productos, calcular subtotales (`precio * cantidad`) y acumular el total. Completado correctamente; resultado `182`.
+18. Recorrer una lista de productos y mostrar los nombres cuyo precio sea mayor que `20`. Completado correctamente; resultado `Leche`.
+19. Encontrar el producto con el precio más alto usando una variable `mayor` y una comparación dentro de un `for`. Completado correctamente; resultado `Arroz`, `30`.
+20. Contar productos cuyo precio sea mayor o igual que `20`. Completado correctamente; resultado `3`.
+
+## Ubicación del archivo
+
+- PC actual: `C:\Users\Almacen\Desktop\ERP\erp_almacen_v3\LOGINSSS\cursos_python\1. Introducción\progreso_ejercicios_codex.md`
+- PC de casa: `""`
+
+## Instrucciones para continuar desde otra computadora
+
+Este archivo es la fuente principal del progreso del curso. Al iniciar un chat nuevo, el alumno debe pegar este archivo y escribir una de estas frases:
+
+- `Estoy estudiando en trabajo`: usar la ruta indicada en **PC actual**.
+- `Estoy estudiando en casa`: usar la ruta indicada en **PC de casa**.
+
+Después de revisar y aprobar un ejercicio, actualizar este mismo archivo en la ruta correspondiente, incluyendo:
+
+- La fecha de la última actualización.
+- El ejercicio aprobado y su resultado.
+- El nuevo ejercicio pendiente.
+- Cualquier observación importante sobre el aprendizaje.
+
+Si la ruta seleccionada está vacía (`""`), pedir al alumno que la complete antes de intentar guardar cambios en esa computadora. No borrar el progreso anterior; conservar todo el historial.
+
+El alumno debe enviar su código antes de recibir la solución completa. Primero revisar si funciona, señalar errores y dar pistas. Mostrar la solución completa únicamente cuando sea necesario o cuando el alumno la pida.
 
 ## Observaciones del maestro
 
@@ -60,29 +87,25 @@ El alumno resolvió correctamente estos ejercicios:
 
 ## Ejercicio pendiente
 
-El ejercicio 16 ya fue revisado y quedó aprobado. El siguiente ejercicio es el número 17.
+El ejercicio 20 ya fue revisado y quedó aprobado. El siguiente ejercicio es el número 21.
 
-Dada esta lista:
+Usa esta lista:
 
 ```python
-carrito = [
-    {"producto": "Pan", "precio": 20, "cantidad": 2},
-    {"producto": "Leche", "precio": 25, "cantidad": 3},
-    {"producto": "Sopa", "precio": 18, "cantidad": 4}
+productos = [
+    {"nombre": "Pan", "precio": 20},
+    {"nombre": "Leche", "precio": 25},
+    {"nombre": "Sopa", "precio": 18},
+    {"nombre": "Arroz", "precio": 30}
 ]
 ```
 
-Recórrela con un `for` y cumple estas reglas:
-
-- Crea una variable `total` con valor `0`.
-- Calcula el subtotal de cada producto: `precio * cantidad`.
-- Acumula cada subtotal en `total`.
-- Imprime el total final.
+Recórrela con un `for`, suma todos los precios y calcula el promedio de los precios. Imprime el promedio final.
 
 Resultado esperado:
 
 ```text
-182
+23.25
 ```
 
 ## Cómo continuar
